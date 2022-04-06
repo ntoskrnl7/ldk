@@ -1,0 +1,22 @@
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
+include(pkg-utils)
+
+pkg_get_version(LDK ${CMAKE_CURRENT_SOURCE_DIR}/include/ldk/internal/version.h VERSION)
+
+project(Ldk VERSION "${VERSION}" LANGUAGES C)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
+find_package(WDK REQUIRED)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
+
+add_definitions(-D_KERNEL32_)
+
+file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c)
+
+wdk_add_library(Ldk STATIC ${SOURCE_FILES})
+
+target_include_directories(Ldk PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)

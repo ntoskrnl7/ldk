@@ -1,0 +1,14 @@
+﻿#pragma once
+
+EXTERN_C_START
+
+#define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+
+WINBASEAPI
+BOOL
+WINAPI
+CloseHandle(
+    _In_ HANDLE hObject
+    );
+
+EXTERN_C_END

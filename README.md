@@ -1,2 +1,204 @@
-# Ldk
-Load Dll into Kernel space
+# ldk
+
+**L**oad **D**ll into **K**ernel space
+
+## Overview
+
+ 이 프로젝트는 사용자 모드 Dll을 Kernel 영역에 로드하여 커널 드라이버에서 Dll의 코드를 직접 호출할 수 있도록 도와줍니다.
+Kernel32.dll과 Ntdll.dll는 커널에서 절대 사용할 수 없기 때문에 해당 모듈의 기능이 일부 구현되어있습니다.
+
+## Requirements
+
+- Windows 8 이상
+- Visual Studio 2019
+
+## Test Environments
+
+- Windows 10
+- Visual Studio 2019
+
+## Contents
+
+- [ldk](#ldk)
+  - [Overview](#overview)
+  - [Requirements](#requirements)
+  - [Test Environments](#test-environments)
+  - [Contents](#contents)
+  - [Caution](#caution)
+  - [Build & Test](#build--test)
+  - [Usage](#usage)
+    - [CMake](#cmake)
+      - [CMakeLists.txt](#cmakeliststxt)
+    - [main.c](#mainc)
+  - [TODO](#todo)
+
+## Caution
+
+이 프로젝트는 **매우 실험적인** 기능입니다.
+
+1. ***TEB나 PEB에 접근하는 코드가 있는 모듈은 사용하지 마십시오***
+2. ***Dll Load를 직접 사용하는것은 많은 시험을 거친 후 적용하시기 바랍니다.***
+
+## Build & Test
+
+```Batch
+
+cd test
+mkdir build && cd build
+cmake .. -DWDK_WINVER=0x0602
+cmake --build . --config  Release
+```
+
+## Usage
+
+CMake를 사용하는것을 권장합니다. 그러나 Visual Studio를 직접 사용해서 빌드를 하신다면 아래 내용을 참고하시기 바랍니다.
+
+1. **{이 저장소}/include**를 '**[추가 포함 디렉토리](https://docs.microsoft.com/cpp/build/reference/i-additional-include-directories#to-set-this-compiler-option-in-the-visual-studio-development-environment
+)** 속성'에 추가.
+2. **빌드된 Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
+3. **빌드된 Ldk.lib가 존재하는 디렉토리 경로**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
+
+### CMake
+
+CMake를 사용하신다면 아래와 같이 CMakeLists.txt를 만드시기 바랍니다.
+
+#### CMakeLists.txt
+
+```CMake
+
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+# create project
+project(MyProject)
+
+# add dependencies
+include(cmake/CPM.cmake)
+CPMAddPackage("gh:ntoskrnl7/Ldk@0.1.0")
+
+# use FindWDK
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
+find_package(WDK REQUIRED)
+
+# add driver
+wdk_add_driver(TestDrv main.c)
+
+# link dependencies
+target_link_libraries(TestDrv Ldk)
+
+```
+
+### main.c
+
+```C
+#include <Ldk/Windows.h>
+
+DRIVER_INITIALIZE DriverEntry;
+DRIVER_UNLOAD DriverUnload;
+
+typedef struct _COND_TEST_THREAD_PARAM {
+    PCSTR name;
+    BOOL ready;
+    LONG processed;
+    CONDITION_VARIABLE cv;
+    CRITICAL_SECTION cs;
+} COND_TEST_THREAD_PARAM, *PCOND_TEST_THREAD_PARAM;
+
+DWORD
+WINAPI
+CondTestThreadProc (
+    LPVOID lpThreadParameter
+    )
+{
+    PCOND_TEST_THREAD_PARAM param = (PCOND_TEST_THREAD_PARAM)lpThreadParameter;
+
+    PAGED_CODE();
+
+    DbgPrint("%s - %d - start\n", param->name, GetCurrentThreadId());
+
+    EnterCriticalSection(&param->cs);
+    while (!param->ready) {
+        SleepConditionVariableCS(&param->cv, &param->cs, INFINITE);
+    }
+
+    DbgPrint("%s - %d - processed (%d)\n", param->name, GetCurrentThreadId(), InterlockedIncrement(&param->processed));
+
+    LeaveCriticalSection(&param->cs);
+
+    DbgPrint("%s - %d - end\n", param->name, GetCurrentThreadId());
+
+    WakeConditionVariable(&param->cv);
+    return 0;
+}
+
+NTSTATUS
+DriverEntry (
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PUNICODE_STRING RegistryPath
+    )
+{
+    PAGED_CODE();
+
+    NTSTATUS status = LdkInitialize(DriverObject, RegistryPath, 0);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    COND_TEST_THREAD_PARAM param;
+    param.name = "Test";
+    param.ready = FALSE;
+    param.processed = 0;
+    InitializeCriticalSection(&param.cs);
+    InitializeConditionVariable(&param.cv);
+    HANDLE threads[5];
+    for (int i = 0; i < 5; ++i) {
+        threads[i] = CreateThread(NULL, 0, CondTestThreadProc, &param, 0, NULL);
+    }
+
+    EnterCriticalSection(&param.cs);
+    param.ready = TRUE;
+    LeaveCriticalSection(&param.cs);
+    WakeAllConditionVariable(&param.cv);
+
+    EnterCriticalSection(&param.cs);
+    while (param.processed < 5) {
+        SleepConditionVariableCS(&param.cv, &param.cs, INFINITE);
+    }
+    WakeAllConditionVariable(&param.cv);
+    LeaveCriticalSection(&param.cs);
+
+    WaitForMultipleObjects(5, threads, TRUE, INFINITE);
+    DeleteCriticalSection(&param.cs);
+
+    for (int i = 0; i < 5; ++i) {
+        if (threads[i]) {
+            CloseHandle(threads[i]);
+        }
+    }
+
+    DriverObject->DriverUnload = DriverUnload;
+    return STATUS_SUCCESS;
+}
+
+VOID
+DriverUnload (
+    _In_ PDRIVER_OBJECT driverObject
+    )
+{
+    PAGED_CODE();
+
+    UNREFERENCED_PARAMETER(driverObject);
+    LdkTerminate();
+}
+```
+
+## TODO
+
+ 아직 Dll을 로드하여 사용하기에는 API가 조금밖에 구현되지 않아서 간단한 Dll 밖에는 사용할 수 없습니다.
+
+- [ ] 빠른 구현을 위해서 ReactOS 코드를 일부 사용하였으며, 추후 자체 구현해야합니다.
+- [ ] Kernel32
+  - [ ] LoadLibrary 시 환경 변수 등 특정 경로의 모듈을 로드할수있도록 개선해야함
+- [ ] Ntdll
+  - [ ] LdrLoadDll를 정상적으로 구현해야함.
+- [ ] 문서화
+- [ ] 기타
