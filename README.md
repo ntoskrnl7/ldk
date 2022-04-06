@@ -25,7 +25,8 @@ Kernel32.dll과 Ntdll.dll는 커널에서 절대 사용할 수 없기 때문에 
   - [Test Environments](#test-environments)
   - [Contents](#contents)
   - [Caution](#caution)
-  - [Build & Test](#build--test)
+  - [Build](#build)
+  - [Test](#test)
   - [Usage](#usage)
     - [CMake](#cmake)
       - [CMakeLists.txt](#cmakeliststxt)
@@ -39,28 +40,50 @@ Kernel32.dll과 Ntdll.dll는 커널에서 절대 사용할 수 없기 때문에 
 1. ***TEB나 PEB에 접근하는 코드가 있는 모듈은 사용하지 마십시오***
 2. ***Dll Load를 직접 사용하는것은 많은 시험을 거친 후 적용하시기 바랍니다.***
 
-## Build & Test
+## Build
 
-```Batch
+Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시기 바랍니다.
 
-cd test
-mkdir build && cd build
-cmake .. -DWDK_WINVER=0x0602
-cmake --build . --config  Release
-```
+***CMake 프로젝트에 이 라이브러리를 적용하시려면 [CMake](#cmake) 섹션을 참고하시기 바랍니다.***
+
+1. 아래 명령을 수행하여 라이브러리를 빌드하시기 바랍니다.
+
+    ```Batch
+    mkdir build && cd build
+    cmake .. -DWDK_WINVER=0x0602
+    cmake --build . --config Release
+    ```
+
+2. 빌드가 완료되었다면 아래 내용을 참고하여 드라이버 프로젝트에 적용하시기 바랍니다.
+
+    1. **{이 저장소}/include**를 '**[추가 포함 디렉토리](https://docs.microsoft.com/cpp/build/reference/i-additional-include-directories#to-set-this-compiler-option-in-the-visual-studio-development-environment
+    )** 속성'에 추가.
+    1. **빌드된 Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
+    2. **빌드된 Ldk.lib가 존재하는 디렉토리 경로**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
+
+## Test
+
+1. 아래 명령을 수행하여 라이브러리 및 테스트 코드를 빌드하시기 바랍니다.
+
+    ```Batch
+    cd test
+    mkdir build && cd build
+    cmake .. -DWDK_WINVER=0x0602
+    cmake --build .
+    ```
+
+2. build/Debug/LdkTest.sys를 설치 및 로드하시기 바랍니다.
+3. 정상적으로 로드 및 언로드가 되는지 확인하시기 바랍니다.
 
 ## Usage
 
-CMake를 사용하는것을 권장합니다. 그러나 Visual Studio를 직접 사용해서 빌드를 하신다면 아래 내용을 참고하시기 바랍니다.
-
-1. **{이 저장소}/include**를 '**[추가 포함 디렉토리](https://docs.microsoft.com/cpp/build/reference/i-additional-include-directories#to-set-this-compiler-option-in-the-visual-studio-development-environment
-)** 속성'에 추가.
-2. **빌드된 Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
-3. **빌드된 Ldk.lib가 존재하는 디렉토리 경로**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
+CMake를 사용하는것을 권장합니다.
 
 ### CMake
 
 CMake를 사용하신다면 아래와 같이 CMakeLists.txt를 만드시기 바랍니다.
+
+**[FindWDK](https://github.com/SergiusTheBest/FindWDK) 필요**
 
 #### CMakeLists.txt
 
@@ -73,7 +96,7 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/Ldk@0.1.0")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.1.0")
 
 # use FindWDK
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
@@ -88,6 +111,10 @@ target_link_libraries(TestDrv Ldk)
 ```
 
 ### main.c
+
+Condition variable을 사용하는 간단한 샘플 코드입니다.
+
+***드라이버가 시작될 때는 dkInitialize 함수를 반드시 호출해야하며, 드라이버 언로드 전에는 LdkTerminate 함수를 반드시 호출해야합니다.***
 
 ```C
 #include <Ldk/Windows.h>
