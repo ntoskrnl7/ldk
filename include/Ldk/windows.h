@@ -5,7 +5,7 @@
 #include <minwindef.h>
 
 #include "winnt.h"
-#include <minwinbase.h>
+#include "minwinbase.h"
 #include <winerror.h>
 
 #define WINBASEAPI
