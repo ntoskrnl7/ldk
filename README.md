@@ -48,20 +48,25 @@ Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시�
 
 1. 아래 명령을 수행하여 라이브러리를 빌드하시기 바랍니다.
 
-    ```Batch
-    git clone --recursive https://github.com/ntoskrnl7/ldk
-    cd ldk
-    mkdir build && cd build
-    cmake .. -DWDK_WINVER=0x0602
-    cmake --build . --config Release
-    ```
+    - Visual Studio 사용
+      - {이 저장소}/msvc/ldk.sn 혹은 {이 저장소}/msvc/ldk.vcxproj를 열어서 빌드를 하시기 바랍니다.
+
+    - CMake 사용
+
+        ```Batch
+        git clone --recursive https://github.com/ntoskrnl7/ldk
+        cd ldk
+        mkdir build && cd build
+        cmake .. -DWDK_WINVER=0x0602
+        cmake --build . --config Release
+        ```
 
 2. 빌드가 완료되었다면 아래 내용을 참고하여 드라이버 프로젝트에 적용하시기 바랍니다.
 
     1. **{이 저장소}/include**를 '**[추가 포함 디렉토리](https://docs.microsoft.com/cpp/build/reference/i-additional-include-directories#to-set-this-compiler-option-in-the-visual-studio-development-environment
     )** 속성'에 추가.
-    2. **빌드된 Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
-    3. **빌드된 Ldk.lib가 존재하는 디렉토리 경로**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
+    2. **Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
+    3. **{이 저장소}/lib/\$(PlatformShortName)/\$(Configuration)**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
 
 ## Test
 

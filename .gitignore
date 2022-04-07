@@ -1,3 +1,6 @@
-.vscode
-test/build
-build
+.vscode/
+.vs/
+
+test/build*/
+build*/
+lib/

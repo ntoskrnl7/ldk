@@ -19,4 +19,11 @@ file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c)
 
 wdk_add_library(Ldk STATIC ${SOURCE_FILES})
 
+string( TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFROM_SHORT_NAME )
+if( PLATFROM_SHORT_NAME STREQUAL "win32" )
+    set(PLATFROM_SHORT_NAME "x86")
+endif()
+
+set_target_properties(Ldk PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib/${PLATFROM_SHORT_NAME})
+
 target_include_directories(Ldk PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)

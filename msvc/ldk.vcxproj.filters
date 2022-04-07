@@ -1,0 +1,126 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="Source Files\ntdll">
+      <UniqueIdentifier>{6e7984c9-1b44-4aca-85c0-26006211aa69}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\nt">
+      <UniqueIdentifier>{ec099143-acba-4a65-b682-0c74a469f508}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\kernel32">
+      <UniqueIdentifier>{9b34fd87-15bf-469a-b478-63e89d55b657}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\ldk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\peb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\teb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\ntdll\ntdll.h">
+      <Filter>Source Files\ntdll</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\nt\ntldr.h">
+      <Filter>Header Files\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\nt\ntpsapi.h">
+      <Filter>Header Files\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\nt\ntrtl.h">
+      <Filter>Header Files\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\nt\zwapi.h">
+      <Filter>Header Files\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\nt\ntexapi.h">
+      <Filter>Header Files\nt</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\kernel32\winbase.h">
+      <Filter>Source Files\kernel32</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\peb.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\subs.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\teb.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ldk.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\cond.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\heap.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\keyedevent.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\ldr.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\ntdll.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\resource.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\srwlock.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\processthreadsapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\profileapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\synchapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\sysinfoapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\winbase.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\debugapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\errhandlingapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\handleapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\kernel32.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\libloaderapi.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>
