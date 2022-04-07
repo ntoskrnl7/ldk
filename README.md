@@ -49,6 +49,8 @@ Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시�
 1. 아래 명령을 수행하여 라이브러리를 빌드하시기 바랍니다.
 
     ```Batch
+    git clone --recursive https://github.com/ntoskrnl7/ldk
+    cd ldk
     mkdir build && cd build
     cmake .. -DWDK_WINVER=0x0602
     cmake --build . --config Release
@@ -58,15 +60,16 @@ Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시�
 
     1. **{이 저장소}/include**를 '**[추가 포함 디렉토리](https://docs.microsoft.com/cpp/build/reference/i-additional-include-directories#to-set-this-compiler-option-in-the-visual-studio-development-environment
     )** 속성'에 추가.
-    1. **빌드된 Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
-    2. **빌드된 Ldk.lib가 존재하는 디렉토리 경로**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
+    2. **빌드된 Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
+    3. **빌드된 Ldk.lib가 존재하는 디렉토리 경로**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
 
 ## Test
 
 1. 아래 명령을 수행하여 라이브러리 및 테스트 코드를 빌드하시기 바랍니다.
 
     ```Batch
-    cd test
+    git clone --recursive https://github.com/ntoskrnl7/ldk
+    cd ldk/test
     mkdir build && cd build
     cmake .. -DWDK_WINVER=0x0602
     cmake --build .
