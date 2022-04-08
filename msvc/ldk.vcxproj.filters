@@ -131,5 +131,8 @@
     <ClCompile Include="..\src\kernel32\threadpoollegacyapiset.c">
       <Filter>Source Files\kernel32</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\kernel32\stringapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

@@ -55,6 +55,7 @@
     <ClCompile Include="..\src\kernel32\libloaderapi.c" />
     <ClCompile Include="..\src\kernel32\processthreadsapi.c" />
     <ClCompile Include="..\src\kernel32\profileapi.c" />
+    <ClCompile Include="..\src\kernel32\stringapiset.c" />
     <ClCompile Include="..\src\kernel32\synchapi.c" />
     <ClCompile Include="..\src\kernel32\sysinfoapi.c" />
     <ClCompile Include="..\src\kernel32\threadpoolapiset.c" />

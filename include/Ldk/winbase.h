@@ -15,6 +15,7 @@
 #include  "utilapiset.h"
 #include "threadpoolapiset.h"
 #include "threadpoollegacyapiset.h"
+#include "stringapiset.h"
 
 EXTERN_C_START
 
