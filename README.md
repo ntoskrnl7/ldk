@@ -10,12 +10,12 @@
 ## Requirements
 
 - Windows 8 이상
-- Visual Studio 2019
+- Visual Studio 2017
 
 ## Test Environments
 
 - Windows 10
-- Visual Studio 2019
+- Visual Studio 2017
 
 ## Contents
 
@@ -104,7 +104,7 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/ldk@0.1.0")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.1.1")
 
 # use FindWDK
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
