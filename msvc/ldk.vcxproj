@@ -34,7 +34,6 @@
       <Platform>ARM64</Platform>
     </ProjectConfiguration>
   </ItemGroup>
-
   <ItemGroup>
     <ClInclude Include="..\src\kernel32\winbase.h" />
     <ClInclude Include="..\src\ntdll\ntdll.h" />
@@ -59,6 +58,7 @@
     <ClCompile Include="..\src\kernel32\synchapi.c" />
     <ClCompile Include="..\src\kernel32\sysinfoapi.c" />
     <ClCompile Include="..\src\kernel32\threadpoolapiset.c" />
+    <ClCompile Include="..\src\kernel32\threadpoollegacyapiset.c" />
     <ClCompile Include="..\src\kernel32\utilapiset.c" />
     <ClCompile Include="..\src\kernel32\winbase.c" />
     <ClCompile Include="..\src\ntdll\cond.c" />
@@ -73,7 +73,6 @@
     <ClCompile Include="..\src\teb.c" />
     <ClCompile Include="..\src\ldk.c" />
   </ItemGroup>
-
   <PropertyGroup Label="Globals">
     <ProjectGuid>{36D0E1F6-044A-4A4F-9320-C609D41EBF9C}</ProjectGuid>
     <TemplateGuid>{0a049372-4c4d-4ea0-a64e-dc6ad88ceca1}</TemplateGuid>
@@ -85,9 +84,7 @@
     <DriverType>KMDF</DriverType>
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
   </PropertyGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-
   <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
     <TargetVersion>Windows10</TargetVersion>
     <UseDebugLibraries>true</UseDebugLibraries>
@@ -104,19 +101,16 @@
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-
   <PropertyGroup>
     <OutDir>$(ProjectDir)..\lib\$(PlatformShortName)\$(Configuration.ToLower())\</OutDir>
     <IntDir>$(ProjectDir).vs\$(PlatformShortName)\$(Configuration.ToLower())\</IntDir>
   </PropertyGroup>
-
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <PreprocessorDefinitions>_DEBUG;WINAPI_FAMILY=WINAPI_FAMILY_DESKTOP_APP;WINAPI_PARTITION_DESKTOP=1;WINAPI_PARTITION_SYSTEM=1;WINAPI_PARTITION_APP=1;WINAPI_PARTITION_PC_APP=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -129,7 +123,6 @@
       <AdditionalIncludeDirectories>$(ProjectDir)\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
-
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

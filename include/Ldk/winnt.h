@@ -66,6 +66,16 @@ VOID
 
 
 
+NTSYSAPI
+PVOID
+NTAPI
+RtlPcToFileHeader(
+    _In_ PVOID PcValue,
+    _Out_ PVOID* BaseOfImage
+    );
+
+
+
 typedef struct _RTL_CRITICAL_SECTION_DEBUG {
     WORD   Type;
     WORD   CreatorBackTraceIndex;
@@ -125,13 +135,17 @@ typedef struct _RTL_CONDITION_VARIABLE {
 
 
 
-NTSYSAPI
-PVOID
-NTAPI
-RtlPcToFileHeader(
-    _In_ PVOID PcValue,
-    _Out_ PVOID* BaseOfImage
-    );
+#define WT_EXECUTEDEFAULT       0x00000000                           
+#define WT_EXECUTEINIOTHREAD    0x00000001                           
+#define WT_EXECUTEINUITHREAD    0x00000002                           
+#define WT_EXECUTEINWAITTHREAD  0x00000004                           
+#define WT_EXECUTEONLYONCE      0x00000008                           
+#define WT_EXECUTEINTIMERTHREAD 0x00000020                           
+#define WT_EXECUTELONGFUNCTION  0x00000010                           
+#define WT_EXECUTEINPERSISTENTIOTHREAD  0x00000040                   
+#define WT_EXECUTEINPERSISTENTTHREAD 0x00000080                      
+#define WT_TRANSFER_IMPERSONATION 0x00000100                         
+#define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16) 
 
 
 

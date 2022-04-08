@@ -3,6 +3,7 @@
 #include "../nt/ntexapi.h"
 
 
+
 WINBASEAPI
 _Check_return_ _Post_equals_last_error_
 DWORD
@@ -24,6 +25,9 @@ SetLastError(
 	NtCurrentTeb()->LastErrorValue = (LONG)dwErrCode;
 }
 
+
+
+#if _LDK_DEFINE_KERNEL32_RAISE_EXCEPTION
 WINBASEAPI
 __analysis_noreturn
 VOID
@@ -58,3 +62,4 @@ RaiseException(
 	}
 	RtlRaiseException(&ExceptionRecord);
 }
+#endif

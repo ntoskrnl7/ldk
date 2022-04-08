@@ -14,6 +14,7 @@
 #include  "libloaderapi.h"
 #include  "utilapiset.h"
 #include "threadpoolapiset.h"
+#include "threadpoollegacyapiset.h"
 
 EXTERN_C_START
 
