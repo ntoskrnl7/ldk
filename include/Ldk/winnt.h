@@ -1,5 +1,7 @@
 #pragma once
 
+#include <ntimage.h>
+
 EXTERN_C_START
 
 #pragma warning(disable:4214)
