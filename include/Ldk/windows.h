@@ -5,6 +5,8 @@
 #include <minwindef.h>
 
 #include "winnt.h"
+#include <windef.h>
+
 #include "minwinbase.h"
 #include <winerror.h>
 
@@ -12,3 +14,5 @@
 #include "winbase.h"
 
 #include "ldk.h"
+
+typedef struct MSG *LPMSG;

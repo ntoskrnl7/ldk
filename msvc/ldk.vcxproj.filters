@@ -122,5 +122,11 @@
     <ClCompile Include="..\src\kernel32\libloaderapi.c">
       <Filter>Source Files\kernel32</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\kernel32\utilapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\threadpoolapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
