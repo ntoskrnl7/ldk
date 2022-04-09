@@ -122,5 +122,20 @@
     <ClCompile Include="..\src\kernel32\libloaderapi.c">
       <Filter>Source Files\kernel32</Filter>
     </ClCompile>
+    <ClCompile Include="..\src\kernel32\utilapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\threadpoolapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\threadpoollegacyapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\kernel32\stringapiset.c">
+      <Filter>Source Files\kernel32</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\ntdll\threads.c">
+      <Filter>Source Files\ntdll</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

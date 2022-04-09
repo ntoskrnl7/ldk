@@ -92,23 +92,13 @@ LdkCurrentTeb (
 	IoGetStackLimits(&LowLimit, &HighLimit);
 	
 	Teb = *(PLDK_TEB *)LowLimit;
-
-	if (Teb) {
-		if (MmIsAddressValid(Teb)) {
-			if (Teb->Thread == PsGetCurrentThread()) {
-				return Teb;
-			}
-		}
-
-		//
-		// 스택에 알수없는 값이 존재한다면, 확인이 필요합니다.
-		//
-
-		KdBreakPoint();
+	if (Teb && MmIsAddressValid(Teb) && Teb->Thread == PsGetCurrentThread()) {
+		return Teb;
 	}
 
 	//
-	// 스택 확장등으로 인해서 TEB를 못얻어올 경우가 존재하기때문에 TebMap에서 TEB를 찾도록 합니다.
+	// KeExpandKernelStackAndCallout/Ex 함수 등을 사용하여 스택 확장등으로 인해서
+	// TEB를 못얻어올 경우가 존재하기때문에 TebMap에서 TEB를 찾도록 합니다.
 	//
 	
 	Teb = LdkLookTebByThread(PsGetCurrentThread());
@@ -234,19 +224,16 @@ LdkpTerminateTeb (
 	}
 
 	if (Teb->FlsSlots) {
-
 		PVOID Data;
 		PFLS_CALLBACK_FUNCTION Callback;
 		PLDK_FLS_SLOT Slot;
 
 		for (DWORD i = 0; i < LDK_FLS_SLOTS_SIZE; i++) {
-
 			Slot = &Teb->FlsSlots[i];
+			Data = InterlockedExchangePointer(&Slot->Data, NULL);
 #pragma warning(disable:4055)
 			Callback = (PFLS_CALLBACK_FUNCTION)InterlockedExchangePointer((PVOID *)&Slot->Callback, NULL);
 #pragma warning(default:4055)
-			Data = InterlockedExchangePointer(&Slot->Data, NULL);
-			
 			if (Callback) {
 				NT_ASSERT(MmIsAddressValid((PVOID)(ULONG_PTR)Callback));
 				Callback(Data);

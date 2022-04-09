@@ -66,3 +66,82 @@ LoadLibraryW(
 {
 	return LoadLibraryExW(lpLibFileName, NULL, 0);
 }
+
+WINBASEAPI
+_Success_(return != 0)
+DWORD
+WINAPI
+FormatMessageA(
+    _In_     DWORD dwFlags,
+    _In_opt_ LPCVOID lpSource,
+    _In_     DWORD dwMessageId,
+    _In_     DWORD dwLanguageId,
+    _When_((dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) != 0, _At_((LPSTR*)lpBuffer, _Outptr_result_z_))
+    _When_((dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) == 0, _Out_writes_z_(nSize))
+             LPSTR lpBuffer,
+    _In_     DWORD nSize,
+    _In_opt_ va_list *Arguments
+    )
+{
+	UNREFERENCED_PARAMETER(dwFlags);
+	UNREFERENCED_PARAMETER(lpSource);
+	UNREFERENCED_PARAMETER(dwMessageId);
+	UNREFERENCED_PARAMETER(dwLanguageId);
+	UNREFERENCED_PARAMETER(lpBuffer);
+	UNREFERENCED_PARAMETER(nSize);
+	UNREFERENCED_PARAMETER(Arguments);
+
+	// TODO
+
+	BaseSetLastNTError(STATUS_NOT_IMPLEMENTED);
+	return 0;
+}
+
+WINBASEAPI
+_Success_(return != 0)
+DWORD
+WINAPI
+FormatMessageW(
+    _In_     DWORD dwFlags,
+    _In_opt_ LPCVOID lpSource,
+    _In_     DWORD dwMessageId,
+    _In_     DWORD dwLanguageId,
+    _When_((dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) != 0, _At_((LPWSTR*)lpBuffer, _Outptr_result_z_))
+    _When_((dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) == 0, _Out_writes_z_(nSize))
+             LPWSTR lpBuffer,
+    _In_     DWORD nSize,
+    _In_opt_ va_list *Arguments
+    )
+{
+	UNREFERENCED_PARAMETER(dwFlags);
+	UNREFERENCED_PARAMETER(lpSource);
+	UNREFERENCED_PARAMETER(dwMessageId);
+	UNREFERENCED_PARAMETER(dwLanguageId);
+	UNREFERENCED_PARAMETER(lpBuffer);
+	UNREFERENCED_PARAMETER(nSize);
+	UNREFERENCED_PARAMETER(Arguments);
+
+	// TODO
+
+	BaseSetLastNTError(STATUS_NOT_IMPLEMENTED);
+	return 0;
+}
+
+
+
+WINBASEAPI
+_Success_(return==0)
+_Ret_maybenull_
+HLOCAL
+WINAPI
+LocalFree(
+    _Frees_ptr_opt_ HLOCAL hMem
+    )
+{
+	UNREFERENCED_PARAMETER(hMem);
+
+	// TODO
+
+	BaseSetLastNTError(STATUS_NOT_IMPLEMENTED);
+	return hMem;
+}

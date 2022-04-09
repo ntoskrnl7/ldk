@@ -2,6 +2,20 @@
 
 #include "../ldk.h"
 
+
+
+NTSTATUS
+LdkpInitializeThreadpoolApiset (
+	VOID
+	);
+
+VOID
+LdkpTerminateThreadpoolApiset (
+	VOID
+	);
+
+
+
 #pragma warning(disable:4152)
 LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
@@ -215,12 +229,13 @@ Kernel32Initialize (
     VOID
     )
 {
-    return STATUS_SUCCESS;
+	return LdkpInitializeThreadpoolApiset();
 }
 
 VOID
-Kernel32Terminate(
+Kernel32Terminate (
     VOID
     )
 {
+	LdkpTerminateThreadpoolApiset();
 }
