@@ -15,14 +15,6 @@ CreateThreadpoolWork(
 WINBASEAPI
 VOID
 WINAPI
-FreeLibraryWhenCallbackReturns(
-    _Inout_ PTP_CALLBACK_INSTANCE pci,
-    _In_ HMODULE mod
-    );
-
-WINBASEAPI
-VOID
-WINAPI
 SubmitThreadpoolWork(
     _Inout_ PTP_WORK pwk
     );
@@ -30,8 +22,24 @@ SubmitThreadpoolWork(
 WINBASEAPI
 VOID
 WINAPI
+WaitForThreadpoolWorkCallbacks(
+    _Inout_ PTP_WORK pwk,
+    _In_ BOOL fCancelPendingCallbacks
+    );
+
+WINBASEAPI
+VOID
+WINAPI
 CloseThreadpoolWork(
     _Inout_ PTP_WORK pwk
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+FreeLibraryWhenCallbackReturns(
+    _Inout_ PTP_CALLBACK_INSTANCE pci,
+    _In_ HMODULE mod
     );
 
 EXTERN_C_END

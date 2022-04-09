@@ -141,4 +141,28 @@ RtlGetProcessHeap(
     VOID
     );
 
+
+
+#define WT_EXECUTEDEFAULT       0x00000000                           // winnt
+#define WT_EXECUTEINIOTHREAD    0x00000001                           // winnt
+#define WT_EXECUTEINUITHREAD    0x00000002                           // winnt
+#define WT_EXECUTEINWAITTHREAD  0x00000004                           // winnt
+#define WT_EXECUTEONLYONCE      0x00000008                           // winnt
+#define WT_EXECUTEINTIMERTHREAD 0x00000020                           // winnt
+#define WT_EXECUTELONGFUNCTION  0x00000010                           // winnt
+#define WT_EXECUTEINPERSISTENTIOTHREAD  0x00000040                   // winnt
+#define WT_EXECUTEINPERSISTENTTHREAD 0x00000080                      // winnt
+#define WT_TRANSFER_IMPERSONATION 0x00000100                         // winnt
+#define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16) // winnt
+
+typedef VOID (NTAPI * WORKERCALLBACKFUNC) (PVOID );                 // winnt
+
+NTSTATUS
+NTAPI
+RtlQueueWorkItem(
+    _In_ WORKERCALLBACKFUNC Function,
+    _In_ PVOID Context,
+    _In_ ULONG Flags
+    );
+
 EXTERN_C_END

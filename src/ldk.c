@@ -413,11 +413,11 @@ LdkpRelocateImage (
 	return STATUS_SUCCESS;
 }
 
-typedef BOOL(WINAPI* PDLL_MAIN)(HMODULE, DWORD, PVOID);
+typedef BOOL(WINAPI* PDLL_MAIN)(HINSTANCE, DWORD, PVOID);
 
 typedef struct _LDK_DLL_ENTRY_POINIT_CONTEXT {
 	PDLL_MAIN EntryPoint;
-	HMODULE Base;
+	HINSTANCE Base;
 	DWORD Reason;
 	PVOID Reserved;
 	BOOL Result;
@@ -431,38 +431,35 @@ LdkpCallEntryPointExpandStackCallout (
     _In_ PLDK_DLL_ENTRY_POINIT_CONTEXT Context
     )
 {
-	 Context->Result = Context->EntryPoint(Context->Base, Context->Reason, Context->Reserved);
+	 Context->Result = Context->EntryPoint( Context->Base,
+	 										Context->Reason,
+											Context->Reserved);
 }
 
 BOOL
 LdkpCallEntryPoint (
-	_In_ HMODULE Base,
+	_In_ HINSTANCE Base,
 	_In_ DWORD Reason,
 	_In_ PVOID Reserved
 	)
 {
-	NTSTATUS Status;
-	LDK_DLL_ENTRY_POINIT_CONTEXT Context;
-	
 	PIMAGE_NT_HEADERS NtHeader = RtlImageNtHeader(Base);
-
 	if (! NtHeader->OptionalHeader.AddressOfEntryPoint) {
 		return FALSE;
 	}
-
+	LDK_DLL_ENTRY_POINIT_CONTEXT Context;
 	Context.EntryPoint = (PDLL_MAIN)((ULONG_PTR)Add2Ptr(Base, NtHeader->OptionalHeader.AddressOfEntryPoint));
 	Context.Base = Base;
 	Context.Reason = Reason;
 	Context.Reserved = Reserved;
 	Context.Result = FALSE;
-
-	Status = KeExpandKernelStackAndCallout(LdkpCallEntryPointExpandStackCallout, &Context, MAXIMUM_EXPANSION_SIZE);
-
-	if (! NT_SUCCESS(Status)) {
-		return Context.EntryPoint(Base, Reason, Reserved);
-	}
-
-	return Context.Result;
+	return NT_SUCCESS(KeExpandKernelStackAndCalloutEx( LdkpCallEntryPointExpandStackCallout,
+													   &Context,
+													   MAXIMUM_EXPANSION_SIZE,
+													   TRUE,
+													   NULL )) ?
+			Context.Result :
+			Context.EntryPoint(Base, Reason, Reserved);
 }
 
 NTSTATUS
@@ -489,38 +486,55 @@ LdkpLoadDll (
 
 	PAGED_CODE();
 
-	InitializeObjectAttributes(&ObjectAttributes, FileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+	InitializeObjectAttributes( &ObjectAttributes, FileName, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL );
 	
-	Status = ZwOpenFile( &FileHandle, FILE_GENERIC_READ, &ObjectAttributes, &IoStatus, FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_NON_DIRECTORY_FILE);
-
+	Status = ZwOpenFile( &FileHandle,
+						 FILE_GENERIC_READ,
+						 &ObjectAttributes,
+						 &IoStatus,
+						 FILE_SHARE_READ | FILE_SHARE_WRITE,
+						 FILE_NON_DIRECTORY_FILE );
 	if (!NT_SUCCESS(Status)) {
 		return Status;
 	}
 
 	try {
 		
-		Status = ZwQueryInformationFile( FileHandle, &IoStatus, &StandardInfo, sizeof(StandardInfo), FileStandardInformation );
-
+		Status = ZwQueryInformationFile( FileHandle,
+										 &IoStatus,
+										 &StandardInfo,
+										 sizeof(StandardInfo),
+										 FileStandardInformation );
 		if (!NT_SUCCESS(Status)) {
 			leave;
 		}
 
-		Buffer = ExAllocatePoolWithTag( PagedPool, StandardInfo.EndOfFile.LowPart, TAG_DLL_POOL );
-
+		Buffer = ExAllocatePoolWithTag( PagedPool,
+										StandardInfo.EndOfFile.LowPart,
+										TAG_DLL_POOL );
 		if (!Buffer) {
 			Status = STATUS_INSUFFICIENT_RESOURCES;
 			leave;
 		}
 
 		ByteOffset.LowPart = ByteOffset.HighPart = 0;
-		Status = ZwReadFile(FileHandle, NULL, NULL, NULL, &IoStatus, Buffer, StandardInfo.EndOfFile.LowPart, &ByteOffset, NULL);
+		Status = ZwReadFile( FileHandle,
+							 NULL,
+							 NULL,
+							 NULL,
+							 &IoStatus,
+							 Buffer,
+							 StandardInfo.EndOfFile.LowPart,
+							 &ByteOffset,
+							 NULL );
 		if (Status == STATUS_PENDING) {
-			Status = ZwWaitForSingleObject(FileHandle, FALSE, NULL);
+			Status = ZwWaitForSingleObject( FileHandle,
+											FALSE,
+											NULL );
 			if (NT_SUCCESS(Status)) {
 				Status = IoStatus.Status;
 			}
 		}
-
 		if (!NT_SUCCESS(Status)) {
 			leave;
 		}
@@ -536,24 +550,50 @@ LdkpLoadDll (
 			Status = STATUS_INVALID_IMAGE_FORMAT;
 			leave;
 		}
-#ifdef _WIN64
-		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) {
-			Status = STATUS_INVALID_IMAGE_WIN_64;
-			leave;
-	}
-#else
-		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_I386) {
+
+#if !defined(__X86_)
+		if (NtHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386) {
 			Status = STATUS_INVALID_IMAGE_WIN_32;
 			leave;
 		}
+#elif !defined(_AMD64_)
+		if (NtHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64) {
+			Status = STATUS_INVALID_IMAGE_WIN_64;
+			leave;
+		}
+#endif
+
+#if defined(__X86_)
+		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_I386) {
+			Status = STATUS_INVALID_IMAGE_FORMAT;
+			leave;
+		}
+#elif defined(_AMD64_)
+		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) {
+			Status = STATUS_INVALID_IMAGE_FORMAT;
+			leave;
+		}
+#elif defined(_ARM_)
+		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_ARM) {
+			Status = STATUS_INVALID_IMAGE_FORMAT;
+			leave;
+		}
+#elif defined(_ARM64_)
+		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_ARM64) {
+			Status = STATUS_INVALID_IMAGE_FORMAT;
+			leave;
+		}
+#else
+#error "Not Supported Target Architecture"
 #endif
 		if (!(NtHeader->FileHeader.Characteristics & IMAGE_FILE_DLL)) {
 			Status = STATUS_INVALID_IMAGE_FORMAT;
 			leave;
 		}
 
-		Base = ExAllocatePoolWithTag( NonPagedPool, NtHeader->OptionalHeader.SizeOfImage, TAG_DLL_POOL );
-
+		Base = ExAllocatePoolWithTag( NonPagedPool,
+									  NtHeader->OptionalHeader.SizeOfImage,
+									  TAG_DLL_POOL );
 		if (! Base) {
 			Status = STATUS_INSUFFICIENT_RESOURCES;
 			leave;
@@ -565,10 +605,9 @@ LdkpLoadDll (
 		SectionHeader = IMAGE_FIRST_SECTION(NtHeader);
 
 		for (ULONG i = 0; i < NtHeader->FileHeader.NumberOfSections; i++) {
-			RtlCopyMemory(
-				Add2Ptr(Base, SectionHeader[i].VirtualAddress),
-				Add2Ptr(Buffer, SectionHeader[i].PointerToRawData),
-				SectionHeader[i].SizeOfRawData );
+			RtlCopyMemory( Add2Ptr(Base, SectionHeader[i].VirtualAddress),
+						   Add2Ptr(Buffer, SectionHeader[i].PointerToRawData),
+						   SectionHeader[i].SizeOfRawData );
 		}
 
 		Status = LdkpRelocateImage(Base);
@@ -590,15 +629,17 @@ LdkpLoadDll (
 	} finally {
 		
 		if (FileHandle) {
-			ZwClose(FileHandle);
+			ZwClose( FileHandle );
 		}
 		if (Buffer) {
-			ExFreePoolWithTag(Buffer, TAG_DLL_POOL);
+			ExFreePoolWithTag( Buffer,
+							   TAG_DLL_POOL );
 		}
 
 		if (! NT_SUCCESS(Status)) {
 			if (Base) {
-				ExFreePoolWithTag(Base, TAG_DLL_POOL);
+				ExFreePoolWithTag( Base,
+								   TAG_DLL_POOL );
 			}
 		}
 	}
@@ -611,7 +652,8 @@ LdkpUnloadDll (
 	_In_ PVOID ImageBase
 	)
 {
-	ExFreePoolWithTag(ImageBase, TAG_DLL_POOL);
+	ExFreePoolWithTag( ImageBase,
+					   TAG_DLL_POOL );
 }
 
 
@@ -792,7 +834,7 @@ LdkUnloadDll (
 	_In_ PVOID DllHandle
 	)
 {
-	LdkpCallEntryPoint((HMODULE)DllHandle, DLL_PROCESS_DETACH, NULL);
+	LdkpCallEntryPoint((HINSTANCE)DllHandle, DLL_PROCESS_DETACH, NULL);
 
 	PLDK_MODULE Module;
 	LdkpAcquireModuleListExclusive();

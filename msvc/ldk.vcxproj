@@ -69,6 +69,7 @@
     <ClCompile Include="..\src\ntdll\ntdll.c" />
     <ClCompile Include="..\src\ntdll\resource.c" />
     <ClCompile Include="..\src\ntdll\srwlock.c" />
+    <ClCompile Include="..\src\ntdll\threads.c" />
     <ClCompile Include="..\src\peb.c" />
     <ClCompile Include="..\src\subs.c" />
     <ClCompile Include="..\src\teb.c" />

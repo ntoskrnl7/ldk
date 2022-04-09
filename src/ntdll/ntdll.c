@@ -57,6 +57,8 @@ LDK_MODULE LdkpNtdllModule = {
 	NULL
 };
 
+
+
 VOID
 RtlpInitializeKeyedEvent(VOID);
 
@@ -69,11 +71,9 @@ RtlpInitDeferedCriticalSection(VOID);
 
 extern LARGE_INTEGER RtlpTimeout;
 
-
 VOID
 NTAPI
 RtlpDeleteDeferedCriticalSection(VOID);
-
 
 
 
@@ -90,6 +90,18 @@ LdkpTerminateKeyedEventList(
 
 
 NTSTATUS
+LdkpInitializeRtlWorkItem (
+    VOID
+    );
+
+VOID
+LdkpTerminateRtlWorkItem (
+    VOID
+    );
+
+
+
+NTSTATUS
 NtdllInitialize (
     VOID
     )
@@ -99,11 +111,18 @@ NtdllInitialize (
     KdBreakPoint();
 
     status = LdkpInitializeKeyedEventList();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = LdkpInitializeRtlWorkItem();
+    if (!NT_SUCCESS(status)) {
+        LdkpTerminateKeyedEventList();
+        return status;
+    }
 
     RtlpInitDeferedCriticalSection();
-
     RtlpTimeout = NtCurrentPeb()->CriticalSectionTimeout;
-
     RtlpInitializeKeyedEvent();
     return STATUS_SUCCESS;
 }
@@ -118,4 +137,6 @@ NtdllTerminate(
     RtlpDeleteDeferedCriticalSection();
 
     LdkpTerminateKeyedEventList();
+
+    LdkpTerminateRtlWorkItem();
 }

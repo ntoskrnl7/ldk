@@ -1,5 +1,7 @@
 ﻿#include "winbase.h"
 
+#include "../ntdll/ntdll.h"
+
 
 
 WINBASEAPI
@@ -11,12 +13,13 @@ QueueUserWorkItem(
     _In_ ULONG Flags
     )
 {
-    UNREFERENCED_PARAMETER(Function);
-    UNREFERENCED_PARAMETER(Context);
-    UNREFERENCED_PARAMETER(Flags);
+    NTSTATUS Status = RtlQueueWorkItem( (WORKERCALLBACKFUNC)Function,
+                                        Context,
+                                        Flags );
+    if (NT_SUCCESS(Status)) {
+        return TRUE;
+    }
 
-	// TODO
-
-	BaseSetLastNTError(STATUS_NOT_IMPLEMENTED);
-	return FALSE;
+    BaseSetLastNTError(Status);
+    return FALSE;
 }
