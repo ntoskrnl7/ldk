@@ -73,7 +73,7 @@ Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시�
 1. 아래 명령을 수행하여 라이브러리 및 테스트 코드를 빌드하시기 바랍니다.
 
     ```Batch
-    git clone --recursive https://github.com/ntoskrnl7/ldk
+    git clone https://github.com/ntoskrnl7/ldk
     cd ldk/test
     mkdir build && cd build
     cmake .. -DWDK_WINVER=0x0602
@@ -91,12 +91,9 @@ CMake를 사용하는것을 권장합니다.
 
 CMake를 사용하신다면 아래와 같이 CMakeLists.txt를 만드시기 바랍니다.
 
-**[FindWDK](https://github.com/SergiusTheBest/FindWDK) 필요**
-
 #### CMakeLists.txt
 
 ```CMake
-
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
 # create project
@@ -104,10 +101,14 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/ldk@0.2.0")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.3.0")
+
+# add dependencies
+CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
 
 # use FindWDK
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
+CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
+list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
 # add driver
@@ -115,7 +116,6 @@ wdk_add_driver(TestDrv CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
 
 # link dependencies
 target_link_libraries(TestDrv Ldk)
-
 ```
 
 ### main.c
