@@ -5,7 +5,8 @@ project(LdkTest LANGUAGES C)
 include(../cmake/CPM.cmake)
 CPMAddPackage(NAME Ldk SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../FindWDK/cmake")
+CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
+list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")

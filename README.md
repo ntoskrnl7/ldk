@@ -54,7 +54,7 @@ Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시�
     - CMake 사용
 
         ```Batch
-        git clone --recursive https://github.com/ntoskrnl7/ldk
+        git clone https://github.com/ntoskrnl7/ldk
         cd ldk
         mkdir build && cd build
         cmake .. -DWDK_WINVER=0x0602
