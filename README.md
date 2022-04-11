@@ -104,7 +104,7 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/ldk@0.1.1")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.2.0")
 
 # use FindWDK
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
