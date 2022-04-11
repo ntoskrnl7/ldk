@@ -3,13 +3,18 @@
 #include "teb.h"
 
 
+
+//
+// ntdll/ldr.c
+//
+
 extern BOOLEAN LdrpInLdrInit;
 extern BOOLEAN LdrpShutdownInProgress;
 extern HANDLE LdrpShutdownThreadId;
 
 
 
-ULONG LdkpGlobalFlags = 0;
+ULONG LdkGlobalFlags = 0;
 
 
 
@@ -19,7 +24,7 @@ NtdllInitialize (
     );
 
 VOID
-NtdllTerminate(
+NtdllTerminate (
     VOID
     );
 
@@ -29,22 +34,27 @@ Kernel32Initialize (
     );
 
 VOID
-Kernel32Terminate(
+Kernel32Terminate (
     VOID
     );
 
+
+
 NTSTATUS
-LdkInitialize(
+LdkInitialize (
 	_In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath,
 	_In_ ULONG Flags
 	)
 {
+	LdkLockGlobalFlags();
+
 	if (FlagOn(Flags, LDK_FLAG_SAFE_MODE)) {
-		SetFlag(LdkpGlobalFlags, LDK_FLAG_SAFE_MODE);
+		SetFlag(LdkGlobalFlags, LDK_FLAG_SAFE_MODE);
 	}
 
 	if (LDK_IS_INITIALIZED) {
+		LdkUnlockGlobalFlags();
 		return STATUS_ALREADY_COMPLETE;
 	}
 
@@ -52,22 +62,20 @@ LdkInitialize(
 
 	NTSTATUS status = LdkInitializePeb(DriverObject, RegistryPath);
 	if (!NT_SUCCESS(status)) {
-		return status;
+		goto Cleanup;
 	}
 
 	status = LdkInitializeTebMap();
 	if (!NT_SUCCESS(status)) {
 		LdkTerminatePeb();
-		LdrpInLdrInit = FALSE;
-		return status;
+		goto Cleanup;
 	}
 
 	status = NtdllInitialize();
 	if (!NT_SUCCESS(status)) {
 		LdkTerminateTebMap();
 		LdkTerminatePeb();
-		LdrpInLdrInit = FALSE;
-		return status;
+		goto Cleanup;
 	}
 
 	status = Kernel32Initialize();
@@ -75,24 +83,30 @@ LdkInitialize(
 		NtdllTerminate();
 		LdkTerminateTebMap();
 		LdkTerminatePeb();
-		LdrpInLdrInit = FALSE;
-		return status;
+		goto Cleanup;
 	}
 
 	if (NT_SUCCESS(status)) {
-		SetFlag(LdkpGlobalFlags, LDK_FLAG_INITIALIZED);
+		SetFlag(LdkGlobalFlags, LDK_FLAG_INITIALIZED);
 	}
 
+Cleanup:
 	LdrpInLdrInit = FALSE;
+	LdkUnlockGlobalFlags();
 	return status;
 }
 
 VOID
-LdkTerminate(
+LdkTerminate (
 	VOID
 	)
 {
-	if (!LDK_IS_INITIALIZED) return;
+	LdkLockGlobalFlags();
+
+	if (! LDK_IS_INITIALIZED) {
+		LdkUnlockGlobalFlags();
+		return;
+	}
 
 	LdrpShutdownInProgress = TRUE;
 	LdrpShutdownThreadId = PsGetCurrentThreadId();
@@ -102,6 +116,10 @@ LdkTerminate(
 
 	LdkTerminatePeb();
 	LdkTerminateTebMap();
+
+	ClearFlag(LdkGlobalFlags, LDK_FLAG_INITIALIZED);
+
+	LdkUnlockGlobalFlags();
 }
 
 
