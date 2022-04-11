@@ -5,10 +5,35 @@ EXTERN_C_START
 #define LDK_FLAG_SAFE_MODE				0x00000001
 #define LDK_FLAG_VALID_MASK				0x0FFFFFFF
 
+#define LDK_FLAG_LOCKED_BIT_INDEX		28
+#define LDK_FLAG_LOCKED					(1 << LDK_FLAG_LOCKED_BIT_INDEX)
 #define LDK_FLAG_INITIALIZED			0x80000000
 
-#define LDK_IS_INITIALIZED				FlagOn(LdkpGlobalFlags, LDK_FLAG_INITIALIZED)
-#define LDK_IS_SAFE_MODE				FlagOn(LdkpGlobalFlags, LDK_FLAG_SAFE_MODE)
+#define LDK_IS_INITIALIZED				FlagOn(LdkGlobalFlags, LDK_FLAG_INITIALIZED)
+#define LDK_IS_SAFE_MODE				FlagOn(LdkGlobalFlags, LDK_FLAG_SAFE_MODE)
+
+extern ULONG LdkGlobalFlags;
+
+FORCEINLINE
+VOID
+LdkLockGlobalFlags (
+	VOID
+	)
+{
+	while (InterlockedBitTestAndSet((PLONG)&LdkGlobalFlags, LDK_FLAG_LOCKED_BIT_INDEX)) {
+		YieldProcessor();
+	}
+}
+FORCEINLINE
+VOID
+LdkUnlockGlobalFlags (
+	VOID
+	)
+{
+	InterlockedBitTestAndReset((PLONG)&LdkGlobalFlags, LDK_FLAG_LOCKED_BIT_INDEX);
+}
+
+
 
 NTSTATUS
 LdkInitialize(
@@ -21,6 +46,8 @@ VOID
 LdkTerminate(
 	VOID
 	);
+
+
 
 typedef struct _LDK_TEB * PLDK_TEB;
 typedef struct _LDK_PEB* PLDK_PEB;

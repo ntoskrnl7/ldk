@@ -57,8 +57,6 @@ DriverEntry (
     _In_ PUNICODE_STRING RegistryPath
     )
 {
-    PAGED_CODE();
-
     PLDK_TEST_ROUTINE Tests[] = {
         LegacyThreadPoolTest,
         ThreadPoolTest,
@@ -69,10 +67,9 @@ DriverEntry (
         NULL
     };
 
-    NTSTATUS status = LdkInitialize(DriverObject, RegistryPath, 0);
-    if (!NT_SUCCESS(status)) {
-        return status;
-    }
+    PAGED_CODE();
+
+    UNREFERENCED_PARAMETER(RegistryPath);
 
     for (PLDK_TEST_ROUTINE *test = Tests; *test; test++) {
         if (!(*test)()) {
@@ -87,11 +84,9 @@ DriverEntry (
 
 VOID
 DriverUnload (
-    _In_ PDRIVER_OBJECT driverObject
+    _In_ PDRIVER_OBJECT DriverObject
     )
 {
     PAGED_CODE();
-
-    UNREFERENCED_PARAMETER(driverObject);
-    LdkTerminate();
+    UNREFERENCED_PARAMETER(DriverObject);
 }

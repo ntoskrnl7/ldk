@@ -111,7 +111,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/FindWDK/cmake")
 find_package(WDK REQUIRED)
 
 # add driver
-wdk_add_driver(TestDrv main.c)
+wdk_add_driver(TestDrv CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
 
 # link dependencies
 target_link_libraries(TestDrv Ldk)
@@ -120,9 +120,21 @@ target_link_libraries(TestDrv Ldk)
 
 ### main.c
 
-Condition variable을 사용하는 간단한 샘플 코드입니다.
+Condition Variable을 사용하는 간단한 샘플 코드입니다.
 
-***드라이버가 시작될 때는 dkInitialize 함수를 반드시 호출해야하며, 드라이버 언로드 전에는 LdkTerminate 함수를 반드시 호출해야합니다.***
+- 아래와 같이 진입점을 LdkDriverEntry로 설정한다면 LdkInitialize와 LdkTerminate를 호출할 필요가 없습니다. **(권장)**
+
+    ```CMake
+    wdk_add_driver(TestDrv CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
+    ```
+
+- 만약 아래와 같이 진입점을 설정하지 않았다면 드라이버가 시작될 때는 LdkInitialize 함수를 반드시 호출해야하며, 드라이버 언로드 전에는 LdkTerminate 함수를 반드시 호출해야합니다.
+
+    ```CMake
+    wdk_add_driver(TestDrv main.c)
+    ```
+
+아래는 LdkDriverEntry를 진입점으로 설정한 프로젝트의 예제 코드입니다.
 
 ```C
 #include <Ldk/Windows.h>
@@ -172,11 +184,7 @@ DriverEntry (
     )
 {
     PAGED_CODE();
-
-    NTSTATUS status = LdkInitialize(DriverObject, RegistryPath, 0);
-    if (!NT_SUCCESS(status)) {
-        return status;
-    }
+    UNREFERENCED_PARAMETER(RegistryPath);
 
     COND_TEST_THREAD_PARAM param;
     param.name = "Test";
@@ -220,9 +228,7 @@ DriverUnload (
     )
 {
     PAGED_CODE();
-
     UNREFERENCED_PARAMETER(driverObject);
-    LdkTerminate();
 }
 ```
 
