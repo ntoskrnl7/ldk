@@ -16,6 +16,7 @@
 #include "threadpoolapiset.h"
 #include "threadpoollegacyapiset.h"
 #include "stringapiset.h"
+#include "fibersapi.h"
 
 EXTERN_C_START
 
