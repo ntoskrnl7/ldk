@@ -11,6 +11,14 @@ ZwYieldExecution(
 
 
 
+_IRQL_requires_max_(DISPATCH_LEVEL)
+NTSYSAPI
+NTSTATUS
+NTAPI
+ZwClearEvent (
+    _In_ HANDLE EventHandle
+    );
+
 _IRQL_requires_max_(PASSIVE_LEVEL)
 NTSYSAPI
 NTSTATUS
