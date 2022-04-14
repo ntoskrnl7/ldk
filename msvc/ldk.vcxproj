@@ -35,45 +35,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\kernel32\winbase.h" />
-    <ClInclude Include="..\src\ntdll\ntdll.h" />
-    <ClInclude Include="..\src\nt\ntexapi.h" />
-    <ClInclude Include="..\src\nt\ntldr.h" />
-    <ClInclude Include="..\src\nt\ntpsapi.h" />
-    <ClInclude Include="..\src\nt\ntrtl.h" />
-    <ClInclude Include="..\src\nt\zwapi.h" />
-    <ClInclude Include="..\src\internal.h" />
-    <ClInclude Include="..\src\peb.h" />
-    <ClInclude Include="..\src\teb.h" />
-    <ClInclude Include="..\src\ldk.h" />
+    <ClInclude Include="..\src\kernel32\*.h" />
+    <ClInclude Include="..\src\ntdll\*.h" />
+    <ClInclude Include="..\src\nt\*.h" />
+    <ClInclude Include="..\src\*.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\kernel32\debugapi.c" />
-    <ClCompile Include="..\src\kernel32\errhandlingapi.c" />
-    <ClCompile Include="..\src\kernel32\handleapi.c" />
-    <ClCompile Include="..\src\kernel32\kernel32.c" />
-    <ClCompile Include="..\src\kernel32\libloaderapi.c" />
-    <ClCompile Include="..\src\kernel32\processthreadsapi.c" />
-    <ClCompile Include="..\src\kernel32\profileapi.c" />
-    <ClCompile Include="..\src\kernel32\stringapiset.c" />
-    <ClCompile Include="..\src\kernel32\synchapi.c" />
-    <ClCompile Include="..\src\kernel32\sysinfoapi.c" />
-    <ClCompile Include="..\src\kernel32\threadpoolapiset.c" />
-    <ClCompile Include="..\src\kernel32\threadpoollegacyapiset.c" />
-    <ClCompile Include="..\src\kernel32\utilapiset.c" />
-    <ClCompile Include="..\src\kernel32\winbase.c" />
-    <ClCompile Include="..\src\ntdll\cond.c" />
-    <ClCompile Include="..\src\ntdll\heap.c" />
-    <ClCompile Include="..\src\ntdll\keyedevent.c" />
-    <ClCompile Include="..\src\ntdll\ldr.c" />
-    <ClCompile Include="..\src\ntdll\ntdll.c" />
-    <ClCompile Include="..\src\ntdll\resource.c" />
-    <ClCompile Include="..\src\ntdll\srwlock.c" />
-    <ClCompile Include="..\src\ntdll\threads.c" />
-    <ClCompile Include="..\src\peb.c" />
-    <ClCompile Include="..\src\subs.c" />
-    <ClCompile Include="..\src\teb.c" />
-    <ClCompile Include="..\src\ldk.c" />
+    <ClCompile Include="..\src\kernel32\*.c" />
+    <ClCompile Include="..\src\ntdll\*.c" />
+    <ClCompile Include="..\src\*.c" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{36D0E1F6-044A-4A4F-9320-C609D41EBF9C}</ProjectGuid>
