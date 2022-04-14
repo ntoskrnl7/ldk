@@ -2,6 +2,65 @@
 
 EXTERN_C_START
 
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateEventA(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
+    _In_ BOOL bManualReset,
+    _In_ BOOL bInitialState,
+    _In_opt_ LPCSTR lpName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateEventW(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
+    _In_ BOOL bManualReset,
+    _In_ BOOL bInitialState,
+    _In_opt_ LPCWSTR lpName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenEventA(
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCSTR lpName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenEventW(
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCWSTR lpName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetEvent(
+    _In_ HANDLE hEvent
+    );
+
+
+WINBASEAPI
+BOOL
+WINAPI
+ResetEvent(
+    _In_ HANDLE hEvent
+    );
+
+
+
 //
 // Define the slim R/W lock.
 //

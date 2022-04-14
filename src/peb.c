@@ -76,6 +76,9 @@ LdkInitializePeb (
 	
 	CurrentPeb.CriticalSectionTimeout.QuadPart = Int32x32To64(2592000, -10000000);
 
+	RtlInitializeBitMap(&CurrentPeb.TlsBitmap, &CurrentPeb.TlsBitmapBits[0], LDK_TLS_SLOTS_SIZE);
+	RtlInitializeBitMap(&CurrentPeb.FlsBitmap, &CurrentPeb.FlsBitmapBits[0], LDK_FLS_SLOTS_SIZE);
+
 	LdkPebInitialized = NT_SUCCESS(status);
 	return status;
 }

@@ -9,6 +9,7 @@
 #include "ntdll/ntldr.h"
 #include "ntdll/nturtl.h"
 #include "ntdll/ntexapi.h"
+#include "ntdll/ntrtl.h"
 
 EXTERN_C_START
 
