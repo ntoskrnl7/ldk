@@ -12,8 +12,8 @@ CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /GS-")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /GS-")
 
 add_definitions(-D_KERNEL32_)
 

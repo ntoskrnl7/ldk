@@ -16,6 +16,7 @@
 #include "threadpoolapiset.h"
 #include "threadpoollegacyapiset.h"
 #include "stringapiset.h"
+#include "fibersapi.h"
 
 EXTERN_C_START
 
@@ -49,6 +50,15 @@ HMODULE
 WINAPI
 LoadLibraryW(
     _In_ LPCWSTR lpLibFileName
+    );
+
+
+
+WINBASEAPI
+BOOL
+WINAPI
+PulseEvent(
+    _In_ HANDLE hEvent
     );
 
 

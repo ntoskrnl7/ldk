@@ -1,5 +1,10 @@
 ﻿#include "winbase.h"
 #include "../ldk.h"
+#include "../nt/zwapi.h"
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, PulseEvent)
+#endif
 
 ULONG
 BaseSetLastNTError (
@@ -28,6 +33,25 @@ BaseFormatTimeout(
 	Timeout->QuadPart = UInt32x32To64(Milliseconds, 10000);
 	Timeout->QuadPart *= -1;
 	return Timeout;
+}
+
+
+
+WINBASEAPI
+BOOL
+WINAPI
+PulseEvent(
+    _In_ HANDLE hEvent
+    )
+{
+	PAGED_CODE();
+
+    NTSTATUS Status = ZwPulseEvent( hEvent, NULL );
+    if ( NT_SUCCESS(Status) ) {
+        return TRUE;
+    }
+    BaseSetLastNTError(Status);
+    return FALSE;
 }
 
 
