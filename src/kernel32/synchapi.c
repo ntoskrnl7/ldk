@@ -3,6 +3,202 @@
 #include "../ntdll/ntdll.h"
 #include "../nt/zwapi.h"
 
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, CreateEventA)
+#pragma alloc_text(PAGE, CreateEventW)
+#pragma alloc_text(PAGE, OpenEventA)
+#pragma alloc_text(PAGE, OpenEventA)
+#pragma alloc_text(PAGE, SetEvent)
+#pragma alloc_text(PAGE, ResetEvent)
+#endif
+
+
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateEventA(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
+    _In_ BOOL bManualReset,
+    _In_ BOOL bInitialState,
+    _In_opt_ LPCSTR lpName
+    )
+{
+    PAGED_CODE();
+
+	HANDLE handle;
+	ANSI_STRING name;
+	UNICODE_STRING nameW;
+
+	RtlInitString(&name, lpName);
+	NTSTATUS status = LdkAnsiStringToUnicodeString( &nameW,
+                                                    &name,
+                                                    TRUE );
+	if (!NT_SUCCESS(status)) {
+		return NULL;
+	}
+
+	handle = CreateEventW( lpEventAttributes,
+                           bManualReset,
+                           bInitialState,
+                           nameW.Buffer );
+
+	LdkFreeUnicodeString( &nameW );
+	return handle;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateEventW(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
+    _In_ BOOL bManualReset,
+    _In_ BOOL bInitialState,
+    _In_opt_ LPCWSTR lpName
+    )
+{
+    PAGED_CODE();
+
+    NTSTATUS status;
+    OBJECT_ATTRIBUTES objectAttributes;
+    HANDLE handle;
+    UNICODE_STRING name;
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        RtlInitUnicodeString(&name,lpName);
+        InitializeObjectAttributes(&objectAttributes, &name, OBJ_KERNEL_HANDLE, NULL, lpEventAttributes);
+    } else {
+        InitializeObjectAttributes(&objectAttributes, &name, OBJ_KERNEL_HANDLE, NULL, lpEventAttributes);
+    }
+
+    status = ZwCreateEvent( &handle,
+                            EVENT_ALL_ACCESS,
+                            &objectAttributes,
+                            bManualReset ? NotificationEvent : SynchronizationEvent,
+                            (BOOLEAN)bInitialState );
+
+    if (NT_SUCCESS(status)) {
+        if (status == STATUS_OBJECT_NAME_EXISTS) {
+            SetLastError(ERROR_ALREADY_EXISTS);
+        } else {
+            SetLastError(ERROR_SUCCESS);
+        }
+        return handle;
+    } else {
+        BaseSetLastNTError(status);
+        return NULL;
+    }
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenEventA(
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCSTR lpName
+    )
+{
+    PAGED_CODE();
+
+	HANDLE handle;
+	ANSI_STRING name;
+	UNICODE_STRING nameW;
+
+	RtlInitString(&name, lpName);
+	NTSTATUS status = LdkAnsiStringToUnicodeString( &nameW,
+                                                    &name,
+                                                    TRUE );
+	if (!NT_SUCCESS(status)) {
+		return NULL;
+	}
+
+	handle = OpenEventW( dwDesiredAccess,
+                         bInheritHandle,
+                         nameW.Buffer );
+
+	LdkFreeUnicodeString( &nameW );
+	return handle;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenEventW(
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCWSTR lpName
+    )
+{
+    PAGED_CODE();
+
+    NTSTATUS status;
+    OBJECT_ATTRIBUTES objectAttributes;
+    HANDLE handle;
+    UNICODE_STRING name;
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        RtlInitUnicodeString(&name,lpName);
+        InitializeObjectAttributes(&objectAttributes, &name, ((bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE), NULL, NULL);
+    } else {
+        InitializeObjectAttributes(&objectAttributes, &name, ((bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE), NULL, NULL);
+    }
+
+    status = ZwOpenEvent( &handle,
+                          dwDesiredAccess,
+                          &objectAttributes );
+
+    if (NT_SUCCESS(status)) {
+        return handle;
+    }
+
+    BaseSetLastNTError(status);
+    return NULL;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetEvent(
+    _In_ HANDLE hEvent
+    )
+{
+    PAGED_CODE();
+
+    NTSTATUS status = ZwSetEvent( hEvent, NULL );
+    if ( NT_SUCCESS(status) ) {
+        return TRUE;
+    }
+    BaseSetLastNTError(status);
+    return FALSE;
+}
+
+
+WINBASEAPI
+BOOL
+WINAPI
+ResetEvent(
+    _In_ HANDLE hEvent
+    )
+{
+    PAGED_CODE();
+
+    NTSTATUS status = ZwClearEvent( hEvent );
+    if ( NT_SUCCESS(status) ) {
+        return TRUE;
+    }
+    BaseSetLastNTError(status);
+    return FALSE;
+}
+
+
+
 #if (_WIN32_WINNT >= 0x0600)
 
 WINBASEAPI

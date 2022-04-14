@@ -569,7 +569,7 @@ LdkpLoadDll (
 			leave;
 		}
 
-#if !defined(__X86_)
+#if !defined(_X86_)
 		if (NtHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386) {
 			Status = STATUS_INVALID_IMAGE_WIN_32;
 			leave;
@@ -581,7 +581,7 @@ LdkpLoadDll (
 		}
 #endif
 
-#if defined(__X86_)
+#if defined(_X86_)
 		if (NtHeader->FileHeader.Machine != IMAGE_FILE_MACHINE_I386) {
 			Status = STATUS_INVALID_IMAGE_FORMAT;
 			leave;

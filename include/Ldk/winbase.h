@@ -54,6 +54,15 @@ LoadLibraryW(
 
 
 
+WINBASEAPI
+BOOL
+WINAPI
+PulseEvent(
+    _In_ HANDLE hEvent
+    );
+
+
+
 #define FORMAT_MESSAGE_ALLOCATE_BUFFER 0x00000100
 
 WINBASEAPI
