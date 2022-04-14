@@ -12,13 +12,6 @@ EXTERN_C_START
 #define LDK_IS_INITIALIZED				FlagOn(LdkGlobalFlags, LDK_FLAG_INITIALIZED)
 #define LDK_IS_SAFE_MODE				FlagOn(LdkGlobalFlags, LDK_FLAG_SAFE_MODE)
 
-#ifdef _X86_
- //LINK : error LNK2001: unresolved external symbol _LdkDriverEntry 
-
-extern DRIVER_INITIALIZE LdkDriverEntry;
-DECLSPEC_SELECTANY PDRIVER_INITIALIZE LdkpDriverEntryPtr = LdkDriverEntry;
-#endif
-
 extern ULONG LdkGlobalFlags;
 
 FORCEINLINE
