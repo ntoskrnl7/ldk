@@ -17,7 +17,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /GS-")
 
 add_definitions(-D_KERNEL32_)
 
-file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c)
+file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c ./src/ntdll/rtl/*.c)
 
 wdk_add_library(Ldk STATIC ${SOURCE_FILES})
 

@@ -5,6 +5,9 @@ project(LdkTest LANGUAGES C)
 include(../cmake/CPM.cmake)
 CPMAddPackage(NAME Ldk SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
+target_compile_definitions(Ldk PUBLIC -D_LDK_DEFINE_RAISE_EXCEPTION)
+target_compile_definitions(Ldk PUBLIC -D_LDK_DEFINE_RTL_RAISE_EXCEPTION)
+
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)

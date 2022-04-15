@@ -13,12 +13,20 @@
 
 EXTERN_C_START
 
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+VOID
+NTAPI
+RtlRaiseException(
+    _In_ PEXCEPTION_RECORD ExceptionRecord
+    );
+#else
 NTSYSAPI
 VOID
 NTAPI
 RtlRaiseException(
     _In_ PEXCEPTION_RECORD ExceptionRecord
     );
+#endif
 
 #define RtlRaiseStatus          ExRaiseStatus
 
