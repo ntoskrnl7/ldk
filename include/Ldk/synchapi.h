@@ -224,13 +224,39 @@ BOOL
     );
 
 WINBASEAPI
+VOID
+WINAPI
+InitOnceInitialize(
+    _Out_ PINIT_ONCE InitOnce
+    );
+
+WINBASEAPI
 BOOL
 WINAPI
 InitOnceExecuteOnce(
     _Inout_ PINIT_ONCE InitOnce,
     _In_ __callback PINIT_ONCE_FN InitFn,
     _Inout_opt_ PVOID Parameter,
-    _Outptr_opt_result_maybenull_ LPVOID * Context
+    _Outptr_opt_result_maybenull_ LPVOID* Context
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+InitOnceBeginInitialize(
+    _Inout_ LPINIT_ONCE lpInitOnce,
+    _In_ DWORD dwFlags,
+    _Out_ PBOOL fPending,
+    _Outptr_opt_result_maybenull_ LPVOID* lpContext
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+InitOnceComplete(
+    _Inout_ LPINIT_ONCE lpInitOnce,
+    _In_ DWORD dwFlags,
+    _In_opt_ LPVOID lpContext
     );
 
 
