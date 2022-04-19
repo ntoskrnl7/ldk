@@ -60,55 +60,64 @@ LDK_MODULE LdkpNtdllModule = {
 
 
 VOID
-RtlpInitializeKeyedEvent(VOID);
+RtlpInitializeKeyedEvent(
+    VOID
+    );
 
 VOID
-RtlpCloseKeyedEvent(VOID);
+RtlpCloseKeyedEvent(
+    VOID
+    );
 
 VOID
 NTAPI
-RtlpInitDeferedCriticalSection(VOID);
+RtlpInitDeferedCriticalSection(
+    VOID
+    );
 
 extern LARGE_INTEGER RtlpTimeout;
 
 VOID
 NTAPI
-RtlpDeleteDeferedCriticalSection(VOID);
+RtlpDeleteDeferedCriticalSection(
+    VOID
+    );
+
+
+
+LDK_INITIALIZE_COMPONENT LdkpInitializeKeyedEventList;
+LDK_TERMINATE_COMPONENT LdkpTerminateKeyedEventList;
+
+LDK_INITIALIZE_COMPONENT LdkpInitializeRtlWorkItem;
+LDK_TERMINATE_COMPONENT LdkpTerminateRtlWorkItem;
+
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+LDK_INITIALIZE_COMPONENT LdkpInitializeDispatchExceptionStackVariables;
+LDK_TERMINATE_COMPONENT LdkpTerminateDispatchExceptionStackVariables;
+#endif
+
+
+
+LDK_INITIALIZE_COMPONENT LdkpNtdllInitialize;
+LDK_TERMINATE_COMPONENT LdkpNtdllTerminate;
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpNtdllInitialize)
+#pragma alloc_text(PAGE, LdkpNtdllTerminate)
+#endif
 
 
 
 NTSTATUS
-LdkpInitializeKeyedEventList(
-    VOID
-    );
-
-VOID
-LdkpTerminateKeyedEventList(
-    VOID
-    );
-
-
-
-NTSTATUS
-LdkpInitializeRtlWorkItem (
-    VOID
-    );
-
-VOID
-LdkpTerminateRtlWorkItem (
-    VOID
-    );
-
-
-
-NTSTATUS
-NtdllInitialize (
+LdkpNtdllInitialize (
     VOID
     )
 {
     NTSTATUS status;
 
-    KdBreakPoint();
+    PAGED_CODE();
 
     status = LdkpInitializeKeyedEventList();
     if (!NT_SUCCESS(status)) {
@@ -121,14 +130,24 @@ NtdllInitialize (
         return status;
     }
 
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+	status = LdkpInitializeDispatchExceptionStackVariables();
+	if (!NT_SUCCESS(status)) {
+		LdkpTerminateRtlWorkItem();
+		LdkpTerminateKeyedEventList();
+		return status;
+	}
+#endif
+
     RtlpInitDeferedCriticalSection();
     RtlpTimeout = NtCurrentPeb()->CriticalSectionTimeout;
+
     RtlpInitializeKeyedEvent();
     return STATUS_SUCCESS;
 }
 
 VOID
-NtdllTerminate(
+LdkpNtdllTerminate(
     VOID
     )
 {
@@ -136,7 +155,11 @@ NtdllTerminate(
 
     RtlpDeleteDeferedCriticalSection();
 
-    LdkpTerminateKeyedEventList();
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+	LdkpTerminateDispatchExceptionStackVariables();
+#endif
 
     LdkpTerminateRtlWorkItem();
+
+	LdkpTerminateKeyedEventList();
 }

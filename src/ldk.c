@@ -18,25 +18,18 @@ ULONG LdkGlobalFlags = 0;
 
 
 
-NTSTATUS
-NtdllInitialize (
-    VOID
-    );
+LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
+LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
 
-VOID
-NtdllTerminate (
-    VOID
-    );
+LDK_INITIALIZE_COMPONENT LdkpNtdllInitialize;
+LDK_TERMINATE_COMPONENT LdkpNtdllTerminate;
 
-NTSTATUS
-Kernel32Initialize (
-    VOID
-    );
 
-VOID
-Kernel32Terminate (
-    VOID
-    );
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkInitialize)
+#pragma alloc_text(PAGE, LdkTerminate)
+#endif
 
 
 
@@ -47,6 +40,8 @@ LdkInitialize (
 	_In_ ULONG Flags
 	)
 {
+	PAGED_CODE();
+
 	LdkLockGlobalFlags();
 
 	if (FlagOn(Flags, LDK_FLAG_SAFE_MODE)) {
@@ -60,29 +55,29 @@ LdkInitialize (
 
 	LdrpInLdrInit = TRUE;
 
-	NTSTATUS status = LdkInitializePeb(DriverObject, RegistryPath);
+	NTSTATUS status = LdkpInitializePeb(DriverObject, RegistryPath);
 	if (!NT_SUCCESS(status)) {
 		goto Cleanup;
 	}
 
-	status = LdkInitializeTebMap();
+	status = LdkpInitializeTebMap();
 	if (!NT_SUCCESS(status)) {
-		LdkTerminatePeb();
+		LdkpTerminatePeb();
 		goto Cleanup;
 	}
 
-	status = NtdllInitialize();
+	status = LdkpNtdllInitialize();
 	if (!NT_SUCCESS(status)) {
-		LdkTerminateTebMap();
-		LdkTerminatePeb();
+		LdkpTerminateTebMap();
+		LdkpTerminatePeb();
 		goto Cleanup;
 	}
 
-	status = Kernel32Initialize();
+	status = LdkpKernel32Initialize();
 	if (!NT_SUCCESS(status)) {
-		NtdllTerminate();
-		LdkTerminateTebMap();
-		LdkTerminatePeb();
+		LdkpNtdllTerminate();
+		LdkpTerminateTebMap();
+		LdkpTerminatePeb();
 		goto Cleanup;
 	}
 
@@ -101,6 +96,8 @@ LdkTerminate (
 	VOID
 	)
 {
+	PAGED_CODE();
+
 	LdkLockGlobalFlags();
 
 	if (! LDK_IS_INITIALIZED) {
@@ -111,11 +108,11 @@ LdkTerminate (
 	LdrpShutdownInProgress = TRUE;
 	LdrpShutdownThreadId = PsGetCurrentThreadId();
 
-	Kernel32Terminate();
-	NtdllTerminate();
+	LdkpKernel32Terminate();
+	LdkpNtdllTerminate();
 
-	LdkTerminatePeb();
-	LdkTerminateTebMap();
+	LdkpTerminatePeb();
+	LdkpTerminateTebMap();
 
 	ClearFlag(LdkGlobalFlags, LDK_FLAG_INITIALIZED);
 

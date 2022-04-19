@@ -38,18 +38,21 @@ typedef struct _LDK_TEB {
 
 } LDK_TEB, *PLDK_TEB;
 
+
+
 PLDK_TEB
 LdkCurrentTeb (
 	VOID
 	);
 
+
+
 NTSTATUS
-LdkInitializeTebMap (
+LdkpInitializeTebMap (
 	VOID
 	);
 
 VOID
-LdkTerminateTebMap (
+LdkpTerminateTebMap (
 	VOID
 	);
-

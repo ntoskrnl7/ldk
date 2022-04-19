@@ -4,12 +4,6 @@
 #include <Ldk/winnt.h>
 
 #if _LDK_DEFINE_RTL_RAISE_EXCEPTION
-#if (defined(_M_X64) || defined(_M_ARM) || defined(_M_ARM64)) && !defined(_CHPE_X86_ARM64_EH_)
-#define STACK_MISALIGNMENT ((1 << 3) - 1)
-#else
-#define STACK_MISALIGNMENT 3
-#endif
-
 NTKERNELAPI
 VOID
 NTAPI
@@ -17,45 +11,38 @@ ExRaiseException (
     _In_ PEXCEPTION_RECORD ExceptionRecord
     );
 
+
+
+LDK_INITIALIZE_COMPONENT LdkpInitializeDispatchExceptionStackVariables;
+LDK_TERMINATE_COMPONENT LdkpTerminateDispatchExceptionStackVariables;
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeDispatchExceptionStackVariables)
+#pragma alloc_text(PAGE, LdkpTerminateDispatchExceptionStackVariables)
+#endif
+
+
+
+NPAGED_LOOKASIDE_LIST LdkpDispatchExceptionStackVariablesLookaside;
+
+VOID
+LdkpTerminateDispatchExceptionStackVariables (
+	VOID
+	)
+{
+    PAGED_CODE();
+	ExDeleteNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside );
+}
 #if _AMD64_
+FORCEINLINE
 BOOLEAN
 RtlpIsFrameInBounds (
-    IN OUT PULONG64 LowLimit,
-    IN ULONG64 StackFrame,
-    IN OUT PULONG64 HighLimit
+    _Inout_ PULONG64 LowLimit,
+    _In_ ULONG64 StackFrame,
+    _Inout_ PULONG64 HighLimit
     )
-
-/*++
-
-Routine Description:
-
-    This function checks whether the specified frame address is properly
-    aligned and within the specified limits. In kernel mode an additional
-    check is made if the frame is not within the specified limits since
-    the kernel stack can be expanded. For this case the next entry in the
-    expansion list, if any, is checked. If the frame is within the next
-    expansion extent, then the extent values are stored in the low and
-    high limit before returning to the caller.
-
-    N.B. It is assumed that the supplied high limit is the stack base.
-
-Arguments:
-
-    LowLimit - Supplies a pointer to a variable that contains the current
-        lower stack limit.
-
-    Frame - Supplies the frame address to check.
-
-    HighLimit - Supplies a pointer to a variable that contains the current
-        high stack limit.
-
-Return Value:
-
-    If the specified stack frame is within limits, then a value of TRUE is
-    returned as the function value. Otherwise, a value of FALSE is returned.
-
---*/
-
 {
     if ((StackFrame & 0x7) != 0) {
         return FALSE;
@@ -70,49 +57,13 @@ Return Value:
     }
 }
 
-EXCEPTION_DISPOSITION
-RtlpExecuteHandlerForException (
-    _In_ PEXCEPTION_RECORD ExceptionRecord,
-    _In_ ULONG64 EstablisherFrame,
-    _Inout_ PCONTEXT ContextRecord,
-    _Inout_ PDISPATCHER_CONTEXT DispatcherContext
-    )
-{
-    return DispatcherContext->LanguageHandler(ExceptionRecord, (PVOID)EstablisherFrame, ContextRecord, DispatcherContext);
-}
-
+FORCEINLINE
 VOID
 RtlpCopyContext (
     _Out_ PCONTEXT Destination,
     _In_ PCONTEXT Source
     )
-
-/*++
-
-Routine Description:
-
-    This function copies the nonvolatile context required for exception
-    dispatch and unwind from the specified source context record to the
-    specified destination context record.
-
-Arguments:
-
-    Destination - Supplies a pointer to the destination context record.
-
-    Source - Supplies a pointer to the source context record.
-
-Return Value:
-
-    None.
-
---*/
-
 {
-
-    //
-    // Copy nonvolatile context required for exception dispatch and unwind.
-    //
-
     Destination->Rip = Source->Rip;
     Destination->Rbx = Source->Rbx;
     Destination->Rsp = Source->Rsp;
@@ -137,9 +88,52 @@ Return Value:
     Destination->SegSs = Source->SegSs;
     Destination->MxCsr = Source->MxCsr;
     Destination->EFlags = Source->EFlags;
-
     return;
 }
+
+typedef struct _LDK_DISPATCH_EXCEPTION_STACK_VARIABLES {
+	BOOLEAN Completion;
+	CONTEXT ContextRecord1;
+	ULONG64 ControlPc;
+	DISPATCHER_CONTEXT DispatcherContext;
+	EXCEPTION_DISPOSITION Disposition;
+	ULONG64 EstablisherFrame;
+	ULONG ExceptionFlags;
+	PEXCEPTION_ROUTINE ExceptionRoutine;
+	PRUNTIME_FUNCTION FunctionEntry;
+	PVOID HandlerData;
+	ULONG64 HighLimit;
+	PUNWIND_HISTORY_TABLE HistoryTable;
+	ULONG64 ImageBase;
+	ULONG64 LowLimit;
+	ULONG64 NestedFrame;
+	BOOLEAN Repeat;
+	ULONG ScopeIndex;
+	UNWIND_HISTORY_TABLE UnwindTable;
+} LDK_DISPATCH_EXCEPTION_STACK_VARIABLES, *PLDK_DISPATCH_EXCEPTION_STACK_VARIABLES;
+
+NPAGED_LOOKASIDE_LIST LdkpDispatchExceptionStackVariablesLookaside;
+
+
+
+NTSTATUS
+LdkpInitializeDispatchExceptionStackVariables (
+	VOID
+	)
+{
+    PAGED_CODE();
+
+	ExInitializeNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside,
+									 NULL,
+									 NULL,
+									 0,
+									 sizeof(LDK_DISPATCH_EXCEPTION_STACK_VARIABLES),
+									 'xEdL',
+									 0 );
+	return STATUS_SUCCESS;
+}
+
+
 
 BOOLEAN
 RtlDispatchException (
@@ -147,282 +141,145 @@ RtlDispatchException (
     _In_ PCONTEXT ContextRecord
     )
 {
-    BOOLEAN Completion = FALSE;
-    CONTEXT ContextRecord1;
-    ULONG64 ControlPc;
-    DISPATCHER_CONTEXT DispatcherContext;
-    EXCEPTION_DISPOSITION Disposition;
-    ULONG64 EstablisherFrame;
-    ULONG ExceptionFlags;
-    PEXCEPTION_ROUTINE ExceptionRoutine;
-    PRUNTIME_FUNCTION FunctionEntry;
-    PVOID HandlerData;
-    ULONG64 HighLimit;
-    PUNWIND_HISTORY_TABLE HistoryTable;
-    ULONG64 ImageBase;
-    ULONG64 LowLimit;
-    ULONG64 NestedFrame;
-    BOOLEAN Repeat;
-    ULONG ScopeIndex;
-    UNWIND_HISTORY_TABLE UnwindTable;
+	PLDK_DISPATCH_EXCEPTION_STACK_VARIABLES variables = ExAllocateFromNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside );
+	if (!variables) {
+		ExRaiseStatus( STATUS_INSUFFICIENT_RESOURCES );
+	}
 
-    //
-    // Get current stack limits, copy the context record, get the initial
-    // PC value, capture the exception flags, and set the nested exception
-    // frame pointer.
-    //
+	variables->Completion = FALSE;
 
-    IoGetStackLimits(&LowLimit, &HighLimit);
-    RtlpCopyContext(&ContextRecord1, ContextRecord);
-    ControlPc = (ULONG64)ExceptionRecord->ExceptionAddress;
-    ExceptionFlags = ExceptionRecord->ExceptionFlags & EXCEPTION_NONCONTINUABLE;
-    NestedFrame = 0;
+    IoGetStackLimits( &variables->LowLimit,
+                      &variables->HighLimit );
 
-    //
-    // Initialize the unwind history table.
-    //
+    RtlpCopyContext(&variables->ContextRecord1, ContextRecord);
+	variables->ControlPc = (ULONG64)ExceptionRecord->ExceptionAddress;
+	variables->ExceptionFlags = FlagOn(ExceptionRecord->ExceptionFlags, EXCEPTION_NONCONTINUABLE);
+	variables->NestedFrame = 0;
 
-    HistoryTable = &UnwindTable;
-    HistoryTable->Count = 0;
-    HistoryTable->Search = UNWIND_HISTORY_TABLE_NONE;
-    HistoryTable->LowAddress = (ULONG64)-1;
-    HistoryTable->HighAddress = 0;
-
-    //
-    // Start with the frame specified by the context record and search
-    // backwards through the call frame hierarchy attempting to find an
-    // exception handler that will handle the exception.
-    //
+	variables->HistoryTable = &variables->UnwindTable;
+	variables->HistoryTable->Count = 0;
+	variables->HistoryTable->Search = UNWIND_HISTORY_TABLE_NONE;
+	variables->HistoryTable->LowAddress = (ULONG64)-1;
+	variables->HistoryTable->HighAddress = 0;
 
     do {
 
-        //
-        // Lookup the function table entry using the point at which control
-        // left the procedure.
-        //
+		variables->FunctionEntry = RtlLookupFunctionEntry( variables->ControlPc,
+                                                           &variables->ImageBase,
+                                                           variables->HistoryTable );
 
-        FunctionEntry = RtlLookupFunctionEntry(ControlPc,
-                                               &ImageBase,
-                                               HistoryTable);
+        if (variables->FunctionEntry) {
+			variables->ExceptionRoutine = RtlVirtualUnwind( UNW_FLAG_EHANDLER,
+														    variables->ImageBase,
+                                                            variables->ControlPc,
+                                                            variables->FunctionEntry,
+                                                            &variables->ContextRecord1,
+                                                            &variables->HandlerData,
+                                                            &variables->EstablisherFrame,
+                                                            NULL );
 
-        //
-        // If there is a function table entry for the routine, then virtually
-        // unwind to the caller of the current routine to obtain the virtual
-        // frame pointer of the establisher and check if there is an exception
-        // handler for the frame.
-        //
+            if (! RtlpIsFrameInBounds( &variables->LowLimit,
+                                       variables->EstablisherFrame,
+                                       &variables->HighLimit )) {
 
-        if (FunctionEntry != NULL) {
-            ExceptionRoutine = RtlVirtualUnwind(UNW_FLAG_EHANDLER,
-                                                ImageBase,
-                                                ControlPc,
-                                                FunctionEntry,
-                                                &ContextRecord1,
-                                                &HandlerData,
-                                                &EstablisherFrame,
-                                                NULL);
-
-            //
-            // If the establisher frame pointer is not within the specified
-            // stack limits or the established frame pointer is unaligned,
-            // then set the stack invalid flag in the exception record and
-            // return exception not handled. Otherwise, check if the current
-            // routine has an exception handler.
-            //
-
-            if (RtlpIsFrameInBounds(&LowLimit, EstablisherFrame, &HighLimit) == FALSE) {
-                ExceptionFlags |= EXCEPTION_STACK_INVALID;
+				SetFlag(variables->ExceptionFlags, EXCEPTION_STACK_INVALID);
                 break;
 
-            } else if (ExceptionRoutine != NULL) {
+            } else if (variables->ExceptionRoutine) {
 
-                //
-                // The frame has an exception handler.
-                //
-                // A linkage routine written in assembler is used to actually
-                // call the actual exception handler. This is required by the
-                // exception handler that is associated with the linkage
-                // routine so it can have access to two sets of dispatcher
-                // context when it is called.
-                //
-                // Call the language specific handler.
-                //
+				variables->ScopeIndex = 0;
 
-                ScopeIndex = 0;
                 do {
+                    ExceptionRecord->ExceptionFlags = variables->ExceptionFlags;
 
-                    //
-                    // Log the exception if exception logging is enabled.
-                    //
-    
-                    ExceptionRecord->ExceptionFlags = ExceptionFlags;
+					variables->Repeat = FALSE;
+					variables->DispatcherContext.ControlPc = variables->ControlPc;
+					variables->DispatcherContext.ImageBase = variables->ImageBase;
+					variables->DispatcherContext.FunctionEntry = variables->FunctionEntry;
+					variables->DispatcherContext.EstablisherFrame = variables->EstablisherFrame;
+					variables->DispatcherContext.ContextRecord = &variables->ContextRecord1;
+					variables->DispatcherContext.LanguageHandler = variables->ExceptionRoutine;
+					variables->DispatcherContext.HandlerData = variables->HandlerData;
+					variables->DispatcherContext.HistoryTable = variables->HistoryTable;
+					variables->DispatcherContext.ScopeIndex = variables->ScopeIndex;
 
-                    //
-                    // Clear repeat, set the dispatcher context, and call the
-                    // exception handler.
-                    //
+					variables->Disposition = variables->DispatcherContext.LanguageHandler( ExceptionRecord,
+                                                                                           (PVOID)variables->EstablisherFrame,
+                                                                                           ContextRecord,
+                                                                                           &variables->DispatcherContext );
 
-                    Repeat = FALSE;
-                    DispatcherContext.ControlPc = ControlPc;
-                    DispatcherContext.ImageBase = ImageBase;
-                    DispatcherContext.FunctionEntry = FunctionEntry;
-                    DispatcherContext.EstablisherFrame = EstablisherFrame;
-                    DispatcherContext.ContextRecord = &ContextRecord1;
-                    DispatcherContext.LanguageHandler = ExceptionRoutine;
-                    DispatcherContext.HandlerData = HandlerData;
-                    DispatcherContext.HistoryTable = HistoryTable;
-                    DispatcherContext.ScopeIndex = ScopeIndex;
-                    Disposition =
-                        RtlpExecuteHandlerForException(ExceptionRecord,
-                                                       EstablisherFrame,
-                                                       ContextRecord,
-                                                       &DispatcherContext);
+					SetFlag(variables->ExceptionFlags, FlagOn(ExceptionRecord->ExceptionFlags, EXCEPTION_NONCONTINUABLE));
 
-                    //
-                    // Propagate noncontinuable exception flag.
-                    //
-    
-                    ExceptionFlags |=
-                        (ExceptionRecord->ExceptionFlags & EXCEPTION_NONCONTINUABLE);
-
-                    //
-                    // If the current scan is within a nested context and the
-                    // frame just examined is the end of the nested region,
-                    // then clear the nested context frame and the nested
-                    // exception flag in the exception flags.
-                    //
-    
-                    if (NestedFrame == EstablisherFrame) {
-                        ExceptionFlags &= (~EXCEPTION_NESTED_CALL);
-                        NestedFrame = 0;
+                    if (variables->NestedFrame == variables->EstablisherFrame) {
+						ClearFlag(variables->ExceptionFlags, EXCEPTION_NESTED_CALL);
+						variables->NestedFrame = 0;
                     }
     
-                    //
-                    // Case on the handler disposition.
-                    //
-    
-                    switch (Disposition) {
-    
-                        //
-                        // The disposition is to continue execution.
-                        //
-                        // If the exception is not continuable, then raise
-                        // the exception STATUS_NONCONTINUABLE_EXCEPTION.
-                        // Otherwise return exception handled.
-                        //
-    
-                    case ExceptionContinueExecution :
-                        if ((ExceptionFlags & EXCEPTION_NONCONTINUABLE) != 0) {
-                            RtlRaiseStatus(STATUS_NONCONTINUABLE_EXCEPTION);
-    
+                    switch (variables->Disposition) {
+                    case ExceptionContinueExecution:
+                        if (FlagOn(variables->ExceptionFlags, EXCEPTION_NONCONTINUABLE)) {
+                            ExRaiseStatus( STATUS_NONCONTINUABLE_EXCEPTION );
                         } else {
-                            Completion = TRUE;
+							variables->Completion = TRUE;
                             goto DispatchExit;
                         }
     
-                        //
-                        // The disposition is to continue the search.
-                        //
-                        // Get next frame address and continue the search.
-                        //
-    
-                    case ExceptionContinueSearch :
-                        break;
-    
-                        //
-                        // The disposition is nested exception.
-                        //
-                        // Set the nested context frame to the establisher frame
-                        // address and set the nested exception flag in the
-                        // exception flags.
-                        //
-    
-                    case ExceptionNestedException :
-                        ExceptionFlags |= EXCEPTION_NESTED_CALL;
-                        if (DispatcherContext.EstablisherFrame > NestedFrame) {
-                            NestedFrame = DispatcherContext.EstablisherFrame;
-                        }
-    
+                    case ExceptionContinueSearch:
                         break;
 
-                        //
-                        // The dispostion is collided unwind.
-                        //
-                        // A collided unwind occurs when an exception dispatch
-                        // encounters a previous call to an unwind handler. In
-                        // this case the previous unwound frames must be skipped.
-                        //
+                    case ExceptionNestedException:
+                        SetFlag(variables->ExceptionFlags, EXCEPTION_NESTED_CALL);
+                        if (variables->DispatcherContext.EstablisherFrame > variables->NestedFrame) {
+							variables->NestedFrame = variables->DispatcherContext.EstablisherFrame;
+                        }
+                        break;
 
                     case ExceptionCollidedUnwind:
-                        ControlPc = DispatcherContext.ControlPc;
-                        ImageBase = DispatcherContext.ImageBase;
-                        FunctionEntry = DispatcherContext.FunctionEntry;
-                        EstablisherFrame = DispatcherContext.EstablisherFrame;
-                        RtlpCopyContext(&ContextRecord1,
-                                        DispatcherContext.ContextRecord);
-
-                        ContextRecord1.Rip = ControlPc;
-                        ExceptionRoutine = DispatcherContext.LanguageHandler;
-                        HandlerData = DispatcherContext.HandlerData;
-                        HistoryTable = DispatcherContext.HistoryTable;
-                        ScopeIndex = DispatcherContext.ScopeIndex;
-                        Repeat = TRUE;
+						variables->ControlPc = variables->DispatcherContext.ControlPc;
+						variables->ImageBase = variables->DispatcherContext.ImageBase;
+						variables->FunctionEntry = variables->DispatcherContext.FunctionEntry;
+						variables->EstablisherFrame = variables->DispatcherContext.EstablisherFrame;
+                        RtlpCopyContext(&variables->ContextRecord1, variables->DispatcherContext.ContextRecord);
+						variables->ContextRecord1.Rip = variables->ControlPc;
+						variables->ExceptionRoutine = variables->DispatcherContext.LanguageHandler;
+						variables->HandlerData = variables->DispatcherContext.HandlerData;
+						variables->HistoryTable = variables->DispatcherContext.HistoryTable;
+						variables->ScopeIndex = variables->DispatcherContext.ScopeIndex;
+						variables->Repeat = TRUE;
                         break;
 
-                        //
-                        // All other disposition values are invalid.
-                        //
-                        // Raise invalid disposition exception.
-                        //
-    
-                    default :
-                        RtlRaiseStatus(STATUS_INVALID_DISPOSITION);
+                    default:
+                        ExRaiseStatus(STATUS_INVALID_DISPOSITION);
                     }
 
-                } while (Repeat != FALSE);
+                } while (variables->Repeat);
             }
 
         } else {
 
-            //
-            // If the old control PC is the same as the return address,
-            // then no progress is being made and the function tables are
-            // most likely malformed.
-            //
-    
-            if (ControlPc == *(PULONG64)(ContextRecord1.Rsp)) {
+            if (variables->ControlPc == *(PULONG64)(variables->ContextRecord1.Rsp)) {
                 break;
             }
     
-            //
-            // Set the point where control left the current function by
-            // obtaining the return address from the top of the stack.
-            //
-
-            ContextRecord1.Rip = *(PULONG64)(ContextRecord1.Rsp);
-            ContextRecord1.Rsp += 8;
+			variables->ContextRecord1.Rip = *(PULONG64)(variables->ContextRecord1.Rsp);
+			variables->ContextRecord1.Rsp += sizeof(ULONG64);
         }
 
-        //
-        // Set point at which control left the previous routine.
-        //
+		variables->ControlPc = variables->ContextRecord1.Rip;
 
-        ControlPc = ContextRecord1.Rip;
-    } while (RtlpIsFrameInBounds(&LowLimit, (ULONG64)ContextRecord1.Rsp, &HighLimit) == TRUE);
+    } while (RtlpIsFrameInBounds( &variables->LowLimit,
+								  (ULONG64)variables->ContextRecord1.Rsp,
+								  &variables->HighLimit));
 
-    //
-    // Set final exception flags and return exception not handled.
-    //
-
-    ExceptionRecord->ExceptionFlags = ExceptionFlags;
-
-    //
-    // Call vectored continue handlers.
-    //
+    ExceptionRecord->ExceptionFlags = variables->ExceptionFlags;
 
 DispatchExit:
-
-    return Completion;
+	{
+		BOOLEAN Completion = variables->Completion;
+		ExFreeToNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside,
+                                    variables );
+		return Completion;
+	}
 }
 #elif _X86_
 typedef struct _DISPATCHER_CONTEXT {
@@ -432,33 +289,10 @@ typedef struct _DISPATCHER_CONTEXT {
 // ntpsapi.h
 #define EXCEPTION_CHAIN_END ((struct _EXCEPTION_REGISTRATION_RECORD * POINTER_32)-1)
 
-PEXCEPTION_REGISTRATION_RECORD
-RtlpGetRegistrationHead (
-    VOID
-    )
-{
-    return (PEXCEPTION_REGISTRATION_RECORD)__readfsdword(0);
-}
 
-EXCEPTION_DISPOSITION
-RtlpExecuteHandlerForException (
-    _In_ PEXCEPTION_RECORD ExceptionRecord,
-    _In_ PVOID EstablisherFrame,
-    _Inout_ PCONTEXT ContextRecord,
-    _Inout_ PDISPATCHER_CONTEXT DispatcherContext,
-    _In_ PEXCEPTION_ROUTINE ExceptionRoutine
-    )
-{
-    return ExceptionRoutine(ExceptionRecord, EstablisherFrame, ContextRecord, DispatcherContext);
-}
 
-BOOLEAN
-RtlDispatchException (
-    _In_ PEXCEPTION_RECORD ExceptionRecord,
-    _In_ PCONTEXT ContextRecord
-    )
-{
-    BOOLEAN Completion = FALSE;
+typedef struct _LDK_DISPATCH_EXCEPTION_STACK_VARIABLES {
+    BOOLEAN Completion;
     DISPATCHER_CONTEXT DispatcherContext;
     EXCEPTION_DISPOSITION Disposition;
     PEXCEPTION_REGISTRATION_RECORD RegistrationPointer;
@@ -466,157 +300,136 @@ RtlDispatchException (
     ULONG HighAddress;
     ULONG HighLimit;
     ULONG LowLimit;
-    EXCEPTION_RECORD ExceptionRecord1;
+} LDK_DISPATCH_EXCEPTION_STACK_VARIABLES, *PLDK_DISPATCH_EXCEPTION_STACK_VARIABLES;
 
-    //
-    // Get current stack limits.
-    //
-    IoGetStackLimits(&LowLimit, &HighLimit);
 
-    //
-    // Start with the frame specified by the context record and search
-    // backwards through the call frame hierarchy attempting to find an
-    // exception handler that will handler the exception.
-    //
 
-    RegistrationPointer = RtlpGetRegistrationHead();
-    NestedRegistration = 0;
+NTSTATUS
+LdkpInitializeDispatchExceptionStackVariables (
+	VOID
+	)
+{
+    PAGED_CODE();
 
-    while (RegistrationPointer != EXCEPTION_CHAIN_END) {
+	ExInitializeNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside,
+									 NULL,
+									 NULL,
+									 0,
+									 sizeof(LDK_DISPATCH_EXCEPTION_STACK_VARIABLES),
+									 'xEdL',
+									 0 );
+	return STATUS_SUCCESS;
+}
 
-        //
-        // If the call frame is not within the specified stack limits or the
-        // call frame is unaligned, then set the stack invalid flag in the
-        // exception record and return FALSE. Else check to determine if the
-        // frame has an exception handler.
-        //
 
-        HighAddress = (ULONG)RegistrationPointer +
-            sizeof(EXCEPTION_REGISTRATION_RECORD);
 
-        if ( ((ULONG)RegistrationPointer < LowLimit) ||
-             (HighAddress > HighLimit) ||
-             (((ULONG)RegistrationPointer & 0x3) != 0) 
-           ) {
+BOOLEAN
+RtlDispatchException (
+    _In_ PEXCEPTION_RECORD ExceptionRecord,
+    _In_ PCONTEXT ContextRecord
+    )
+{
+	PLDK_DISPATCH_EXCEPTION_STACK_VARIABLES variables = ExAllocateFromNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside );
+	if (!variables) {
+		ExRaiseStatus( STATUS_INSUFFICIENT_RESOURCES );
+	}
+
+    variables->Completion = FALSE;
+    
+    IoGetStackLimits( &variables->LowLimit,
+                      &variables->HighLimit );
+
+    variables->RegistrationPointer = (PEXCEPTION_REGISTRATION_RECORD)__readfsdword(0);
+    variables->NestedRegistration = 0;
+
+    while (variables->RegistrationPointer != EXCEPTION_CHAIN_END) {
+
+        variables->HighAddress = (ULONG)variables->RegistrationPointer + sizeof(EXCEPTION_REGISTRATION_RECORD);
+
+        if (((ULONG)variables->RegistrationPointer < variables->LowLimit) ||
+            (variables->HighAddress > variables->HighLimit) || (((ULONG)variables->RegistrationPointer & 0x3) != 0)) {
             ExceptionRecord->ExceptionFlags |= EXCEPTION_STACK_INVALID;
             goto DispatchExit;
         }
 
-        Disposition = RtlpExecuteHandlerForException(
-            ExceptionRecord,
-            (PVOID)RegistrationPointer,
-            ContextRecord,
-            (PVOID)&DispatcherContext,
-            (PEXCEPTION_ROUTINE)RegistrationPointer->Handler);
+        variables->Disposition = variables->RegistrationPointer->Handler( ExceptionRecord,
+                                                                          variables->RegistrationPointer,
+                                                                          ContextRecord,
+                                                                          &variables->DispatcherContext );
 
-        //
-        // If the current scan is within a nested context and the frame
-        // just examined is the end of the context region, then clear
-        // the nested context frame and the nested exception in the
-        // exception flags.
-        //
-
-        if (NestedRegistration == RegistrationPointer) {
-            ExceptionRecord->ExceptionFlags &= (~EXCEPTION_NESTED_CALL);
-            NestedRegistration = 0;
+        if (variables->NestedRegistration == variables->RegistrationPointer) {
+            ClearFlag(ExceptionRecord->ExceptionFlags, EXCEPTION_NESTED_CALL);
+            variables->NestedRegistration = 0;
         }
 
-        //
-        // Case on the handler disposition.
-        //
-
-        switch (Disposition) {
-
-            //
-            // The disposition is to continue execution. If the
-            // exception is not continuable, then raise the exception
-            // STATUS_NONCONTINUABLE_EXCEPTION. Otherwise return
-            // TRUE.
-            //
-
-        case ExceptionContinueExecution :
-            if ((ExceptionRecord->ExceptionFlags &
-               EXCEPTION_NONCONTINUABLE) != 0) {
-                ExceptionRecord1.ExceptionCode =
-                                        STATUS_NONCONTINUABLE_EXCEPTION;
+        switch (variables->Disposition) {
+        case ExceptionContinueExecution:
+            if (FlagOn(ExceptionRecord->ExceptionFlags, EXCEPTION_NONCONTINUABLE)) {
+                ExFreeToNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside,
+                                            variables );
+                EXCEPTION_RECORD ExceptionRecord1;
+                ExceptionRecord1.ExceptionCode = STATUS_NONCONTINUABLE_EXCEPTION;
                 ExceptionRecord1.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
                 ExceptionRecord1.ExceptionRecord = ExceptionRecord;
                 ExceptionRecord1.NumberParameters = 0;
-                RtlRaiseException(&ExceptionRecord1);
-
+                ExRaiseException( &ExceptionRecord1 );
             } else {
-                Completion = TRUE;
+                variables->Completion = TRUE;
                 goto DispatchExit;
             }
 
-            //
-            // The disposition is to continue the search. If the frame isn't
-            // suspect/corrupt, get next frame address and continue the search 
-            //
-
         case ExceptionContinueSearch :
-            if (ExceptionRecord->ExceptionFlags & EXCEPTION_STACK_INVALID)
+            if (FlagOn(ExceptionRecord->ExceptionFlags, EXCEPTION_STACK_INVALID))
                 goto DispatchExit;
-
             break;
-
-            //
-            // The disposition is nested exception. Set the nested
-            // context frame to the establisher frame address and set
-            // nested exception in the exception flags.
-            //
 
         case ExceptionNestedException :
             ExceptionRecord->ExceptionFlags |= EXCEPTION_NESTED_CALL;
-            if (DispatcherContext.RegistrationPointer > NestedRegistration) {
-                NestedRegistration = DispatcherContext.RegistrationPointer;
+            if (variables->DispatcherContext.RegistrationPointer > variables->NestedRegistration) {
+                variables->NestedRegistration = variables->DispatcherContext.RegistrationPointer;
             }
-
             break;
 
-            //
-            // All other disposition values are invalid. Raise
-            // invalid disposition exception.
-            //
-
-        default :
+        default : {
+            ExFreeToNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside,
+                                         variables );
+            EXCEPTION_RECORD ExceptionRecord1;
             ExceptionRecord1.ExceptionCode = STATUS_INVALID_DISPOSITION;
             ExceptionRecord1.ExceptionFlags = EXCEPTION_NONCONTINUABLE;
             ExceptionRecord1.ExceptionRecord = ExceptionRecord;
             ExceptionRecord1.NumberParameters = 0;
-            RtlRaiseException(&ExceptionRecord1);
+            ExRaiseException( &ExceptionRecord1 );
             break;
         }
-
-        //
-        // If chain goes in wrong direction or loops, report an
-        // invalid exception stack, otherwise go on to the next one.
-        //
-
-        RegistrationPointer = RegistrationPointer->Next;
+        }
+        variables->RegistrationPointer = variables->RegistrationPointer->Next;
     }
 
-    //
-    // Call vectored continue handlers.
-    //
-
 DispatchExit:
-
-    return Completion;
+	{
+		BOOLEAN Completion = variables->Completion;
+		ExFreeToNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside,
+                                     variables );
+		return Completion;
+	}
 }
 #endif
-
 VOID
 NTAPI
 RtlRaiseException (
     _In_ PEXCEPTION_RECORD ExceptionRecord
     )
 {
-    CONTEXT ContextRecord;
-    RtlCaptureContext(&ContextRecord);
-    ContextRecord.ContextFlags = CONTEXT_FULL;
-
-    if (RtlDispatchException(ExceptionRecord, &ContextRecord)) {
+	CONTEXT ContextRecord;
+    RtlCaptureContext( &ContextRecord );
+	ContextRecord.ContextFlags = CONTEXT_FULL;
+#if _AMD64_
+	ExceptionRecord->ExceptionAddress = (PVOID)ContextRecord.Rip;
+#elif _X86_
+	ExceptionRecord->ExceptionAddress = _ReturnAddress();
+#endif
+    if (RtlDispatchException( ExceptionRecord,
+							  &ContextRecord )) {
         return;
     }
 

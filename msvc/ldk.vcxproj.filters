@@ -9,24 +9,5 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="Header Files\ntdll">
-      <UniqueIdentifier>{6e7984c9-1b44-4aca-85c0-26006211aa70}</UniqueIdentifier>
-      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
-    </Filter>
-    <Filter Include="Source Files\ntdll">
-      <UniqueIdentifier>{6e7984c9-1b44-4aca-85c0-26006211aa69}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\nt">
-      <UniqueIdentifier>{ec099143-acba-4a65-b682-0c74a469f508}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\nt">
-      <UniqueIdentifier>{ec099143-acba-4a65-b682-0c74a469f509}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Header Files\kernel32">
-      <UniqueIdentifier>{9b34fd87-15bf-469a-b478-63e89d55b657}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\kernel32">
-      <UniqueIdentifier>{9b34fd87-15bf-469a-b478-63e89d55b658}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
 </Project>

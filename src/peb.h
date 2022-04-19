@@ -40,12 +40,12 @@ LdkCurrentPeb (
 	);
 
 NTSTATUS
-LdkInitializePeb (
+LdkpInitializePeb (
 	_In_ PDRIVER_OBJECT DriverObject,
 	_In_ PUNICODE_STRING RegistryPath
 	);
 
 VOID
-LdkTerminatePeb (
+LdkpTerminatePeb (
 	VOID
 	);

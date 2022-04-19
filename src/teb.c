@@ -9,6 +9,8 @@ NPAGED_LOOKASIDE_LIST LdkpTebStaticUnicodeBufferLookaside;
 NPAGED_LOOKASIDE_LIST LdkpTebTlsLookaside;
 NPAGED_LOOKASIDE_LIST LdkpTebFlsLookaside;
 
+
+
 NTSTATUS
 LdkpInitializeTeb (
 	_Inout_ PLDK_TEB Teb,
@@ -19,6 +21,15 @@ VOID
 LdkpTerminateTeb (
 	_Inout_ PLDK_TEB Teb
 	);
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeTebMap)
+#pragma alloc_text(PAGE, LdkpTerminateTebMap)
+#endif
+
+
 
 PLDK_TEB
 LdkCreateTeb (
@@ -119,10 +130,13 @@ LdkCurrentTeb (
 }
 
 NTSTATUS
-LdkInitializeTebMap (
+LdkpInitializeTebMap (
 	VOID
 	) 
 {
+	PAGED_CODE();
+
+
 	LdkpTebListLock = 0;
 	InitializeListHead(&LdkpTebListHead);
 
@@ -135,10 +149,12 @@ LdkInitializeTebMap (
 }
 
 VOID
-LdkTerminateTebMap (
+LdkpTerminateTebMap (
 	VOID
 	)
-{
+{	
+	PAGED_CODE();
+
 	PLDK_TEB Teb;
 	PLIST_ENTRY Entry;
 	KIRQL OldIrql;
