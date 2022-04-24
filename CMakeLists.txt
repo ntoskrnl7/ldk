@@ -7,19 +7,28 @@ pkg_get_version(LDK ${CMAKE_CURRENT_SOURCE_DIR}/include/ldk/internal/version.h V
 
 project(Ldk VERSION "${VERSION}" LANGUAGES C)
 
+option(LDK_USE_RAISE_EXCEPTION  "Set to ON to use ldk!RaiseException" ON)
+option(LDK_USE_RTL_RAISE_EXCEPTION  "Set to ON to use ldk!RtlRaiseExceptionn" ON)
+
 include(CPM)
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX /GS-")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX /GS-")
-
-add_definitions(-D_KERNEL32_)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 
 file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c ./src/ntdll/rtl/*.c)
 
 wdk_add_library(Ldk STATIC ${SOURCE_FILES})
+
+target_compile_definitions(Ldk PUBLIC -D_KERNEL32_)
+if (LDK_USE_RAISE_EXCEPTION)
+    target_compile_definitions(Ldk PUBLIC -D_LDK_DEFINE_RAISE_EXCEPTION)
+endif()
+if (LDK_USE_RTL_RAISE_EXCEPTION)
+    target_compile_definitions(Ldk PUBLIC -D_LDK_DEFINE_RTL_RAISE_EXCEPTION)
+endif()
 
 string( TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFROM_SHORT_NAME )
 if( PLATFROM_SHORT_NAME STREQUAL "win32" )

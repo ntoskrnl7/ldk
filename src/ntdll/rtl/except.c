@@ -342,7 +342,8 @@ RtlDispatchException (
     variables->RegistrationPointer = (PEXCEPTION_REGISTRATION_RECORD)__readfsdword(0);
     variables->NestedRegistration = 0;
 
-    while (variables->RegistrationPointer != EXCEPTION_CHAIN_END) {
+    while ((variables->RegistrationPointer != EXCEPTION_CHAIN_END) &&
+           (variables->RegistrationPointer != variables->RegistrationPointer->Next)) {
 
         variables->HighAddress = (ULONG)variables->RegistrationPointer + sizeof(EXCEPTION_REGISTRATION_RECORD);
 
