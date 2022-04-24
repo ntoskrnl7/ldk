@@ -17,7 +17,6 @@ SetLastError(
     _In_ DWORD dwErrCode
     );
 
-#if _LDK_DEFINE_RAISE_EXCEPTION
 WINBASEAPI
 __analysis_noreturn
 VOID
@@ -28,6 +27,5 @@ RaiseException(
     _In_ DWORD nNumberOfArguments,
     _In_reads_opt_(nNumberOfArguments) CONST ULONG_PTR* lpArguments
     );
-#endif
 
 EXTERN_C_END
