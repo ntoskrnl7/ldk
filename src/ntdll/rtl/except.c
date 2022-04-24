@@ -344,7 +344,7 @@ RtlDispatchException (
 
     while (variables->RegistrationPointer != EXCEPTION_CHAIN_END) {
 
-        if (variables->RegistrationPointer != variables->RegistrationPointer->Next) {
+        if (variables->RegistrationPointer == variables->RegistrationPointer->Next) {
             variables->Completion = TRUE;
             goto DispatchExit;
         }
