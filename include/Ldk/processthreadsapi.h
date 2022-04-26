@@ -80,6 +80,14 @@ GetThreadTimes(
     );
 
 WINBASEAPI
+VOID
+WINAPI
+GetCurrentThreadStackLimits(
+    _Out_ PULONG_PTR LowLimit,
+    _Out_ PULONG_PTR HighLimit
+    );
+
+WINBASEAPI
 BOOL
 WINAPI
 SwitchToThread(
