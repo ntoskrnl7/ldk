@@ -398,6 +398,16 @@ DeleteCriticalSection(
 
 
 WINBASEAPI
+VOID
+WINAPI
+InitOnceInitialize(
+    _Out_ PINIT_ONCE InitOnce
+    )
+{
+    RtlRunOnceInitialize(InitOnce);
+}
+
+WINBASEAPI
 BOOL
 WINAPI
 InitOnceExecuteOnce(
@@ -415,6 +425,44 @@ InitOnceExecuteOnce(
         }
     } except(EXCEPTION_EXECUTE_HANDLER) {
         status = GetExceptionCode();
+    }
+
+    BaseSetLastNTError(status);
+    return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+InitOnceBeginInitialize(
+    _Inout_ LPINIT_ONCE lpInitOnce,
+    _In_ DWORD dwFlags,
+    _Out_ PBOOL fPending,
+    _Outptr_opt_result_maybenull_ LPVOID* lpContext
+    )
+{
+    NTSTATUS status = RtlRunOnceBeginInitialize(lpInitOnce, dwFlags, lpContext);
+    if (NT_SUCCESS(status)) {
+        *fPending = (status == STATUS_PENDING);
+        return TRUE;
+    }
+
+    BaseSetLastNTError(status);
+    return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+InitOnceComplete(
+    _Inout_ LPINIT_ONCE lpInitOnce,
+    _In_ DWORD dwFlags,
+    _In_opt_ LPVOID lpContext
+    )
+{
+    NTSTATUS status = RtlRunOnceComplete(lpInitOnce, dwFlags, lpContext);
+    if (NT_SUCCESS(status)) {
+        return TRUE;
     }
 
     BaseSetLastNTError(status);

@@ -62,4 +62,20 @@ LdkCurrentPeb (
 	VOID
 	);
 
+
+
+typedef
+_IRQL_requires_max_(PASSIVE_LEVEL)
+NTSTATUS
+(LDK_INITIALIZE_COMPONENT) (
+	VOID
+    );
+
+typedef
+_IRQL_requires_max_(PASSIVE_LEVEL)
+VOID
+(LDK_TERMINATE_COMPONENT) (
+	VOID
+    );
+
 EXTERN_C_END

@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 project(LdkTest LANGUAGES C)
 
 include(../cmake/CPM.cmake)
+
+set(LDK_USE_RAISE_EXCEPTION ON)
+set(LDK_USE_RTL_RAISE_EXCEPTION ON)
 CPMAddPackage(NAME Ldk SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")

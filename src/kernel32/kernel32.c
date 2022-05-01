@@ -4,15 +4,23 @@
 
 
 
-NTSTATUS
-LdkpInitializeThreadpoolApiset (
-	VOID
-	);
+LDK_INITIALIZE_COMPONENT LdkpInitializeThreadpoolApiset;
+LDK_TERMINATE_COMPONENT LdkpTerminateThreadpoolApiset;
 
-VOID
-LdkpTerminateThreadpoolApiset (
-	VOID
-	);
+LDK_INITIALIZE_COMPONENT LdkpInitializeThreadContexts;
+LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
+
+
+
+LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
+LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpKernel32Initialize)
+#pragma alloc_text(PAGE, LdkpKernel32Terminate)
+#endif
 
 
 
@@ -224,18 +232,29 @@ LDK_MODULE LdkpKernel32Module = {
     NULL
 };
 
+
+
 NTSTATUS
-Kernel32Initialize (
+LdkpKernel32Initialize (
     VOID
     )
 {
-	return LdkpInitializeThreadpoolApiset();
+	PAGED_CODE();
+
+	NTSTATUS status = LdkpInitializeThreadpoolApiset();
+	if (!NT_SUCCESS(status)) {
+		return status;
+	}
+	return LdkpInitializeThreadContexts();
 }
 
 VOID
-Kernel32Terminate (
+LdkpKernel32Terminate (
     VOID
     )
 {
+	PAGED_CODE();
+
+	LdkpTerminateThreadContexts();
 	LdkpTerminateThreadpoolApiset();
 }

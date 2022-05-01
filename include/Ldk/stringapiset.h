@@ -2,6 +2,23 @@
 
 EXTERN_C_START
 
+WINBASEAPI
+_Success_(return != 0)
+         _When_((cbMultiByte == -1) && (cchWideChar != 0), _Post_equal_to_(_String_length_(lpWideCharStr)+1))
+int
+WINAPI
+MultiByteToWideChar(
+    _In_ UINT CodePage,
+    _In_ DWORD dwFlags,
+    _In_NLS_string_(cbMultiByte) LPCCH lpMultiByteStr,
+    _In_ int cbMultiByte,
+    _Out_writes_to_opt_(cchWideChar,return) LPWSTR lpWideCharStr,
+    _In_ int cchWideChar
+    );
+
+WINBASEAPI
+_Success_(return != 0)
+         _When_((cchWideChar == -1) && (cbMultiByte != 0), _Post_equal_to_(_String_length_(lpMultiByteStr)+1))
 int
 WINAPI
 WideCharToMultiByte(

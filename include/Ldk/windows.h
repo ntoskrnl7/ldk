@@ -16,5 +16,3 @@
 #include "winbase.h"
 
 #include "ldk.h"
-
-typedef struct MSG *LPMSG;

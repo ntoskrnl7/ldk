@@ -5,58 +5,25 @@
 
 
 
-WINBASEAPI
-HANDLE
-WINAPI
-GetCurrentProcess(
-    VOID
-    )
-{
-	return ZwCurrentProcess();
-}
+LDK_INITIALIZE_COMPONENT LdkpInitializeThreadContexts;
+LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
 
-WINBASEAPI
-DWORD
-WINAPI
-GetCurrentProcessId(
-    VOID
-    )
-{
-	return (DWORD)HandleToULong(PsGetCurrentProcessId());
-}
+EXPAND_STACK_CALLOUT LdkpThreadStartExpandStackAndCallout;
+KSTART_ROUTINE LdkpThreadStartRoutine;
 
-WINBASEAPI
-DECLSPEC_NORETURN
-VOID
-WINAPI
-ExitProcess(
-    _In_ UINT uExitCode
-    )
-{
-	TerminateProcess(NtCurrentProcess(), uExitCode);
-}
 
-WINBASEAPI
-BOOL
-WINAPI
-TerminateProcess(
-    _In_ HANDLE hProcess,
-    _In_ UINT uExitCode
-    )
-{
-	KdBreakPoint(); // :-(
 
-	if (hProcess == NULL) {
-		SetLastError(ERROR_INVALID_HANDLE);
-		return FALSE;
-	}
-	NTSTATUS Status = ZwTerminateProcess(hProcess, (NTSTATUS)uExitCode);
-	if (NT_SUCCESS(Status)) {
-		return TRUE;
-	}
-	BaseSetLastNTError(Status);
-	return FALSE;
-}
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeThreadContexts)
+#pragma alloc_text(PAGE, LdkpTerminateThreadContexts)
+#pragma alloc_text(PAGE, LdkpThreadStartExpandStackAndCallout)
+#pragma alloc_text(PAGE, LdkpThreadStartRoutine)
+#pragma alloc_text(PAGE, CreateThread)
+#pragma alloc_text(PAGE, GetExitCodeThread)
+#pragma alloc_text(PAGE, GetThreadTimes)
+#pragma alloc_text(PAGE, ExitProcess)
+#pragma alloc_text(PAGE, TerminateProcess)
+#endif
 
 
 
@@ -69,6 +36,37 @@ typedef struct _LDK_THREAD_CONTEXT {
 	LPVOID lpThreadParameter;
 } LDK_THREAD_CONTEXT, *PLDK_THREAD_CONTEXT;
 
+PAGED_LOOKASIDE_LIST LdkpThreadContextLookaside;
+
+
+NTSTATUS
+LdkpInitializeThreadContexts (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+	ExInitializePagedLookasideList( &LdkpThreadContextLookaside,
+									NULL,
+									NULL,
+									0,
+									sizeof(LDK_THREAD_CONTEXT),
+									TAG_LDK_THREAD_CONTEXT,
+									0 );
+
+	return STATUS_SUCCESS;
+}
+
+VOID
+LdkpTerminateThreadContexts (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+	ExDeletePagedLookasideList( &LdkpThreadContextLookaside );
+}
+
 _Function_class_(EXPAND_STACK_CALLOUT)
 VOID
 NTAPI
@@ -76,16 +74,12 @@ LdkpThreadStartExpandStackAndCallout (
     _In_ PLDK_THREAD_CONTEXT Context
     )
 {
-	KIRQL OldIrql = KeGetCurrentIrql();
+	PAGED_CODE();
 
-	Context->ThreadStartRoutine(Context->lpThreadParameter);
+	Context->ThreadStartRoutine( Context->lpThreadParameter );
 
-	if (OldIrql != KeGetCurrentIrql()) {
-		KdBreakPoint();
-		KeLowerIrql(OldIrql);
-	}
-
-	ExFreePoolWithTag(Context, TAG_LDK_THREAD_CONTEXT);
+	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
+								Context );
 }
 
 _IRQL_requires_same_
@@ -95,24 +89,25 @@ LdkpThreadStartRoutine (
     _In_ PLDK_THREAD_CONTEXT Context
     )
 {
-	NTSTATUS Status;
-	ULONG_PTR StackSize = IoGetRemainingStackSize();
+	PAGED_CODE();
 
 	if (FlagOn(Context->dwCreationFlags, CREATE_SUSPENDED)) {
 		//PsSuspendThread(); :-(
 		KdBreakPoint();
 	}
 
-	if (Context->dwStackSize > StackSize) {
-		Status = KeExpandKernelStackAndCallout(LdkpThreadStartExpandStackAndCallout, Context, Context->dwStackSize);
-		if (NT_SUCCESS(Status)) {
+	if (Context->dwStackSize > IoGetRemainingStackSize()) {
+		if (NT_SUCCESS(KeExpandKernelStackAndCallout( LdkpThreadStartExpandStackAndCallout,
+													  Context,
+													  Context->dwStackSize ))) {
 			return;
 		}
 	}
 
-	Context->ThreadStartRoutine(Context->lpThreadParameter);
+	Context->ThreadStartRoutine( Context->lpThreadParameter );
 
-	ExFreePoolWithTag(Context, TAG_LDK_THREAD_CONTEXT);
+	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
+								Context );
 }
 
 WINBASEAPI
@@ -128,21 +123,15 @@ CreateThread(
     _Out_opt_ LPDWORD lpThreadId
     )
 {
-	NTSTATUS Status;
-	HANDLE ThreadHandle;
-
-	OBJECT_ATTRIBUTES ObjectAttributes;
-	CLIENT_ID ClientId;
-	
-	PLDK_THREAD_CONTEXT Context;
+	PAGED_CODE();
 
 	if (FlagOn(dwCreationFlags, CREATE_SUSPENDED)) {
 		KdBreakPoint();
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return NULL;
 	}
-	
-	Context = ExAllocatePoolWithTag(PagedPool, sizeof(LDK_THREAD_CONTEXT), TAG_LDK_THREAD_CONTEXT);
+
+	PLDK_THREAD_CONTEXT Context = ExAllocateFromPagedLookasideList( &LdkpThreadContextLookaside );
 	if (!Context) {
 		BaseSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
 		return NULL;
@@ -153,6 +142,7 @@ CreateThread(
 	Context->ThreadStartRoutine = lpStartAddress;
 	Context->lpThreadParameter = lpParameter;
 
+	OBJECT_ATTRIBUTES ObjectAttributes;
 	InitializeObjectAttributes( &ObjectAttributes,
 								NULL,
 								OBJ_KERNEL_HANDLE,
@@ -166,17 +156,20 @@ CreateThread(
 		}
 	}
 
-	Status = PsCreateSystemThread(
-				&ThreadHandle,
-				THREAD_ALL_ACCESS,
-				&ObjectAttributes,
-				NULL,
-				&ClientId,
-				LdkpThreadStartRoutine,
-				Context );
+	NTSTATUS Status;
+	HANDLE ThreadHandle;
+	CLIENT_ID ClientId;
 
+	Status = PsCreateSystemThread( &ThreadHandle,
+								   THREAD_ALL_ACCESS,
+								   &ObjectAttributes,
+								   NULL,
+								   &ClientId,
+								   LdkpThreadStartRoutine,
+								   Context );
 	if (! NT_SUCCESS(Status)) {
-		ExFreePoolWithTag(Context, TAG_LDK_THREAD_CONTEXT);
+		ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
+									Context );
 		BaseSetLastNTError( Status );
 		return NULL;
 	}
@@ -186,7 +179,6 @@ CreateThread(
 	}
 
 	return ThreadHandle;
-
 }
 
 WINBASEAPI
@@ -221,14 +213,13 @@ GetExitCodeThread(
 	NTSTATUS Status;
 	THREAD_BASIC_INFORMATION BasicInformation;
 
-	Status = ZwQueryInformationThread(
-		hThread,
-		ThreadBasicInformation,
-		&BasicInformation,
-		sizeof(BasicInformation),
-		NULL
-	);
+	PAGED_CODE();
 
+	Status = ZwQueryInformationThread( hThread,
+									   ThreadBasicInformation,
+									   &BasicInformation,
+									   sizeof(BasicInformation),
+									   NULL );
 	if (NT_SUCCESS(Status)) {
 		*lpExitCode = BasicInformation.ExitStatus;
 		return TRUE;
@@ -252,13 +243,13 @@ GetThreadTimes(
 	NTSTATUS Status;
 	KERNEL_USER_TIMES TimeInfo;
 
-	Status = ZwQueryInformationThread(
-		hThread,
-		ThreadTimes,
-		(PVOID)&TimeInfo,
-		sizeof(TimeInfo),
-		NULL
-	);
+	PAGED_CODE();
+
+	Status = ZwQueryInformationThread( hThread,
+									  ThreadTimes,
+									  (PVOID)&TimeInfo,
+									  sizeof(TimeInfo),
+									  NULL );
 	if (!NT_SUCCESS(Status)) {
 		BaseSetLastNTError(Status);
 		return FALSE;
@@ -268,7 +259,6 @@ GetThreadTimes(
 	*lpExitTime = *(LPFILETIME)&TimeInfo.ExitTime;
 	*lpKernelTime = *(LPFILETIME)&TimeInfo.KernelTime;
 	*lpUserTime = *(LPFILETIME)&TimeInfo.UserTime;
-
 	return TRUE;
 }
 
@@ -285,11 +275,75 @@ SwitchToThread(
 
 
 WINBASEAPI
+HANDLE
+WINAPI
+GetCurrentProcess(
+    VOID
+    )
+{
+	return ZwCurrentProcess();
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+GetCurrentProcessId(
+    VOID
+    )
+{
+	return (DWORD)HandleToULong(PsGetCurrentProcessId());
+}
+
+WINBASEAPI
+DECLSPEC_NORETURN
+VOID
+WINAPI
+ExitProcess(
+    _In_ UINT uExitCode
+    )
+{
+	PAGED_CODE();
+
+	// :-(
+	KdBreakPoint();
+
+	TerminateProcess( NtCurrentProcess(),
+					  uExitCode );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+TerminateProcess(
+    _In_ HANDLE hProcess,
+    _In_ UINT uExitCode
+    )
+{
+	PAGED_CODE();
+
+	KdBreakPoint(); // :-(
+
+	if (hProcess == NULL) {
+		SetLastError(ERROR_INVALID_HANDLE);
+		return FALSE;
+	}
+	NTSTATUS Status = ZwTerminateProcess( hProcess,
+										  (NTSTATUS)uExitCode );
+	if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	BaseSetLastNTError( Status );
+	return FALSE;
+}
+
+
+
+WINBASEAPI
 BOOL
 WINAPI
 IsProcessorFeaturePresent(
 	_In_ DWORD ProcessorFeature
 	)
 {
-	return (BOOL)ExIsProcessorFeaturePresent(ProcessorFeature);
+	return (BOOL)ExIsProcessorFeaturePresent( ProcessorFeature );
 }

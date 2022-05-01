@@ -7,6 +7,15 @@ BOOLEAN LdkPebInitialized = FALSE;
 
 LDK_PEB CurrentPeb;
 
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializePeb)
+#pragma alloc_text(PAGE, LdkpTerminatePeb)
+#endif
+
+
+
 PLDK_PEB
 LdkCurrentPeb (
 	VOID
@@ -16,12 +25,15 @@ LdkCurrentPeb (
 }
 
 NTSTATUS
-LdkInitializePeb (
+LdkpInitializePeb (
 	_In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
 	)
 {
 	NTSTATUS status;
+
+	PAGED_CODE();
+
 	CurrentPeb.DriverObject = DriverObject;
 	status = LdkDuplicateUnicodeString(RegistryPath, &CurrentPeb.RegistryPath);
 	if (!NT_SUCCESS(status)) {
@@ -84,10 +96,12 @@ LdkInitializePeb (
 }
 
 VOID
-LdkTerminatePeb (
+LdkpTerminatePeb (
 	VOID
 	)
 {
+	PAGED_CODE();
+
 	if (!LdkPebInitialized) return;
 
 	LdkFreeAnsiString(&CurrentPeb.FullPathName);
