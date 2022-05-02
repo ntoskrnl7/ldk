@@ -3,28 +3,7 @@
 
 #include "../ldk.h"
 
-//
-// Current Directory Stuff
-//
-
 typedef struct _RTLP_CURDIR_REF *PRTLP_CURDIR_REF;
-
-typedef struct _RTL_RELATIVE_NAME_U {
-    UNICODE_STRING RelativeName;
-    HANDLE ContainingDirectory;
-    PRTLP_CURDIR_REF CurDirRef;
-} RTL_RELATIVE_NAME_U, *PRTL_RELATIVE_NAME_U;
-
-typedef enum _RTL_PATH_TYPE {
-    RtlPathTypeUnknown,         // 0
-    RtlPathTypeUncAbsolute,     // 1
-    RtlPathTypeDriveAbsolute,   // 2
-    RtlPathTypeDriveRelative,   // 3
-    RtlPathTypeRooted,          // 4
-    RtlPathTypeRelative,        // 5
-    RtlPathTypeLocalDevice,     // 6
-    RtlPathTypeRootLocalDevice  // 7
-} RTL_PATH_TYPE;
 
 #define IS_PATH_SEPARATOR_U(ch) ((ch == L'\\') || (ch == L'/'))
 
