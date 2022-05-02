@@ -17,8 +17,18 @@
 #include "threadpoollegacyapiset.h"
 #include "stringapiset.h"
 #include "fibersapi.h"
+#include "fileapi.h"
+#include "heapapi.h"
 
 EXTERN_C_START
+
+#define FILE_TYPE_UNKNOWN   0x0000
+#define FILE_TYPE_DISK      0x0001
+#define FILE_TYPE_CHAR      0x0002
+#define FILE_TYPE_PIPE      0x0003
+#define FILE_TYPE_REMOTE    0x8000
+
+
 
 #define CREATE_SUSPENDED				0x00000004
 
@@ -26,13 +36,77 @@ EXTERN_C_START
 
 
 
-#define WAIT_FAILED             ((DWORD)0xFFFFFFFF)
-#define WAIT_OBJECT_0           ((STATUS_WAIT_0 ) + 0 )
+#define Yield()
 
-#define WAIT_ABANDONED          ((STATUS_ABANDONED_WAIT_0 ) + 0 )
-#define WAIT_ABANDONED_0        ((STATUS_ABANDONED_WAIT_0 ) + 0 )
+#define FILE_BEGIN           0
+#define FILE_CURRENT         1
+#define FILE_END             2
 
-#define WAIT_IO_COMPLETION      STATUS_USER_APC
+#define WAIT_FAILED ((DWORD)0xFFFFFFFF)
+#define WAIT_OBJECT_0       ((STATUS_WAIT_0 ) + 0 )
+
+#define WAIT_ABANDONED         ((STATUS_ABANDONED_WAIT_0 ) + 0 )
+#define WAIT_ABANDONED_0       ((STATUS_ABANDONED_WAIT_0 ) + 0 )
+
+#define WAIT_IO_COMPLETION                  STATUS_USER_APC
+
+#define SecureZeroMemory RtlSecureZeroMemory
+#define CaptureStackBackTrace RtlCaptureStackBackTrace
+
+//
+// File creation flags must start at the high end since they
+// are combined with the attributes
+//
+
+//
+//  These are flags supported through CreateFile (W7) and CreateFile2 (W8 and beyond)
+//
+
+#define FILE_FLAG_WRITE_THROUGH         0x80000000
+#define FILE_FLAG_OVERLAPPED            0x40000000
+#define FILE_FLAG_NO_BUFFERING          0x20000000
+#define FILE_FLAG_RANDOM_ACCESS         0x10000000
+#define FILE_FLAG_SEQUENTIAL_SCAN       0x08000000
+#define FILE_FLAG_DELETE_ON_CLOSE       0x04000000
+#define FILE_FLAG_BACKUP_SEMANTICS      0x02000000
+#define FILE_FLAG_POSIX_SEMANTICS       0x01000000
+#define FILE_FLAG_SESSION_AWARE         0x00800000
+#define FILE_FLAG_OPEN_REPARSE_POINT    0x00200000
+#define FILE_FLAG_OPEN_NO_RECALL        0x00100000
+#define FILE_FLAG_FIRST_PIPE_INSTANCE   0x00080000
+
+#if (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
+
+//
+//  These are flags supported only through CreateFile2 (W8 and beyond)
+//
+//  Due to the multiplexing of file creation flags, file attribute flags and
+//  security QoS flags into a single DWORD (dwFlagsAndAttributes) parameter for
+//  CreateFile, there is no way to add any more flags to CreateFile. Additional
+//  flags for the create operation must be added to CreateFile2 only
+//
+
+#define FILE_FLAG_OPEN_REQUIRING_OPLOCK 0x00040000
+
+#endif
+
+
+
+//
+// Define the Security Quality of Service bits to be passed
+// into CreateFile
+//
+
+#define SECURITY_ANONYMOUS          ( SecurityAnonymous      << 16 )
+#define SECURITY_IDENTIFICATION     ( SecurityIdentification << 16 )
+#define SECURITY_IMPERSONATION      ( SecurityImpersonation  << 16 )
+#define SECURITY_DELEGATION         ( SecurityDelegation     << 16 )
+
+#define SECURITY_CONTEXT_TRACKING  0x00040000
+#define SECURITY_EFFECTIVE_ONLY    0x00080000
+
+#define SECURITY_SQOS_PRESENT      0x00100000
+#define SECURITY_VALID_SQOS_FLAGS  0x001F0000
 
 
 

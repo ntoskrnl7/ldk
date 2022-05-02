@@ -165,4 +165,16 @@ RtlQueueWorkItem(
     _In_ ULONG Flags
     );
 
+RTL_PATH_TYPE
+NTAPI
+RtlDetermineDosPathNameType_U (
+    _In_ PCWSTR DosFileName
+    );
+
+ULONG
+NTAPI
+RtlIsDosDeviceName_U(
+    _In_ PCWSTR DosFileName
+    );
+
 EXTERN_C_END
