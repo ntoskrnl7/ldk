@@ -74,7 +74,7 @@ LdkLookTebByThread (
 	PLIST_ENTRY NextEntry;
 	KIRQL OldIrql;
 	OldIrql = ExAcquireSpinLockShared(&LdkpTebListLock);
-
+ 
 	for (NextEntry = LdkpTebListHead.Flink;
 		NextEntry != &LdkpTebListHead;
 		NextEntry = NextEntry->Flink) {
@@ -232,8 +232,6 @@ LdkpTerminateTeb (
 	ExWaitForRundownProtectionRelease(&Teb->RundownProtect);
 	ExRundownCompleted(&Teb->RundownProtect);
 
-	Teb->Thread = NULL;
-
 	if (Teb->TlsSlots) {
 		ExFreeToNPagedLookasideList(&LdkpTebTlsLookaside, Teb->TlsSlots);
 		Teb->TlsSlots = NULL;
@@ -245,6 +243,14 @@ LdkpTerminateTeb (
 		PLDK_FLS_SLOT Slot;
 
 		for (DWORD i = 0; i < LDK_FLS_SLOTS_SIZE; i++) {
+			// FLS Callback에서 NtCurrentTeb 등을 통해서 TEB에 접근하는 경우
+			// 해당 스레드의 스택 최하위에 TEB가 없으면 
+			// LdkLookTebByThread를 호출하며, 이때 데드락의 위험이 있습니다.
+			// 그래서 여기서 무조건 스레드 최하위 스택에 TEB를 설정하도록 합니다.
+			ULONG_PTR LowLimit, HighLimit;
+			IoGetStackLimits(&LowLimit, &HighLimit);
+			*(PLDK_TEB *)LowLimit = Teb;
+
 			Slot = &Teb->FlsSlots[i];
 			Data = InterlockedExchangePointer(&Slot->Data, NULL);
 #pragma warning(disable:4055)
@@ -264,4 +270,6 @@ LdkpTerminateTeb (
 		ExFreeToNPagedLookasideList(&LdkpTebStaticUnicodeBufferLookaside, Teb->StaticUnicodeBuffer);
 		Teb->StaticUnicodeBuffer = NULL;
 	}
+
+	Teb->Thread = NULL;
 }
