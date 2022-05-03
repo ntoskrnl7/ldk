@@ -5,6 +5,8 @@
 
 typedef struct _LDK_PEB {
 
+	ULONG NtGlobalFlag;
+
 	PVOID ImageBaseAddress;
 	SIZE_T ImageBaseSize;
 	UNICODE_STRING ImagePathName;

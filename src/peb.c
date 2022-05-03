@@ -90,6 +90,8 @@ LdkpInitializePeb (
 
 	RtlInitializeBitMap(&CurrentPeb.TlsBitmap, &CurrentPeb.TlsBitmapBits[0], LDK_TLS_SLOTS_SIZE);
 	RtlInitializeBitMap(&CurrentPeb.FlsBitmap, &CurrentPeb.FlsBitmapBits[0], LDK_FLS_SLOTS_SIZE);
+	
+	CurrentPeb.NtGlobalFlag = 0;
 
 	LdkPebInitialized = NT_SUCCESS(status);
 	return status;
