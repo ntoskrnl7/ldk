@@ -108,12 +108,13 @@ LdkTerminate (
 	LdrpShutdownInProgress = TRUE;
 	LdrpShutdownThreadId = PsGetCurrentThreadId();
 
+	SetFlag(LdkGlobalFlags, LDK_SHUTDOWN_IN_PROGRESS);
+
 	LdkpKernel32Terminate();
 	LdkpNtdllTerminate();
 
-	LdkpTerminatePeb();
 	LdkpTerminateTebMap();
-
+	LdkpTerminatePeb();
 	ClearFlag(LdkGlobalFlags, LDK_FLAG_INITIALIZED);
 
 	LdkUnlockGlobalFlags();

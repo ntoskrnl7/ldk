@@ -32,27 +32,30 @@ LdkpTerminateTeb (
 
 
 PLDK_TEB
-LdkCreateTeb (
+LdkpCreateTeb (
 	_In_ PETHREAD Thread
 	)
 {
-	PLDK_TEB Teb;
-	KIRQL OldIrql;
-
-	Teb = ExAllocateFromNPagedLookasideList(&LdkpTebLookaside);
+	PLDK_TEB Teb = ExAllocateFromNPagedLookasideList(&LdkpTebLookaside);
 	if (! Teb) {
 		return NULL;
 	}
-
 	if (! NT_SUCCESS(LdkpInitializeTeb(Teb, Thread))) {
 		ExFreeToNPagedLookasideList(&LdkpTebLookaside, Teb);
 		return NULL;
 	}
+	return Teb;
+}
 
-	OldIrql = ExAcquireSpinLockExclusive(&LdkpTebListLock);
+PLDK_TEB
+LdkCreateTeb (
+	_In_ PETHREAD Thread
+	)
+{
+	PLDK_TEB Teb = LdkpCreateTeb(Thread);
+	KIRQL OldIrql = ExAcquireSpinLockExclusive(&LdkpTebListLock);
 	InsertHeadList(&LdkpTebListHead, &Teb->ActiveLinks);
 	ExReleaseSpinLockExclusive(&LdkpTebListLock, OldIrql);
-
 	return Teb;
 }
 
@@ -97,12 +100,14 @@ LdkCurrentTeb (
 	VOID
 	)
 {
-	PLDK_TEB Teb = NULL;
+	//
+	// 스택의 최하단에 Teb가 있다면, Teb를 반환하도록 합니다.
+	// 동기화 후 목록을 순회하는 행동은 너무 느리므로 이러한 방법을 적용하였습니다.
+	//
 	ULONG_PTR LowLimit, HighLimit;
-	
 	IoGetStackLimits(&LowLimit, &HighLimit);
 	
-	Teb = *(PLDK_TEB *)LowLimit;
+	PLDK_TEB Teb = *(PLDK_TEB *)LowLimit;
 	if (Teb && MmIsAddressValid(Teb) && Teb->Thread == PsGetCurrentThread()) {
 		return Teb;
 	}
@@ -111,7 +116,6 @@ LdkCurrentTeb (
 	// KeExpandKernelStackAndCallout/Ex 함수 등을 사용하여 스택 확장등으로 인해서
 	// TEB를 못얻어올 경우가 존재하기때문에 TebMap에서 TEB를 찾도록 합니다.
 	//
-	
 	Teb = LdkLookTebByThread(PsGetCurrentThread());
 	if (Teb) {
 		*(PLDK_TEB *)LowLimit = Teb;
@@ -119,12 +123,20 @@ LdkCurrentTeb (
 	}
 
 	//
+	// LDK가 종료되는 중이라면, Teb 목록에 추가하지 않고 생성 후 반환하도록 처리합니다.
+	//
+	if (LDK_IS_SHUTDOWN_IN_PROGRESS) {
+		Teb = LdkpCreateTeb(PsGetCurrentThread());
+		NT_ASSERT(Teb);
+		*(PLDK_TEB *)LowLimit = Teb;
+		return Teb;
+	}
+
+	//
 	// TEB가 없다면 새로 생성합니다.
 	//
-
 	Teb = LdkCreateTeb(PsGetCurrentThread());
 	NT_ASSERT(Teb);
-
 	*(PLDK_TEB *)LowLimit = Teb;
 	return Teb;
 }
@@ -135,7 +147,6 @@ LdkpInitializeTebMap (
 	) 
 {
 	PAGED_CODE();
-
 
 	LdkpTebListLock = 0;
 	InitializeListHead(&LdkpTebListHead);
@@ -149,6 +160,28 @@ LdkpInitializeTebMap (
 }
 
 VOID
+LdkpInvokeFlsCallback (
+	_Inout_ PLDK_TEB Teb
+	)
+{
+	if (ExAcquireRundownProtection(&Teb->RundownProtect)) {
+		for (DWORD i = 0; i < LDK_FLS_SLOTS_SIZE; i++) {
+			PVOID Data;
+			PFLS_CALLBACK_FUNCTION Callback;
+			PLDK_FLS_SLOT Slot = &Teb->FlsSlots[i];
+#pragma warning(disable:4055)
+			Callback = (PFLS_CALLBACK_FUNCTION)InterlockedExchangePointer((PVOID *)&Slot->Callback, NULL);
+#pragma warning(default:4055)
+			Data = InterlockedExchangePointer(&Slot->Data, NULL);
+			if (Callback) {
+				Callback(Data);
+			}				
+		}
+		ExReleaseRundownProtection(&Teb->RundownProtect);
+	}
+}
+
+VOID
 LdkpTerminateTebMap (
 	VOID
 	)
@@ -156,19 +189,29 @@ LdkpTerminateTebMap (
 	PAGED_CODE();
 
 	PLDK_TEB Teb;
-	PLIST_ENTRY Entry;
-	KIRQL OldIrql;
 
+	//
+	// Teb에 등록된 Fls callbck을 모두 호출합니다.
+	//
+	KIRQL OldIrql = ExAcquireSpinLockShared(&LdkpTebListLock);
+	PLIST_ENTRY Entry= LdkpTebListHead.Flink;
+	while (Entry != &LdkpTebListHead) {
+		Teb = CONTAINING_RECORD(Entry, LDK_TEB, ActiveLinks);
+		LdkpInvokeFlsCallback(Teb);
+		Entry = Entry->Flink;
+	}
+	ExReleaseSpinLockShared(&LdkpTebListLock, OldIrql);
+
+	//
+	// Teb를 모두 할당 해제합니다.
+	//
 	OldIrql = ExAcquireSpinLockExclusive(&LdkpTebListLock);
-
 	Entry = RemoveHeadList(&LdkpTebListHead);
-
 	while (Entry != &LdkpTebListHead) {
 		Teb = CONTAINING_RECORD(Entry, LDK_TEB, ActiveLinks);
 		Entry = RemoveHeadList(&LdkpTebListHead);
 		LdkDeleteTeb(Teb);
 	}
-
 	ExReleaseSpinLockExclusive(&LdkpTebListLock, OldIrql);
 
 	ExDeleteNPagedLookasideList(&LdkpTebLookaside);
@@ -238,22 +281,6 @@ LdkpTerminateTeb (
 	}
 
 	if (Teb->FlsSlots) {
-		PVOID Data;
-		PFLS_CALLBACK_FUNCTION Callback;
-		PLDK_FLS_SLOT Slot;
-
-		for (DWORD i = 0; i < LDK_FLS_SLOTS_SIZE; i++) {
-			Slot = &Teb->FlsSlots[i];
-			Data = InterlockedExchangePointer(&Slot->Data, NULL);
-#pragma warning(disable:4055)
-			Callback = (PFLS_CALLBACK_FUNCTION)InterlockedExchangePointer((PVOID *)&Slot->Callback, NULL);
-#pragma warning(default:4055)
-			if (Callback) {
-				NT_ASSERT(MmIsAddressValid((PVOID)(ULONG_PTR)Callback));
-				Callback(Data);
-			}
-		}
-
 		ExFreeToNPagedLookasideList(&LdkpTebFlsLookaside, Teb->FlsSlots);
 		Teb->FlsSlots = NULL;
 	}
