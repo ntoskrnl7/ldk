@@ -10,9 +10,10 @@
 #include "minwinbase.h"
 #include <winerror.h>
 
-#include "winnls.h"
 
 #define WINBASEAPI
 #include "winbase.h"
+
+#include "winnls.h"
 
 #include "ldk.h"

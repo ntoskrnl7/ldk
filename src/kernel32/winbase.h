@@ -2,8 +2,6 @@
 
 #include <Ldk/windows.h>
 
-
-
 ULONG
 BaseSetLastNTError(
 	_In_ NTSTATUS Status

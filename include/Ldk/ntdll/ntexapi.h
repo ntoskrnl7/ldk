@@ -41,4 +41,14 @@ NtReleaseKeyedEvent (
     _In_opt_ PLARGE_INTEGER Timeout
     );
 
+
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+ZwQueryDefaultLocale (
+	_In_ BOOLEAN UserProfile,
+	_Out_ PLCID DefaultLocaleId
+    );
+
 EXTERN_C_END
