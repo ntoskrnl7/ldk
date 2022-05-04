@@ -2,12 +2,33 @@
 #include "../ldk.h"
 #include "../ntdll/ntdll.h"
 
-#define TAG_EA_BUFFER			'fBaE'
+#define TAG_EA_BUFFER						'fBaE'
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, CreateDirectoryA)
+#pragma alloc_text(PAGE, CreateDirectoryW)
+#pragma alloc_text(PAGE, CreateFileA)
+#pragma alloc_text(PAGE, CreateFileW)
+#pragma alloc_text(PAGE, ReadFile)
+#pragma alloc_text(PAGE, WriteFile)
+#pragma alloc_text(PAGE, FlushFileBuffers)
+#pragma alloc_text(PAGE, SetEndOfFile)
+#pragma alloc_text(PAGE, SetFilePointer)
+#pragma alloc_text(PAGE, SetFilePointerEx)
+#pragma alloc_text(PAGE, GetFileAttributesA)
+#pragma alloc_text(PAGE, GetFileAttributesW)
+#pragma alloc_text(PAGE, GetFileSize)
+#pragma alloc_text(PAGE, GetFileSizeEx)
+#pragma alloc_text(PAGE, GetFileType)
+#pragma alloc_text(PAGE, SetFileTime)
+#endif
+
+
 
 WINBASEAPI
 BOOL
 WINAPI
-CreateDirectoryA(
+CreateDirectoryA (
     _In_ LPCSTR lpPathName,
     _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
     )
@@ -15,20 +36,27 @@ CreateDirectoryA(
 	BOOL bSuccess;
     UNICODE_STRING Unicode;
 	ANSI_STRING Ansi;
-	RtlInitAnsiString(&Ansi, lpPathName);
-	LdkAnsiStringToUnicodeString(&Unicode, &Ansi, TRUE);
 
-	bSuccess = CreateDirectoryW(Unicode.Buffer, lpSecurityAttributes);
+	PAGED_CODE();
 
-	LdkFreeUnicodeString(&Unicode);
+	RtlInitAnsiString( &Ansi,
+					   lpPathName );
 
+	LdkAnsiStringToUnicodeString( &Unicode,
+								  &Ansi,
+								  TRUE );
+
+	bSuccess = CreateDirectoryW( Unicode.Buffer,
+								lpSecurityAttributes );
+
+	LdkFreeUnicodeString( &Unicode );
 	return bSuccess;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-CreateDirectoryW(
+CreateDirectoryW (
     _In_ LPCWSTR lpPathName,
     _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
     )
@@ -39,42 +67,41 @@ CreateDirectoryW(
 	OBJECT_ATTRIBUTES ObjectAttributes;
 	IO_STATUS_BLOCK IoStatus;
 
-	RtlInitUnicodeString(&FileName, lpPathName);
+	PAGED_CODE();
 
-	InitializeObjectAttributes(
-		&ObjectAttributes,
-		&FileName,
-		OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
-		NULL,
-		NULL
-		);
+	RtlInitUnicodeString( &FileName,
+						  lpPathName );
+
+	InitializeObjectAttributes( &ObjectAttributes,
+								&FileName,
+								OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+								NULL,
+								NULL );
 
 	if (ARGUMENT_PRESENT(lpSecurityAttributes)) {
 		ObjectAttributes.SecurityDescriptor = lpSecurityAttributes->lpSecurityDescriptor;
 	}
 
-	Status = ZwCreateFile(
-		&DirectoryHandle,
-		FILE_LIST_DIRECTORY | SYNCHRONIZE,
-		&ObjectAttributes,
-		&IoStatus,
-		NULL,
-		FILE_ATTRIBUTE_NORMAL,
-		FILE_SHARE_READ | FILE_SHARE_WRITE,
-		FILE_CREATE,
-		FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT,
-		NULL,
-		0L
-		);
+	Status = ZwCreateFile( &DirectoryHandle,
+						   FILE_LIST_DIRECTORY | SYNCHRONIZE,
+						   &ObjectAttributes,
+						   &IoStatus,
+						   NULL,
+						   FILE_ATTRIBUTE_NORMAL,
+						   FILE_SHARE_READ | FILE_SHARE_WRITE,
+						   FILE_CREATE,
+						   FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT,
+						   NULL,
+						   0L );
 
 	if (NT_SUCCESS(Status)) {
-		ZwClose(DirectoryHandle);
+		ZwClose( DirectoryHandle );
 		return TRUE;
 	} else {
-		if (RtlIsDosDeviceName_U((LPWSTR)lpPathName)) {
+		if (RtlIsDosDeviceName_U( (LPWSTR)lpPathName) ) {
 			Status = STATUS_NOT_A_DIRECTORY;
 		}
-		BaseSetLastNTError(Status);
+		BaseSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -84,7 +111,7 @@ CreateDirectoryW(
 WINBASEAPI
 HANDLE
 WINAPI
-CreateFileA(
+CreateFileA (
     _In_ LPCSTR lpFileName,
     _In_ DWORD dwDesiredAccess,
     _In_ DWORD dwShareMode,
@@ -97,27 +124,32 @@ CreateFileA(
 	HANDLE hFile;
     UNICODE_STRING Unicode;
 	ANSI_STRING Ansi;
-	RtlInitAnsiString(&Ansi, lpFileName);
-	LdkAnsiStringToUnicodeString(&Unicode, &Ansi, TRUE);
 
-	hFile = CreateFileW(Unicode.Buffer,
-		dwDesiredAccess,
-		dwShareMode,
-		lpSecurityAttributes,
-		dwCreationDisposition,
-		dwFlagsAndAttributes,
-		hTemplateFile
-	);
+	PAGED_CODE();
 
-	LdkFreeUnicodeString(&Unicode);
+	RtlInitAnsiString( &Ansi,
+					   lpFileName );
 
+	LdkAnsiStringToUnicodeString( &Unicode,
+								  &Ansi,
+								  TRUE );
+
+	hFile = CreateFileW( Unicode.Buffer,
+						 dwDesiredAccess,
+						 dwShareMode,
+						 lpSecurityAttributes,
+						 dwCreationDisposition,
+						 dwFlagsAndAttributes,
+						 hTemplateFile );
+
+	LdkFreeUnicodeString( &Unicode );
 	return hFile;
 }
 
 WINBASEAPI
 HANDLE
 WINAPI
-CreateFileW(
+CreateFileW (
     _In_ LPCWSTR lpFileName,
     _In_ DWORD dwDesiredAccess,
     _In_ DWORD dwShareMode,
@@ -141,6 +173,8 @@ CreateFileW(
 
 	PFILE_FULL_EA_INFORMATION EaBuffer = NULL;
 	ULONG EaSize = 0;
+
+	PAGED_CODE();
 
 	switch (dwCreationDisposition) {
 	case CREATE_NEW:
@@ -264,46 +298,43 @@ CreateFileW(
 
 		FILE_EA_INFORMATION EaInfo;
 		
-		Status = ZwQueryInformationFile(
-					hTemplateFile,
-					&IoStatus,
-					&EaInfo,
-					sizeof(EaInfo),
-					FileEaInformation
-					);
+		Status = ZwQueryInformationFile( hTemplateFile,
+										 &IoStatus,
+										 &EaInfo,
+										 sizeof(EaInfo),
+										 FileEaInformation );
 
 		if (NT_SUCCESS(Status) && EaInfo.EaSize) {
-
 			EaSize = EaInfo.EaSize;
 
 			do {
-
 				EaSize *= 2;
-				EaBuffer = HeapAlloc( GetProcessHeap(), TAG_EA_BUFFER, EaSize );
+				EaBuffer = HeapAlloc( GetProcessHeap(),
+									  TAG_EA_BUFFER,
+									  EaSize );
 
 				if (! EaBuffer) {
-					BaseSetLastNTError(STATUS_NO_MEMORY);
+					BaseSetLastNTError( STATUS_NO_MEMORY );
 					return INVALID_HANDLE_VALUE;
 				}
 
-				Status = ZwQueryEaFile(
-						hTemplateFile,
-						&IoStatus,
-						EaBuffer,
-						EaSize,
-						FALSE,
-						(PVOID)NULL,
-						0,
-						(PULONG)NULL,
-						TRUE
-						);
+				Status = ZwQueryEaFile( hTemplateFile,
+										&IoStatus,
+										EaBuffer,
+										EaSize,
+										FALSE,
+										(PVOID)NULL,
+										0,
+										(PULONG)NULL,
+										TRUE );
 
-				if (!NT_SUCCESS(Status)) {
-					HeapFree( GetProcessHeap(), 0, EaBuffer );
+				if (! NT_SUCCESS(Status)) {
+					HeapFree( GetProcessHeap(),
+							  0,
+							  EaBuffer );
 					EaBuffer = NULL;
 					IoStatus.Information = 0;
 				}
-
 			} while ((Status == STATUS_BUFFER_OVERFLOW) || (Status == STATUS_BUFFER_TOO_SMALL));
 
 			EaSize = (ULONG)IoStatus.Information;
@@ -321,8 +352,11 @@ CreateFileW(
 						   CreateFlags,
 						   EaBuffer,
 						   EaSize );
+
 	if (EaBuffer) {
-		HeapFree( GetProcessHeap(), 0, EaBuffer );
+		HeapFree( GetProcessHeap(),
+				  0,
+				  EaBuffer );
 	}
 
 	if (! NT_SUCCESS( Status )) {
@@ -344,26 +378,21 @@ CreateFileW(
 	}
 
     if (dwCreationDisposition == TRUNCATE_EXISTING) {
-
 		FILE_ALLOCATION_INFORMATION AllocationInfo;
 		AllocationInfo.AllocationSize.QuadPart = 0;
 
-		Status = ZwSetInformationFile(
-					FileHandle,
-					&IoStatus,
-					&AllocationInfo,
-					sizeof(AllocationInfo),
-					FileAllocationInformation
-					);
+		Status = ZwSetInformationFile( FileHandle,
+									   &IoStatus,
+									   &AllocationInfo,
+									   sizeof(AllocationInfo),
+									   FileAllocationInformation );
 
 		if (! NT_SUCCESS(Status)) {
 			BaseSetLastNTError( Status );
-			ZwClose(FileHandle);
+			ZwClose( FileHandle );
 			FileHandle = INVALID_HANDLE_VALUE;
 		}
-
 	}
-
 	return FileHandle;
 }
 
@@ -371,7 +400,7 @@ WINBASEAPI
 _Must_inspect_result_
 BOOL
 WINAPI
-ReadFile(
+ReadFile (
     _In_ HANDLE hFile,
     _Out_writes_bytes_to_opt_(nNumberOfBytesToRead, *lpNumberOfBytesRead) __out_data_source(FILE) LPVOID lpBuffer,
     _In_ DWORD nNumberOfBytesToRead,
@@ -381,30 +410,63 @@ ReadFile(
 {
 	NTSTATUS Status;
 
+	PAGED_CODE();
+
+	LdkGetConsoleHandle( hFile,
+						 &hFile );
+
+	if (LdkIsConsoleHandle( hFile )) {
+		if (ReadConsoleA( hFile,
+						  lpBuffer,
+						  nNumberOfBytesToRead,
+						  lpNumberOfBytesRead,
+						  NULL )) {
+ 			DWORD InputMode;
+			Status = STATUS_SUCCESS;
+			if (! GetConsoleMode( hFile,
+								  &InputMode )) {
+				InputMode = 0;
+			}
+			if (InputMode & ENABLE_PROCESSED_INPUT) {
+				try {
+					if (*(PCHAR)lpBuffer == 0x1A) {
+						*lpNumberOfBytesRead = 0;
+					}
+				} except (EXCEPTION_EXECUTE_HANDLER) {
+					Status = GetExceptionCode();
+				}
+			}
+			if (NT_SUCCESS(Status)) {
+				return TRUE;
+			} else {
+				BaseSetLastNTError( Status );
+				return FALSE;
+			}
+		}
+	}
+
 	if (ARGUMENT_PRESENT(lpNumberOfBytesRead)) {
 		*lpNumberOfBytesRead = 0;
 	}
 
 	if (ARGUMENT_PRESENT(lpOverlapped)) {
-
 		LARGE_INTEGER ByteOffset;
 		ByteOffset.LowPart = lpOverlapped->Offset;
 		ByteOffset.HighPart = lpOverlapped->OffsetHigh;
 
 		lpOverlapped->Internal = (DWORD)STATUS_PENDING;
 
-		Status = ZwReadFile(hFile,
-			lpOverlapped->hEvent,
-			NULL,
-			(ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
-			(PIO_STATUS_BLOCK)&lpOverlapped->Internal,
-			lpBuffer,
-			nNumberOfBytesToRead,
-			&ByteOffset,
-			NULL);
+		Status = ZwReadFile( hFile,
+							 lpOverlapped->hEvent,
+							 NULL,
+							 (ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
+							 (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+							 lpBuffer,
+							 nNumberOfBytesToRead,
+							 &ByteOffset,
+							 NULL );
 
 		if (NT_SUCCESS(Status) && Status != STATUS_PENDING) {
-
 			if (ARGUMENT_PRESENT(lpNumberOfBytesRead)) {
 				try {
 					*lpNumberOfBytesRead = (DWORD)lpOverlapped->InternalHigh;
@@ -412,68 +474,52 @@ ReadFile(
 					*lpNumberOfBytesRead = 0;
 				}
 			}
-
 			return TRUE;
-
 		} else if (Status == STATUS_END_OF_FILE) {
-
 			if (ARGUMENT_PRESENT(lpNumberOfBytesRead)) {
 				*lpNumberOfBytesRead = 0;
 			}
-
-			BaseSetLastNTError(Status);
+			BaseSetLastNTError( Status );
 			return FALSE;
-
 		} else {
-
-			BaseSetLastNTError(Status);
+			BaseSetLastNTError( Status );
 			return FALSE;
-
 		}
-
 	} else {
-
 		IO_STATUS_BLOCK IoStatus;
 
-		Status = ZwReadFile(hFile,
-			NULL,
-			NULL,
-			NULL,
-			&IoStatus,
-			lpBuffer,
-			nNumberOfBytesToRead,
-			NULL,
-			NULL);
+		Status = ZwReadFile( hFile,
+							 NULL,
+							 NULL,
+							 NULL,
+							 &IoStatus,
+							 lpBuffer,
+							 nNumberOfBytesToRead,
+							 NULL,
+							 NULL );
 
 		if (Status == STATUS_PENDING) {
-
-			Status = ZwWaitForSingleObject( hFile, FALSE, NULL );
+			Status = ZwWaitForSingleObject( hFile,
+											FALSE,
+											NULL );
 
 			if (NT_SUCCESS(Status)) {
 				Status = IoStatus.Status;
 			}
-
 		}
 
 		if (NT_SUCCESS(Status)) {
-
 			*lpNumberOfBytesRead = (DWORD)IoStatus.Information;
 			return TRUE;
-
 		} else if (Status == STATUS_END_OF_FILE) {
-
 			*lpNumberOfBytesRead = 0;
 			return TRUE;
-
 		} else {
-
 			if (NT_WARNING(Status)) {
 				*lpNumberOfBytesRead = (DWORD)IoStatus.Information;
 			}
-
-			BaseSetLastNTError(Status);
+			BaseSetLastNTError( Status );
 			return FALSE;
-
 		}
 	}
 }
@@ -481,7 +527,7 @@ ReadFile(
 WINBASEAPI
 BOOL
 WINAPI
-WriteFile(
+WriteFile (
     _In_ HANDLE hFile,
     _In_reads_bytes_opt_(nNumberOfBytesToWrite) LPCVOID lpBuffer,
     _In_ DWORD nNumberOfBytesToWrite,
@@ -490,6 +536,19 @@ WriteFile(
     )
 {
 	NTSTATUS Status;
+
+	PAGED_CODE();
+
+	LdkGetConsoleHandle( hFile,
+						 &hFile );
+
+	if (LdkIsConsoleHandle( hFile )) {
+		return WriteConsoleA( hFile,
+							  lpBuffer,
+							  nNumberOfBytesToWrite,
+							  lpNumberOfBytesWritten,
+							  NULL );
+	}
 
 	if (ARGUMENT_PRESENT(lpNumberOfBytesWritten)) {
 		*lpNumberOfBytesWritten = 0;
@@ -503,18 +562,17 @@ WriteFile(
 
 		lpOverlapped->Internal = (DWORD)STATUS_PENDING;
 
-		Status = ZwWriteFile(hFile,
-			lpOverlapped->hEvent,
-			NULL,
-			(ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
-			(PIO_STATUS_BLOCK)&lpOverlapped->Internal,
-			(PVOID)lpBuffer,
-			nNumberOfBytesToWrite,
-			&ByteOffset,
-			NULL);
+		Status = ZwWriteFile( hFile,
+							  lpOverlapped->hEvent,
+							  NULL,
+							  (ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
+							  (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+							  (PVOID)lpBuffer,
+							  nNumberOfBytesToWrite,
+							  &ByteOffset,
+							  NULL );
 
 		if (NT_SUCCESS(Status) && Status != STATUS_PENDING) {
-
 			if (ARGUMENT_PRESENT(lpNumberOfBytesWritten)) {
 				try {
 					*lpNumberOfBytesWritten = (DWORD)lpOverlapped->InternalHigh;
@@ -522,78 +580,66 @@ WriteFile(
 					*lpNumberOfBytesWritten = 0;
 				}
 			}
-
 			return TRUE;
-
 		} else {
-
-			BaseSetLastNTError(Status);
+			BaseSetLastNTError( Status );
 			return FALSE;
-
 		}
-
 	} else {
-
 		IO_STATUS_BLOCK IoStatus;
 
-		Status = ZwWriteFile(hFile,
-			NULL,
-			NULL,
-			NULL,
-			&IoStatus,
-			(PVOID)lpBuffer,
-			nNumberOfBytesToWrite,
-			NULL,
-			NULL);
+		Status = ZwWriteFile( hFile,
+							  NULL,
+							  NULL,
+							  NULL,
+							  &IoStatus,
+							  (PVOID)lpBuffer,
+							  nNumberOfBytesToWrite,
+							  NULL,
+							  NULL);
 
 		if (Status == STATUS_PENDING) {
-
-			Status = ZwWaitForSingleObject(hFile,
-				FALSE,
-				NULL);
+			Status = ZwWaitForSingleObject( hFile,
+											FALSE,
+											NULL );
 
 			if (NT_SUCCESS(Status)) {
 				Status = IoStatus.Status;
 			}
-
 		}
 
 		if (NT_SUCCESS(Status)) {
-
 			*lpNumberOfBytesWritten = (DWORD)IoStatus.Information;
 			return TRUE;
-
 		} else {
-
 			if (NT_WARNING(Status)) {
 				*lpNumberOfBytesWritten = (DWORD)IoStatus.Information;
 			}
-
-			BaseSetLastNTError(Status);
+			BaseSetLastNTError( Status );
 			return FALSE;
-
 		}
-
 	}
-
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-FlushFileBuffers(
+FlushFileBuffers (
     _In_ HANDLE hFile
     )
 {
 	NTSTATUS Status;
 	IO_STATUS_BLOCK IoStatus;
 
-	Status = ZwFlushBuffersFile(hFile, &IoStatus);
+	PAGED_CODE();
+
+	Status = ZwFlushBuffersFile( hFile,
+								 &IoStatus );
 
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
 	} else {
-		BaseSetLastNTError(Status);
+		BaseSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -611,13 +657,15 @@ SetEndOfFile(
 	FILE_END_OF_FILE_INFORMATION EndOfFile;
 	FILE_ALLOCATION_INFORMATION AllocationInfo;
 	
+	PAGED_CODE();
+
 	Status = ZwQueryInformationFile( hFile,
 									 &IoStatus,
 									 &PositionInfo,
 									 sizeof(FILE_POSITION_INFORMATION),
 									 FilePositionInformation );
 
-	if (!NT_SUCCESS(Status)) {
+	if (! NT_SUCCESS(Status)) {
 		BaseSetLastNTError( Status );
 		return FALSE;
 	}
@@ -629,7 +677,7 @@ SetEndOfFile(
 								   sizeof(FILE_END_OF_FILE_INFORMATION),
 								   FileEndOfFileInformation );
 	
-	if (!NT_SUCCESS(Status)) {
+	if (! NT_SUCCESS(Status)) {
 		BaseSetLastNTError( Status );
 		return FALSE;
 	}
@@ -653,7 +701,7 @@ SetEndOfFile(
 WINBASEAPI
 DWORD
 WINAPI
-SetFilePointer(
+SetFilePointer (
     _In_ HANDLE hFile,
     _In_ LONG lDistanceToMove,
     _Inout_opt_ PLONG lpDistanceToMoveHigh,
@@ -667,6 +715,8 @@ SetFilePointer(
 	FILE_POSITION_INFORMATION CurrentPosition;
 	FILE_STANDARD_INFORMATION StandardInfo;
 
+	PAGED_CODE();
+
 	if (ARGUMENT_PRESENT(lpDistanceToMoveHigh)) {
 		PositionInfo.CurrentByteOffset.HighPart = *lpDistanceToMoveHigh;
 		PositionInfo.CurrentByteOffset.LowPart = lDistanceToMove;
@@ -679,60 +729,57 @@ SetFilePointer(
 		break;
 
 	case FILE_CURRENT:
-		Status = ZwQueryInformationFile(hFile,
-			&IoStatus,
-			&CurrentPosition,
-			sizeof(FILE_POSITION_INFORMATION),
-			FilePositionInformation);
+		Status = ZwQueryInformationFile( hFile,
+										 &IoStatus,
+										 &CurrentPosition,
+										 sizeof(FILE_POSITION_INFORMATION),
+										 FilePositionInformation );
 
-		if (!NT_SUCCESS(Status)) {
-			BaseSetLastNTError(Status);
+		if (! NT_SUCCESS(Status)) {
+			BaseSetLastNTError( Status );
 			return (DWORD)-1;
 		}
-
 		PositionInfo.CurrentByteOffset.QuadPart += CurrentPosition.CurrentByteOffset.QuadPart;
 		break;
 
 	case FILE_END:
-		Status = ZwQueryInformationFile(hFile,
-			&IoStatus,
-			&StandardInfo,
-			sizeof(FILE_STANDARD_INFORMATION),
-			FileStandardInformation);
+		Status = ZwQueryInformationFile( hFile,
+										 &IoStatus,
+										 &StandardInfo,
+										 sizeof(FILE_STANDARD_INFORMATION),
+										 FileStandardInformation );
 
-		if (!NT_SUCCESS(Status)) {
-			BaseSetLastNTError(Status);
+		if (! NT_SUCCESS(Status)) {
+			BaseSetLastNTError( Status );
 			return (DWORD)-1;
 		}
-
 		PositionInfo.CurrentByteOffset.QuadPart += StandardInfo.EndOfFile.QuadPart;
 		break;
 
 	default:
-		SetLastError(ERROR_INVALID_PARAMETER);
+		SetLastError( ERROR_INVALID_PARAMETER );
 		return (DWORD)-1;
 		break;
 	}
 
 	if (PositionInfo.CurrentByteOffset.QuadPart < 0) {
-		SetLastError(ERROR_NEGATIVE_SEEK);
+		SetLastError( ERROR_NEGATIVE_SEEK );
 		return (DWORD)-1;
 	}
 
 	if (!ARGUMENT_PRESENT(lpDistanceToMoveHigh) &&
 		(PositionInfo.CurrentByteOffset.HighPart & MAXLONG)) {
-		SetLastError(ERROR_INVALID_PARAMETER);
+		SetLastError( ERROR_INVALID_PARAMETER );
 		return (DWORD)-1;
 	}
 
-	Status = ZwSetInformationFile(hFile,
-		&IoStatus,
-		&PositionInfo,
-		sizeof(FILE_POSITION_INFORMATION),
-		FilePositionInformation);
+	Status = ZwSetInformationFile( hFile,
+								   &IoStatus,
+								   &PositionInfo,
+								   sizeof(FILE_POSITION_INFORMATION),
+								   FilePositionInformation );
 
 	if (NT_SUCCESS(Status)) {
-
 		if (ARGUMENT_PRESENT(lpDistanceToMoveHigh)) {
 			*lpDistanceToMoveHigh = PositionInfo.CurrentByteOffset.HighPart;
 		}
@@ -742,10 +789,8 @@ SetFilePointer(
 		}
 
 		return PositionInfo.CurrentByteOffset.LowPart;
-
 	} else {
-
-		BaseSetLastNTError(Status);
+		BaseSetLastNTError( Status );
 
 		if (ARGUMENT_PRESENT(lpDistanceToMoveHigh)) {
 			*lpDistanceToMoveHigh = -1;
@@ -758,7 +803,7 @@ SetFilePointer(
 WINBASEAPI
 BOOL
 WINAPI
-SetFilePointerEx(
+SetFilePointerEx (
     _In_ HANDLE hFile,
     _In_ LARGE_INTEGER liDistanceToMove,
     _Out_opt_ PLARGE_INTEGER lpNewFilePointer,
@@ -772,22 +817,23 @@ SetFilePointerEx(
 	FILE_POSITION_INFORMATION CurrentPosition;
 	FILE_STANDARD_INFORMATION StandardInfo;
 
+	PAGED_CODE();
+
 	PositionInfo.CurrentByteOffset.QuadPart = liDistanceToMove.QuadPart;
 
 	switch (dwMoveMethod) {
-
 	case FILE_BEGIN:
 		break;
 
 	case FILE_CURRENT:
-		Status = ZwQueryInformationFile(hFile,
-			&IoStatus,
-			&CurrentPosition,
-			sizeof(FILE_POSITION_INFORMATION),
-			FilePositionInformation);
+		Status = ZwQueryInformationFile( hFile,
+										 &IoStatus,
+										 &CurrentPosition,
+										 sizeof(FILE_POSITION_INFORMATION),
+										 FilePositionInformation );
 
-		if (!NT_SUCCESS(Status)) {
-			BaseSetLastNTError(Status);
+		if (! NT_SUCCESS(Status)) {
+			BaseSetLastNTError( Status );
 			return (DWORD)-1;
 		}
 
@@ -795,14 +841,14 @@ SetFilePointerEx(
 		break;
 
 	case FILE_END:
-		Status = ZwQueryInformationFile(hFile,
-			&IoStatus,
-			&StandardInfo,
-			sizeof(FILE_STANDARD_INFORMATION),
-			FileStandardInformation);
+		Status = ZwQueryInformationFile( hFile,
+										 &IoStatus,
+										 &StandardInfo,
+										 sizeof(FILE_STANDARD_INFORMATION),
+										 FileStandardInformation );
 
-		if (!NT_SUCCESS(Status)) {
-			BaseSetLastNTError(Status);
+		if (! NT_SUCCESS(Status)) {
+			BaseSetLastNTError( Status );
 			return (DWORD)-1;
 		}
 
@@ -810,24 +856,23 @@ SetFilePointerEx(
 		break;
 
 	default:
-		SetLastError(ERROR_INVALID_PARAMETER);
+		SetLastError( ERROR_INVALID_PARAMETER );
 		return FALSE;
 		break;
 	}
 
 	if (PositionInfo.CurrentByteOffset.QuadPart < 0) {
-		SetLastError(ERROR_NEGATIVE_SEEK);
+		SetLastError( ERROR_NEGATIVE_SEEK );
 		return FALSE;
 	}
 
-	Status = ZwSetInformationFile(hFile,
-		&IoStatus,
-		&PositionInfo,
-		sizeof(FILE_POSITION_INFORMATION),
-		FilePositionInformation);
+	Status = ZwSetInformationFile( hFile,
+								   &IoStatus,
+								   &PositionInfo,
+								   sizeof(FILE_POSITION_INFORMATION),
+								   FilePositionInformation );
 
 	if (NT_SUCCESS(Status)) {
-
 		if (ARGUMENT_PRESENT(lpNewFilePointer)) {
 			*lpNewFilePointer = PositionInfo.CurrentByteOffset;
 		}
@@ -837,57 +882,8 @@ SetFilePointerEx(
 		}
 
 		return TRUE;
-
 	} else {
-
-		BaseSetLastNTError(Status);
-		return FALSE;
-	}
-}
-
-WINBASEAPI
-BOOL
-WINAPI
-SetFileTime(
-    _In_ HANDLE hFile,
-    _In_opt_ CONST FILETIME * lpCreationTime,
-    _In_opt_ CONST FILETIME * lpLastAccessTime,
-    _In_opt_ CONST FILETIME * lpLastWriteTime
-    )
-{
-	NTSTATUS Status;
-	IO_STATUS_BLOCK IoStatus;
-	FILE_BASIC_INFORMATION BasicInfo;
-
-	RtlZeroMemory(&BasicInfo, sizeof(BasicInfo));
-
-	if (ARGUMENT_PRESENT( lpCreationTime )) {
-		BasicInfo.CreationTime.LowPart = lpCreationTime->dwLowDateTime;
-		BasicInfo.CreationTime.HighPart = lpCreationTime->dwHighDateTime;
-	}
-
-	if (ARGUMENT_PRESENT(lpLastAccessTime)) {
-		BasicInfo.LastAccessTime.LowPart = lpLastAccessTime->dwLowDateTime;
-		BasicInfo.LastAccessTime.HighPart = lpLastAccessTime->dwHighDateTime;
-	}
-
-	if (ARGUMENT_PRESENT(lpLastWriteTime)) {
-		BasicInfo.LastWriteTime.LowPart = lpLastWriteTime->dwLowDateTime;
-		BasicInfo.LastWriteTime.HighPart = lpLastWriteTime->dwHighDateTime;
-	}
-
-	Status = ZwSetInformationFile(
-				hFile,
-				&IoStatus,
-				&BasicInfo,
-				sizeof(BasicInfo),
-				FileBasicInformation
-				);
-
-	if ( NT_SUCCESS(Status) ) {
-		return TRUE;
-	} else {
-		BaseSetLastNTError(Status);
+		BaseSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -895,7 +891,122 @@ SetFileTime(
 WINBASEAPI
 DWORD
 WINAPI
-GetFileType(
+GetFileAttributesA (
+    _In_ LPCSTR lpFileName
+    )
+{
+	DWORD dwFileAttributes;
+    UNICODE_STRING Unicode;
+	ANSI_STRING Ansi;
+
+	PAGED_CODE();
+
+	RtlInitAnsiString( &Ansi,
+					   lpFileName );
+
+	LdkAnsiStringToUnicodeString( &Unicode,
+								  &Ansi,
+								  TRUE );
+
+	dwFileAttributes = GetFileAttributesW( Unicode.Buffer );
+
+	LdkFreeUnicodeString(&Unicode);
+
+	return dwFileAttributes;
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+GetFileAttributesW (
+    _In_ LPCWSTR lpFileName
+    )
+{
+	NTSTATUS Status;
+	UNICODE_STRING FileName;
+	OBJECT_ATTRIBUTES ObjectAttributes;
+	FILE_NETWORK_OPEN_INFORMATION FileInformation;
+
+	PAGED_CODE();
+
+	RtlInitUnicodeString( &FileName,
+						  lpFileName );
+
+	InitializeObjectAttributes( &ObjectAttributes,
+								&FileName,
+								OBJ_CASE_INSENSITIVE,
+								NULL,
+								NULL );
+
+	Status = ZwQueryFullAttributesFile( &ObjectAttributes,
+										&FileInformation );
+
+	if (NT_SUCCESS(Status)) {
+		return FileInformation.FileAttributes;
+	} else {
+		BaseSetLastNTError( Status );
+		return (DWORD)-1;
+	}
+}
+
+#include <limits.h>
+
+WINBASEAPI
+DWORD
+WINAPI
+GetFileSize (
+    _In_ HANDLE hFile,
+    _Out_opt_ LPDWORD lpFileSizeHigh
+    )
+{
+	LARGE_INTEGER fileSize;
+	PAGED_CODE();
+
+	if (GetFileSizeEx(hFile,&fileSize)) {
+		if (ARGUMENT_PRESENT(lpFileSizeHigh)) {
+			*lpFileSizeHigh = (DWORD)fileSize.HighPart;
+		}
+		if (fileSize.LowPart == ULONG_MAX) {
+			SetLastError( ERROR_SUCCESS );
+		}
+	} else {
+		fileSize.LowPart = ULONG_MAX;
+	}
+	return fileSize.LowPart;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetFileSizeEx (
+    _In_ HANDLE hFile,
+    _Out_ PLARGE_INTEGER lpFileSize
+    )
+{
+    NTSTATUS Status;
+    IO_STATUS_BLOCK IoStatusBlock;
+    FILE_STANDARD_INFORMATION StandardInfo;
+
+	PAGED_CODE();
+
+    Status = ZwQueryInformationFile( hFile,
+									 &IoStatusBlock,
+									 &StandardInfo,
+									 sizeof(StandardInfo),
+									 FileStandardInformation );
+
+    if (! NT_SUCCESS(Status)) {
+		BaseSetLastNTError( Status );
+        return FALSE;
+	}
+	*lpFileSize = StandardInfo.EndOfFile;
+	return TRUE;
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+GetFileType (
     _In_ HANDLE hFile
     )
 {
@@ -903,14 +1014,22 @@ GetFileType(
 	FILE_FS_DEVICE_INFORMATION DeviceInformation;
 	IO_STATUS_BLOCK IoStatusBlock;
 
-	Status = ZwQueryVolumeInformationFile(hFile,
-		&IoStatusBlock,
-		&DeviceInformation,
-		sizeof(FILE_FS_DEVICE_INFORMATION),
-		FileFsDeviceInformation);
+	PAGED_CODE();
 
-	if (!NT_SUCCESS(Status)) {
-		BaseSetLastNTError(Status);
+	LdkGetConsoleHandle( hFile,
+						 &hFile );
+
+	if (LdkIsConsoleHandle( hFile )) {
+		return FILE_TYPE_CHAR;
+	}
+
+	Status = ZwQueryVolumeInformationFile( hFile,
+										   &IoStatusBlock,
+										   &DeviceInformation,
+										   sizeof(FILE_FS_DEVICE_INFORMATION),
+										   FileFsDeviceInformation );
+	if (! NT_SUCCESS(Status)) {
+		BaseSetLastNTError( Status );
 		return FILE_TYPE_UNKNOWN;
 	}
 
@@ -952,64 +1071,59 @@ GetFileType(
 	}
 }
 
-WINBASEAPI
-DWORD
-WINAPI
-GetFileAttributesA(
-    _In_ LPCSTR lpFileName
-    )
-{
-	DWORD dwFileAttributes;
-    UNICODE_STRING Unicode;
-	ANSI_STRING Ansi;
-	RtlInitAnsiString(&Ansi, lpFileName);
-	LdkAnsiStringToUnicodeString(&Unicode, &Ansi, TRUE);
-
-	dwFileAttributes = GetFileAttributesW(Unicode.Buffer);
-
-	LdkFreeUnicodeString(&Unicode);
-
-	return dwFileAttributes;
-}
-
-WINBASEAPI
-DWORD
-WINAPI
-GetFileAttributesW(
-    _In_ LPCWSTR lpFileName
-    )
-{
-	NTSTATUS Status;
-	UNICODE_STRING FileName;
-	OBJECT_ATTRIBUTES ObjectAttributes;
-	FILE_NETWORK_OPEN_INFORMATION FileInformation;
-
-	RtlInitUnicodeString(&FileName, lpFileName);
-
-	InitializeObjectAttributes(
-		&ObjectAttributes,
-		&FileName,
-		OBJ_CASE_INSENSITIVE,
-		NULL,
-		NULL );
-
-	Status = ZwQueryFullAttributesFile(&ObjectAttributes, &FileInformation);
-
-	if (NT_SUCCESS(Status)) {
-		return FileInformation.FileAttributes;
-	} else {
-		
-		BaseSetLastNTError(Status);
-		return (DWORD)-1;
-	}
-}
-
 
 
 WINBASEAPI
 BOOL
 WINAPI
-LocalFileTimeToFileTime(
+SetFileTime (
+    _In_ HANDLE hFile,
+    _In_opt_ CONST FILETIME * lpCreationTime,
+    _In_opt_ CONST FILETIME * lpLastAccessTime,
+    _In_opt_ CONST FILETIME * lpLastWriteTime
+    )
+{
+	NTSTATUS Status;
+	IO_STATUS_BLOCK IoStatus;
+	FILE_BASIC_INFORMATION BasicInfo;
+
+	PAGED_CODE();
+
+	RtlZeroMemory( &BasicInfo, sizeof(BasicInfo) );
+
+	if (ARGUMENT_PRESENT( lpCreationTime )) {
+		BasicInfo.CreationTime.LowPart = lpCreationTime->dwLowDateTime;
+		BasicInfo.CreationTime.HighPart = lpCreationTime->dwHighDateTime;
+	}
+
+	if (ARGUMENT_PRESENT(lpLastAccessTime)) {
+		BasicInfo.LastAccessTime.LowPart = lpLastAccessTime->dwLowDateTime;
+		BasicInfo.LastAccessTime.HighPart = lpLastAccessTime->dwHighDateTime;
+	}
+
+	if (ARGUMENT_PRESENT(lpLastWriteTime)) {
+		BasicInfo.LastWriteTime.LowPart = lpLastWriteTime->dwLowDateTime;
+		BasicInfo.LastWriteTime.HighPart = lpLastWriteTime->dwHighDateTime;
+	}
+
+	Status = ZwSetInformationFile( hFile,
+								   &IoStatus,
+								   &BasicInfo,
+								   sizeof(BasicInfo),
+								   FileBasicInformation );
+
+	if (NT_SUCCESS(Status)) {
+		return TRUE;
+	} else {
+		BaseSetLastNTError( Status );
+		return FALSE;
+	}
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+LocalFileTimeToFileTime (
     _In_ CONST FILETIME * lpLocalFileTime,
     _Out_ LPFILETIME lpFileTime
     )

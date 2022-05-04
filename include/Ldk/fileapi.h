@@ -122,8 +122,21 @@ GetFileAttributesW(
 #endif // !UNICODE
 
 
+WINBASEAPI
+DWORD
+WINAPI
+GetFileSize(
+    _In_ HANDLE hFile,
+    _Out_opt_ LPDWORD lpFileSizeHigh
+    );
 
-
+WINBASEAPI
+BOOL
+WINAPI
+GetFileSizeEx(
+    _In_ HANDLE hFile,
+    _Out_ PLARGE_INTEGER lpFileSize
+    );
 
 WINBASEAPI
 DWORD
@@ -131,8 +144,6 @@ WINAPI
 GetFileType(
     _In_ HANDLE hFile
     );
-
-
 
 
 

@@ -19,8 +19,22 @@
 #include "fibersapi.h"
 #include "fileapi.h"
 #include "heapapi.h"
+#include "processenv.h"
+#include "consoleapi.h"
+#include "consoleapi2.h"
 
 EXTERN_C_START
+
+
+
+#define DRIVE_UNKNOWN     0
+#define DRIVE_NO_ROOT_DIR 1
+#define DRIVE_REMOVABLE   2
+#define DRIVE_FIXED       3
+#define DRIVE_REMOTE      4
+#define DRIVE_CDROM       5
+#define DRIVE_RAMDISK     6
+
 
 #define FILE_TYPE_UNKNOWN   0x0000
 #define FILE_TYPE_DISK      0x0001
@@ -29,12 +43,16 @@ EXTERN_C_START
 #define FILE_TYPE_REMOTE    0x8000
 
 
+#define STD_INPUT_HANDLE    ((DWORD)-10)
+#define STD_OUTPUT_HANDLE   ((DWORD)-11)
+#define STD_ERROR_HANDLE    ((DWORD)-12)
+
+
+#define INFINITE            0xFFFFFFFF  // Infinite timeout
+
+
 
 #define CREATE_SUSPENDED				0x00000004
-
-#define INFINITE						0xFFFFFFFF  // Infinite timeout
-
-
 
 #define Yield()
 

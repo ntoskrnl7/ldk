@@ -331,7 +331,7 @@ LoadLibraryExW(
 	
 	UNREFERENCED_PARAMETER(hFile);
 
-	hModule = GetModuleHandleW(lpLibFileName);
+	hModule = GetModuleHandleW( lpLibFileName );
 	if (hModule) {
 		return hModule;
 	}
@@ -340,23 +340,27 @@ LoadLibraryExW(
 		DllCharacteristics |= IMAGE_FILE_EXECUTABLE_IMAGE;
 	}
 
-	RtlInitUnicodeString(&DllName, lpLibFileName);
+	RtlInitUnicodeString( &DllName,
+						  lpLibFileName );
 
 	PLDK_PEB peb = NtCurrentPeb();
 
-	if (!(dwFlags & LOAD_LIBRARY_AS_DATAFILE) && (DllName.Length == peb->ImagePathName.Length)) {
-		if (RtlEqualUnicodeString(&DllName, &peb->ImagePathName, TRUE)) {
+	if (! (dwFlags & LOAD_LIBRARY_AS_DATAFILE) && (DllName.Length == peb->ProcessParameters->ImagePathName.Length)) {
+		if (RtlEqualUnicodeString( &DllName,
+								   &peb->ProcessParameters->ImagePathName,
+								   TRUE )) {
 			return (HMODULE)peb->ImageBaseAddress;
 		}
 	}
 
-	status = LdrLoadDll(NULL, &DllCharacteristics, &DllName, (PVOID *)&hModule);
-
-	if (!NT_SUCCESS(status) ) {
+	status = LdrLoadDll( NULL,
+						 &DllCharacteristics,
+						 &DllName,
+						 (PVOID *)&hModule );
+	if (! NT_SUCCESS(status) ) {
 		BaseSetLastNTError(status);
 		return NULL;
-	}
-	else {
+	} else {
 		return hModule;
 	}
 }
