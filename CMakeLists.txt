@@ -49,8 +49,8 @@ target_include_directories(Ldk PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_D
 #
 # Generate Debug Info
 #
-target_compile_options(crtsys PUBLIC "$<$<CONFIG:Release>:/Zi>")
-target_link_options(crtsys PUBLIC "$<$<CONFIG:Release>:/DEBUG>")
+target_compile_options(Ldk PUBLIC "$<$<CONFIG:Release>:/Zi>")
+target_link_options(Ldk PUBLIC "$<$<CONFIG:Release>:/DEBUG>")
 
 #
 # set library output path (release only)
