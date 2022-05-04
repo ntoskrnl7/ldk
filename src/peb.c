@@ -181,6 +181,7 @@ LdkpInitializeStdio (
 
 
 PLDK_PEB
+LDKAPI
 LdkCurrentPeb (
 	VOID
 	)

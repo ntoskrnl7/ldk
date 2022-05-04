@@ -2,6 +2,8 @@
 
 EXTERN_C_START
 
+#define LDKAPI		__stdcall
+
 #define LDK_FLAG_SAFE_MODE				0x00000001
 #define LDK_FLAG_VALID_MASK				0x0FFFFFFF
 
@@ -38,6 +40,7 @@ LdkUnlockGlobalFlags (
 
 
 NTSTATUS
+LDKAPI
 LdkInitialize(
 	_In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath,
@@ -45,6 +48,7 @@ LdkInitialize(
 	);
 
 VOID
+LDKAPI
 LdkTerminate(
 	VOID
 	);
@@ -55,11 +59,13 @@ typedef struct _LDK_TEB * PLDK_TEB;
 typedef struct _LDK_PEB* PLDK_PEB;
 
 PLDK_TEB
+LDKAPI
 LdkCurrentTeb (
 	VOID
 	);
 
 PLDK_PEB
+LDKAPI
 LdkCurrentPeb (
 	VOID
 	);

@@ -34,6 +34,7 @@ LDK_TERMINATE_COMPONENT LdkpNtdllTerminate;
 
 
 NTSTATUS
+LDKAPI
 LdkInitialize (
 	_In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath,
@@ -92,6 +93,7 @@ Cleanup:
 }
 
 VOID
+LDKAPI
 LdkTerminate (
 	VOID
 	)

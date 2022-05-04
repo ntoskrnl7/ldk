@@ -96,6 +96,7 @@ LdkLookTebByThread (
 }
 
 PLDK_TEB
+LDKAPI
 LdkCurrentTeb (
 	VOID
 	)
