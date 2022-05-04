@@ -1927,7 +1927,7 @@ LCIDToLocaleName (
     }
 
     PCWSTR name = LdkpGetLocaleName(Locale);
-    size_t len = wcslen(name) + 1;
+    int len = (int)wcslen(name) + 1;
 
     if (cchName < len) {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
@@ -1935,7 +1935,7 @@ LCIDToLocaleName (
     }
 
     wcscpy_s(lpName, cchName, name);
-    return (int)len;
+    return len;
 }
 
 WINBASEAPI
