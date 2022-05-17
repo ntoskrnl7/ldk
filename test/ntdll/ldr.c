@@ -150,18 +150,18 @@ LdrTest (
 
     // typedef LONG(__stdcall* TEST_FN)(LONG);
 
-    // NTSTATUS status;
+    // NTSTATUS Status;
     // UNICODE_STRING dllName = RTL_CONSTANT_STRING(L"Test.dll");
     // PVOID dllHandle;
-    // status = LdrLoadDll(NULL, NULL, &dllName, &dllHandle);
-    // if (!NT_SUCCESS(status)) {
+    // Status = LdrLoadDll(NULL, NULL, &dllName, &dllHandle);
+    // if (! NT_SUCCESS(Status)) {
     //     return FALSE;
     // }
 
     // ANSI_STRING procName = RTL_CONSTANT_STRING("TestFunction");
     // TEST_FN testFn;
-    // status = LdrGetProcedureAddress(dllHandle, &procName, 0, (PVOID*)&testFn);
-    // if (!NT_SUCCESS(status)) {
+    // Status = LdrGetProcedureAddress(dllHandle, &procName, 0, (PVOID*)&testFn);
+    // if (! NT_SUCCESS(Status)) {
     //     LdrUnloadDll(dllHandle);
     //     return FALSE;
     // }

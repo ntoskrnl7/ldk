@@ -24,26 +24,28 @@ LibraryTest (
 {
     PAGED_CODE();
 
-    // //
-    // // TestFunction함수를 가진 Test.dll를 만들어주세요
-    // //
+    KdBreakPoint();
 
-    // typedef LONG(__stdcall* TEST_FN)(LONG);
+    //
+    // TestFunction함수를 가진 Test.dll를 만들어주세요
+    //
 
-    // HMODULE hModule = LoadLibraryW(L"Test.dll");
-    // if (!hModule) {
-    //    return FALSE;
-    // }
+    typedef LONG(__stdcall* TEST_FN)(LONG);
 
-    // TEST_FN testFn = (TEST_FN)GetProcAddress(hModule, "TestFunction");
-    // if (!testFn) {
-    //    FreeLibrary(hModule);
-    //    return FALSE;
-    // }
-    // if (testFn(10) != 10) {
-    //    FreeLibrary(hModule);
-    //    return FALSE;
-    // }
-    // return FreeLibrary(hModule) == TRUE;
-    return TRUE;
+    HMODULE hModule = LoadLibraryW(L"Test.dll");
+    if (!hModule) {
+       return FALSE;
+    }
+
+    TEST_FN testFn = (TEST_FN)GetProcAddress(hModule, "TestFunction");
+    if (!testFn) {
+       FreeLibrary(hModule);
+       return FALSE;
+    }
+    if (testFn(10) != 10) {
+       FreeLibrary(hModule);
+       return FALSE;
+    }
+    return FreeLibrary(hModule) == TRUE;
+    // return TRUE;
 }

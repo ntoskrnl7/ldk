@@ -18,23 +18,23 @@ LdkDriverEntry (
     _In_ PUNICODE_STRING RegistryPath
     )
 {
-    NTSTATUS status = LdkInitialize( DriverObject,
+    NTSTATUS Status = LdkInitialize( DriverObject,
                                      RegistryPath,
                                      0 );
-    if (!NT_SUCCESS(status)) {
-        return status;
+    if (! NT_SUCCESS(Status)) {
+        return Status;
     }
 
-    status = DriverEntry( DriverObject,
+    Status = DriverEntry( DriverObject,
                           RegistryPath );
-    if (!NT_SUCCESS(status)) {
-        return status;
+    if (! NT_SUCCESS(Status)) {
+        return Status;
     }
 
     LdkUserDriverUnload = DriverObject->DriverUnload;
 
     DriverObject->DriverUnload = LdkDriverUnload;
-    return status;
+    return Status;
 }
 
 VOID

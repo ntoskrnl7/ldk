@@ -12,6 +12,13 @@ IsDebuggerPresent(
 WINBASEAPI
 VOID
 WINAPI
+DebugBreak(
+    VOID
+    );
+
+WINBASEAPI
+VOID
+WINAPI
 OutputDebugStringA(
     _In_opt_ LPCSTR lpOutputString
     );

@@ -6,14 +6,14 @@ WINBASEAPI
 BOOL
 WINAPI
 QueryPerformanceCounter(
-    _Out_ LARGE_INTEGER * lpPerformanceCount
+    _Out_ LARGE_INTEGER* lpPerformanceCount
     );
 
 WINBASEAPI
 BOOL
 WINAPI
 QueryPerformanceFrequency(
-    _Out_ LARGE_INTEGER * lpFrequency
+    _Out_ LARGE_INTEGER* lpFrequency
     );
 
 EXTERN_C_END

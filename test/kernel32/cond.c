@@ -16,11 +16,15 @@ CondTestThreadProc(
 #pragma alloc_text(PAGE, ConditionVariableTest)
 #pragma alloc_text(PAGE, CondTestThreadProc)
 #endif
+
+#define stdout DPFLTR_INFO_LEVEL
+#define stderr DPFLTR_ERROR_LEVEL
+#define fprintf(_f_, ...)   (DbgPrintEx(DPFLTR_IHVDRIVER_ID, _f_, __VA_ARGS__))
+#define printf(...)         (fprintf(stdout, __VA_ARGS__))
 #else
 #include <windows.h>
 #include <stdio.h>
 
-#define DbgPrint        printf
 #define PAGED_CODE()
 #endif
 

@@ -1,108 +1,108 @@
 #include "winbase.h"
-#include "../nt/ntpsapi.h"
-#include "../nt/ntexapi.h"
 #include "../ldk.h"
+#include "../ntdll/ntdll.h"
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, GlobalMemoryStatusEx)
+#pragma alloc_text(PAGE, GetNativeSystemInfo)
+#pragma alloc_text(PAGE, GetSystemInfo)
+#pragma alloc_text(PAGE, GetVersion)
+#pragma alloc_text(PAGE, GetVersionExA)
+#pragma alloc_text(PAGE, GetVersionExW)
+#endif
 
 
 
 WINBASEAPI
 BOOL
 WINAPI
-GlobalMemoryStatusEx(
+GlobalMemoryStatusEx (
     _Inout_ LPMEMORYSTATUSEX lpBuffer
     )
 {
+    NTSTATUS Status;
     SYSTEM_PERFORMANCE_INFORMATION PerfInfo;
 	SYSTEM_BASIC_INFORMATION BasicInfo;
     VM_COUNTERS VmCounters;
     QUOTA_LIMITS QuotaLimits;
     DWORDLONG AvailPageFile;
     DWORDLONG PhysicalMemory;
-    NTSTATUS Status;
+
+    PAGED_CODE();
 
     if (lpBuffer == NULL || lpBuffer->dwLength != sizeof(*lpBuffer)) {
         SetLastError( ERROR_INVALID_PARAMETER );
         return FALSE;
     }
 
-	EXIT_WHEN_DPC_WITH_RETURN(FALSE);
+	Status = ZwQuerySystemInformation( SystemBasicInformation,
+                                       &BasicInfo,
+                                       sizeof(BasicInfo),
+                                       NULL );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+    Status = ZwQuerySystemInformation( SystemPerformanceInformation,
+                                       &PerfInfo,
+                                       sizeof(PerfInfo),
+                                       NULL );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
 
-	Status = ZwQuerySystemInformation(
-            SystemBasicInformation,
-            &BasicInfo,
-            sizeof(BasicInfo),
-            NULL
-            );
-
-    Status = ZwQuerySystemInformation(
-                SystemPerformanceInformation,
-                &PerfInfo,
-                sizeof(PerfInfo),
-                NULL
-                );
-
-    ASSERT(NT_SUCCESS(Status));
-
-    PhysicalMemory =  (DWORDLONG)BasicInfo.NumberOfPhysicalPages * BasicInfo.PageSize;
-
+    PhysicalMemory = (DWORDLONG)BasicInfo.NumberOfPhysicalPages * BasicInfo.PageSize;
     if (PerfInfo.AvailablePages < 100) {
         lpBuffer->dwMemoryLoad = 100;
-        }
-    else {
-        lpBuffer->dwMemoryLoad =
-            ((DWORD)(BasicInfo.NumberOfPhysicalPages -
-                     PerfInfo.AvailablePages
-                    ) * 100
-            ) / BasicInfo.NumberOfPhysicalPages;
-        }
-
+    } else {
+        lpBuffer->dwMemoryLoad = ((DWORD)(BasicInfo.NumberOfPhysicalPages - PerfInfo.AvailablePages) * 100) / BasicInfo.NumberOfPhysicalPages;
+    }
     lpBuffer->ullTotalPhys = PhysicalMemory;
-
     PhysicalMemory = PerfInfo.AvailablePages;
-
     PhysicalMemory *= BasicInfo.PageSize;
-
     lpBuffer->ullAvailPhys = PhysicalMemory;
 
-    RtlZeroMemory(&QuotaLimits, sizeof(QUOTA_LIMITS));
-    RtlZeroMemory(&VmCounters, sizeof(VM_COUNTERS));
-
+    RtlZeroMemory( &QuotaLimits,
+                   sizeof(QUOTA_LIMITS));
     Status = ZwQueryInformationProcess (NtCurrentProcess(),
                                         ProcessQuotaLimits,
                                         &QuotaLimits,
                                         sizeof(QUOTA_LIMITS),
                                         NULL );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
 
+    RtlZeroMemory( &VmCounters,
+                   sizeof(VM_COUNTERS));
     Status = ZwQueryInformationProcess (NtCurrentProcess(),
                                         ProcessVmCounters,
                                         &VmCounters,
                                         sizeof(VM_COUNTERS),
                                         NULL );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
 
     lpBuffer->ullTotalPageFile = PerfInfo.CommitLimit;
     if (QuotaLimits.PagefileLimit < PerfInfo.CommitLimit) {
         lpBuffer->ullTotalPageFile = QuotaLimits.PagefileLimit;
     }
-
     lpBuffer->ullTotalPageFile *= BasicInfo.PageSize;
-
     AvailPageFile = PerfInfo.CommitLimit - PerfInfo.CommittedPages;
-
-    lpBuffer->ullAvailPageFile =
-                    QuotaLimits.PagefileLimit - VmCounters.PagefileUsage;
-
+    lpBuffer->ullAvailPageFile =QuotaLimits.PagefileLimit - VmCounters.PagefileUsage;
     if ((ULONG)lpBuffer->ullTotalPageFile > (ULONG)AvailPageFile) {
         lpBuffer->ullAvailPageFile = AvailPageFile;
     }
-
     lpBuffer->ullAvailPageFile *= BasicInfo.PageSize;
-
     lpBuffer->ullTotalVirtual = (BasicInfo.MaximumUserModeAddress - BasicInfo.MinimumUserModeAddress) + 1;
-
     lpBuffer->ullAvailVirtual = lpBuffer->ullTotalVirtual - VmCounters.VirtualSize;
-
     lpBuffer->ullAvailExtendedVirtual = 0;
-
     return TRUE;
 }
 
@@ -111,7 +111,7 @@ GlobalMemoryStatusEx(
 WINBASEAPI
 VOID
 WINAPI
-GetSystemTime(
+GetSystemTime (
     _Out_ LPSYSTEMTIME lpSystemTime
     )
 {
@@ -137,7 +137,7 @@ GetSystemTime(
 WINBASEAPI
 VOID
 WINAPI
-GetSystemTimePreciseAsFileTime(
+GetSystemTimePreciseAsFileTime (
     _Out_ LPFILETIME lpSystemTimeAsFileTime
     )
 {
@@ -152,7 +152,7 @@ GetSystemTimePreciseAsFileTime(
 WINBASEAPI
 VOID
 WINAPI
-GetSystemTimeAsFileTime(
+GetSystemTimeAsFileTime (
     _Out_ LPFILETIME lpSystemTimeAsFileTime
     )
 {
@@ -166,7 +166,7 @@ GetSystemTimeAsFileTime(
 WINBASEAPI
 VOID
 WINAPI
-GetLocalTime(
+GetLocalTime (
     _Out_ LPSYSTEMTIME lpSystemTime
     )
 {
@@ -188,22 +188,53 @@ GetLocalTime(
 	lpSystemTime->wMilliseconds = TimeFields.Milliseconds;
 }
 
-
-
 WINBASEAPI
-VOID
+BOOL
 WINAPI
-GetNativeSystemInfo(
-    _Out_ LPSYSTEM_INFO lpSystemInfo
+SetLocalTime (
+    _In_ CONST SYSTEMTIME* lpSystemTime
     )
 {
-    GetSystemInfo(lpSystemInfo);
+	TIME_FIELDS TimeFields;
+	TimeFields.Year = lpSystemTime->wYear;
+	TimeFields.Month = lpSystemTime->wMonth;
+	TimeFields.Weekday = lpSystemTime->wDayOfWeek;
+	TimeFields.Day = lpSystemTime->wDay;
+	TimeFields.Hour = lpSystemTime->wHour;
+	TimeFields.Minute = lpSystemTime->wMinute;
+	TimeFields.Second = lpSystemTime->wSecond;
+	TimeFields.Milliseconds = lpSystemTime->wMilliseconds;
+
+	LARGE_INTEGER SystemTime;
+    if (! RtlTimeFieldsToTime( &TimeFields,
+                               &SystemTime )) {
+        return FALSE;
+    }
+    NTSTATUS Status = ZwSetSystemTime( &SystemTime,
+                                       NULL );
+    if (NT_SUCCESS(Status)) {
+        return Status;
+    }
+    LdkSetLastNTError( Status );
+    return Status;
 }
 
 WINBASEAPI
 VOID
 WINAPI
-GetSystemInfo(
+GetNativeSystemInfo (
+    _Out_ LPSYSTEM_INFO lpSystemInfo
+    )
+{
+    PAGED_CODE();
+
+    GetSystemInfo( lpSystemInfo );
+}
+
+WINBASEAPI
+VOID
+WINAPI
+GetSystemInfo (
     _Out_ LPSYSTEM_INFO lpSystemInfo
     )
 {
@@ -211,27 +242,24 @@ GetSystemInfo(
     SYSTEM_BASIC_INFORMATION BasicInfo;
     SYSTEM_PROCESSOR_INFORMATION ProcessorInfo;
 
-    RtlZeroMemory(lpSystemInfo,sizeof(SYSTEM_INFO));
+    PAGED_CODE();
 
-	EXIT_WHEN_DPC_WITH_NO_RETURN();
+    RtlZeroMemory( lpSystemInfo,
+                   sizeof(SYSTEM_INFO) );
 
-	Status = ZwQuerySystemInformation(
-				SystemBasicInformation,
-				&BasicInfo,
-				sizeof(BasicInfo),
-				NULL
-				);
-	if (!NT_SUCCESS(Status)) {
+	Status = ZwQuerySystemInformation( SystemBasicInformation,
+                                       &BasicInfo,
+                                       sizeof(BasicInfo),
+                                       NULL );
+	if (! NT_SUCCESS(Status)) {
 		return;
 	}
 
-    Status = ZwQuerySystemInformation(
-                SystemProcessorInformation,
-                &ProcessorInfo,
-                sizeof(ProcessorInfo),
-                NULL
-                );
-	if (!NT_SUCCESS(Status)) {
+    Status = ZwQuerySystemInformation( SystemProcessorInformation,
+                                       &ProcessorInfo,
+                                       sizeof(ProcessorInfo),
+                                       NULL );
+	if (! NT_SUCCESS(Status)) {
 		return;
 	}
 
@@ -244,7 +272,6 @@ GetSystemInfo(
     lpSystemInfo->dwNumberOfProcessors = BasicInfo.NumberOfProcessors;
     lpSystemInfo->wProcessorLevel = ProcessorInfo.ProcessorLevel;
     lpSystemInfo->wProcessorRevision = ProcessorInfo.ProcessorRevision;
-
 	if (ProcessorInfo.ProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) {
 		if (ProcessorInfo.ProcessorLevel == 3) {
 			lpSystemInfo->dwProcessorType = PROCESSOR_INTEL_386;
@@ -258,13 +285,12 @@ GetSystemInfo(
 	} else if (ProcessorInfo.ProcessorArchitecture == PROCESSOR_ARCHITECTURE_ALPHA) {
         lpSystemInfo->dwProcessorType = PROCESSOR_ALPHA_21064;
     } else if (ProcessorInfo.ProcessorArchitecture == PROCESSOR_ARCHITECTURE_PPC) {
-        lpSystemInfo->dwProcessorType = 604;  // backward compatibility
+        lpSystemInfo->dwProcessorType = PROCESSOR_PPC_604;
 	} else if (ProcessorInfo.ProcessorArchitecture == PROCESSOR_ARCHITECTURE_IA64) {
 		lpSystemInfo->dwProcessorType = PROCESSOR_INTEL_IA64;
 	} else {
-		lpSystemInfo->dwProcessorType = 0;
+		lpSystemInfo->dwProcessorType = PROCESSOR_ARCHITECTURE_INTEL;
 	}
-
 	lpSystemInfo->dwAllocationGranularity = BasicInfo.AllocationGranularity;
 }
 
@@ -274,19 +300,19 @@ __drv_preferredFunction("GetTickCount64", "GetTickCount overflows roughly every 
 WINBASEAPI
 DWORD
 WINAPI
-GetTickCount(
+GetTickCount (
     VOID
     )
 {
 	LARGE_INTEGER TickCount;
-	KeQueryTickCount(&TickCount);
+	KeQueryTickCount( &TickCount );
 	return (DWORD)((TickCount.QuadPart * SharedUserData->TickCountMultiplier) >> 24);
 }
-#if (_WIN32_WINNT >= 0x0600)
+
 WINBASEAPI
 ULONGLONG
 WINAPI
-GetTickCount64(
+GetTickCount64 (
     VOID
     )
 {
@@ -294,20 +320,20 @@ GetTickCount64(
 	KeQueryTickCount(&TickCount);
 	return ((TickCount.QuadPart * SharedUserData->TickCountMultiplier) >> 24);
 }
-#endif
-
 
 
 WINBASEAPI
 DWORD
 WINAPI
-GetVersion(
+GetVersion (
     VOID
     )
 {
     RTL_OSVERSIONINFOW vi;
 
-    if (!NT_SUCCESS(RtlGetVersion(&vi))) {
+    PAGED_CODE();
+
+    if (! NT_SUCCESS(RtlGetVersion( &vi ))) {
         return 0;
     }
 
@@ -321,7 +347,7 @@ GetVersion(
 WINBASEAPI
 BOOL
 WINAPI
-GetVersionExA(
+GetVersionExA (
     _Inout_ LPOSVERSIONINFOA lpVersionInformation
     )
 {
@@ -329,65 +355,61 @@ GetVersionExA(
 	UNICODE_STRING CSDVersionW;
 	OSVERSIONINFOEXW VersionInformationU;
 
+    PAGED_CODE();
+
 	if (lpVersionInformation->dwOSVersionInfoSize != sizeof(OSVERSIONINFOEXA) &&
 		lpVersionInformation->dwOSVersionInfoSize != sizeof(OSVERSIONINFOA)) {
-
-		SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		SetLastError( ERROR_INSUFFICIENT_BUFFER );
 		return FALSE;
 	}
 
 	VersionInformationU.dwOSVersionInfoSize = sizeof(VersionInformationU);
-
-	if (GetVersionExW((LPOSVERSIONINFOW)&VersionInformationU)) {
-
+	if (GetVersionExW( (LPOSVERSIONINFOW)&VersionInformationU) ) {
 		lpVersionInformation->dwMajorVersion = VersionInformationU.dwMajorVersion;
 		lpVersionInformation->dwMinorVersion = VersionInformationU.dwMinorVersion;
 		lpVersionInformation->dwBuildNumber = VersionInformationU.dwBuildNumber;
 		lpVersionInformation->dwPlatformId = VersionInformationU.dwPlatformId;
 
 		if (lpVersionInformation->dwOSVersionInfoSize == sizeof(OSVERSIONINFOEXA)) {
-
 			((POSVERSIONINFOEXA)lpVersionInformation)->wServicePackMajor = VersionInformationU.wServicePackMajor;
 			((POSVERSIONINFOEXA)lpVersionInformation)->wServicePackMinor = VersionInformationU.wServicePackMinor;
 			((POSVERSIONINFOEXA)lpVersionInformation)->wSuiteMask = VersionInformationU.wSuiteMask;
 			((POSVERSIONINFOEXA)lpVersionInformation)->wProductType = VersionInformationU.wProductType;
-			((POSVERSIONINFOEXA)lpVersionInformation)->wReserved = VersionInformationU.wReserved;
-			
+			((POSVERSIONINFOEXA)lpVersionInformation)->wReserved = VersionInformationU.wReserved;			
 			if (VersionInformationU.szCSDVersion[0] == UNICODE_NULL) {
 				lpVersionInformation->szCSDVersion[0] = ANSI_NULL;
 				return TRUE;
 			}
-
 			CSDVersionA.Length = 0;
 			CSDVersionA.MaximumLength = sizeof(lpVersionInformation->szCSDVersion);
 			CSDVersionA.Buffer = lpVersionInformation->szCSDVersion;
-
-			RtlInitUnicodeString(&CSDVersionW, VersionInformationU.szCSDVersion);
-
-			return NT_SUCCESS(LdkUnicodeStringToAnsiString(&CSDVersionA, &CSDVersionW, FALSE));
+			RtlInitUnicodeString( &CSDVersionW,
+                                  VersionInformationU.szCSDVersion );
+			return NT_SUCCESS(LdkUnicodeStringToAnsiString( &CSDVersionA,
+                                                            &CSDVersionW,
+                                                            FALSE ));
 		}
-
 		return TRUE;
 	}
-
 	return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-GetVersionExW(
+GetVersionExW (
     _Inout_ LPOSVERSIONINFOW lpVersionInformation
     )
 {
+    PAGED_CODE();
+
     if (lpVersionInformation->dwOSVersionInfoSize != sizeof(OSVERSIONINFOEXW) &&
 		lpVersionInformation->dwOSVersionInfoSize != sizeof(OSVERSIONINFOW)) {
-
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
         return FALSE;
 	}
-	
-	RtlZeroMemory(lpVersionInformation, lpVersionInformation->dwOSVersionInfoSize);
 
-	return NT_SUCCESS(RtlGetVersion(lpVersionInformation));
+	RtlZeroMemory( lpVersionInformation,
+                   lpVersionInformation->dwOSVersionInfoSize );
+	return NT_SUCCESS(RtlGetVersion( lpVersionInformation ));
 }

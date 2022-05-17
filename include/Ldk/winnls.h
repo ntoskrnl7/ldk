@@ -1,6 +1,43 @@
 #ifndef _WINNLS_
 #define _WINNLS_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+//
+// Deprecated attribute support for NLS
+//
+#pragma push_macro("DEPRECATED")
+#undef DEPRECATED
+
+// Disable NLS deprecation for the moment
+#if !defined(DISABLE_NLS_DEPRECATION)
+#define DISABLE_NLS_DEPRECATION
+#endif
+
+// Deprecated NLS types/functions
+#if !defined(DISABLE_NLS_DEPRECATION)
+#if defined(__cplusplus)
+#if __cplusplus >= 201402
+#define DEPRECATED(x) [[deprecated(x)]]
+#elif defined(_MSC_VER)
+#if _MSC_VER > 1900
+#define DEPRECATED(x) [[deprecated(x)]]
+#else
+#define DEPRECATED(x) __declspec(deprecated(x))
+#endif // _MSC_VER > 1900
+#else // Not Standard C++ or MSVC, ignore the construct.
+#define DEPRECATED(x)
+#endif  // C++ deprecation
+#else // C - disable deprecation
+#define DEPRECATED(x)
+#endif
+#else // Deprecation is disabled
+#define DEPRECATED(x)
+#endif  /* DISABLE_NLS_DEPRECATION */
+
+#ifndef NONLS
 
 ////////////////////////////////////////////////////////////////////////////
 //
@@ -953,6 +990,72 @@
 
 
 
+////////////////////////////////////////////////////////////////////////////
+//
+//  Typedefs
+//
+//  Define all types for the NLS component here.
+//
+////////////////////////////////////////////////////////////////////////////
+
+
+//
+//  Locale type constant.
+//
+typedef DWORD LCTYPE;
+
+
+
+//
+//  CP Info.
+//
+// Deprecated.  Applications should use Unicode (WCHAR / UTF-16 or UTF-8)
+//
+// WARNING: These structures fail for some encodings, including UTF-8, which
+//          do not fit into the assumptions of these APIs.
+//
+DEPRECATED("Use Unicode. The information in this structure cannot represent all encodings accurately and may be unreliable on many machines. Set DISABLE_NLS_DEPRECATION to disable this warning.")
+typedef struct _cpinfo {
+    UINT    MaxCharSize;                    // max length (in bytes) of a char
+    BYTE    DefaultChar[MAX_DEFAULTCHAR];   // default character
+    BYTE    LeadByte[MAX_LEADBYTES];        // lead byte ranges
+} CPINFO, *LPCPINFO;
+
+
+DEPRECATED("Use Unicode. The information in this structure cannot represent all encodings accurately and may be unreliable on many machines. Set DISABLE_NLS_DEPRECATION to disable this warning.")
+typedef struct _cpinfoexA {
+    UINT    MaxCharSize;                    // max length (in bytes) of a char
+    BYTE    DefaultChar[MAX_DEFAULTCHAR];   // default character (MB)
+    BYTE    LeadByte[MAX_LEADBYTES];        // lead byte ranges
+    WCHAR   UnicodeDefaultChar;             // default character (Unicode)
+    UINT    CodePage;                       // code page id
+    CHAR    CodePageName[MAX_PATH];         // code page name (Unicode)
+} CPINFOEXA, *LPCPINFOEXA;
+DEPRECATED("Use Unicode. The information in this structure cannot represent all encodings accurately and may be unreliable on many machines. Set DISABLE_NLS_DEPRECATION to disable this warning.")
+typedef struct _cpinfoexW {
+    UINT    MaxCharSize;                    // max length (in bytes) of a char
+    BYTE    DefaultChar[MAX_DEFAULTCHAR];   // default character (MB)
+    BYTE    LeadByte[MAX_LEADBYTES];        // lead byte ranges
+    WCHAR   UnicodeDefaultChar;             // default character (Unicode)
+    UINT    CodePage;                       // code page id
+    WCHAR   CodePageName[MAX_PATH];         // code page name (Unicode)
+} CPINFOEXW, *LPCPINFOEXW;
+#ifdef UNICODE
+typedef CPINFOEXW CPINFOEX;
+typedef LPCPINFOEXW LPCPINFOEX;
+#else
+typedef CPINFOEXA CPINFOEX;
+typedef LPCPINFOEXA LPCPINFOEX;
+#endif // UNICODE
+
+
+
+#ifdef STRICT
+typedef BOOL (CALLBACK* LOCALE_ENUMPROCW)(LPWSTR);                                          // DEPRECATED: please use LOCALE_ENUMPROCEX
+#endif
+
+
+
 //
 //  NLS version structure.
 //
@@ -990,8 +1093,116 @@ typedef struct _nlsversioninfo{		// Use NLSVERSIONINFOEX instead
 
 
 //
-//  Locale type constant.
+//  Code Page Dependent APIs.
 //
-typedef DWORD LCTYPE;
+//  Applications should use Unicode (WCHAR / UTF-16 &/or UTF-8)
+//
+
+WINBASEAPI
+BOOL
+WINAPI
+IsValidCodePage(
+    _In_ UINT  CodePage);
+
+WINBASEAPI
+UINT
+WINAPI
+GetACP(void);
+
+#endif /* WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_APP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES) */
+#pragma endregion
+
+#pragma region Desktop Family or OneCore Family
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM)
+
+WINBASEAPI
+UINT
+WINAPI
+GetOEMCP(void);
+
+#endif /* WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP | WINAPI_PARTITION_SYSTEM) */
+#pragma endregion
+
+#pragma region Desktop or Pc Family or OneCore or Games Family
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP |WINAPI_PARTITION_PC_APP | WINAPI_PARTITION_SYSTEM | WINAPI_PARTITION_GAMES)
+
+DEPRECATED("Use Unicode. The information in this structure cannot represent all encodings accuratedly and may be unreliable on many machines. Set DISABLE_NLS_DEPRECATION to disable this warning.")
+WINBASEAPI
+BOOL
+WINAPI
+GetCPInfo(
+    _In_ UINT       CodePage,
+    _Out_ LPCPINFO  lpCPInfo);
+
+DEPRECATED("Use Unicode. The information in this structure cannot represent all encodings accurately and may be unreliable on many machines. Set DISABLE_NLS_DEPRECATION to disable this warning.")
+WINBASEAPI
+BOOL
+WINAPI
+GetCPInfoExA(
+    _In_ UINT          CodePage,
+    _In_ DWORD         dwFlags,
+    _Out_ LPCPINFOEXA  lpCPInfoEx);
+DEPRECATED("Use Unicode. The information in this structure cannot represent all encodings accurately and may be unreliable on many machines. Set DISABLE_NLS_DEPRECATION to disable this warning.")
+WINBASEAPI
+BOOL
+WINAPI
+GetCPInfoExW(
+    _In_ UINT          CodePage,
+    _In_ DWORD         dwFlags,
+    _Out_ LPCPINFOEXW  lpCPInfoEx);
+
+WINBASEAPI
+BOOL
+WINAPI
+IsValidLocale(
+    _In_ LCID   Locale,
+    _In_ DWORD  dwFlags);
+
+WINBASEAPI
+int
+WINAPI
+LCIDToLocaleName(
+    _In_ LCID     Locale,
+    _Out_writes_opt_(cchName) LPWSTR  lpName,
+    _In_ int      cchName,
+    _In_ DWORD    dwFlags);
+
+
+WINBASEAPI
+LCID
+WINAPI
+LocaleNameToLCID(
+    _In_ LPCWSTR lpName,
+    _In_ DWORD dwFlags);
+
+WINBASEAPI
+LCID
+WINAPI
+GetUserDefaultLCID(void);
+
+WINBASEAPI
+int
+WINAPI
+GetUserDefaultLocaleName(
+    _Out_writes_(cchLocaleName) LPWSTR lpLocaleName,
+    _In_ int cchLocaleName
+    );
+
+//
+// String based NLS APIs
+//
+
+#define LOCALE_NAME_USER_DEFAULT            NULL
+#define LOCALE_NAME_INVARIANT               L""
+#define LOCALE_NAME_SYSTEM_DEFAULT          L"!x-sys-default-locale"
+
+#endif // NONLS
+
+// Restore the original value of the 'DEPRECATED' macro");
+#pragma pop_macro("DEPRECATED")
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // _WINNLS_

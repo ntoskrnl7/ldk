@@ -5,12 +5,11 @@ WINBASEAPI
 _Ret_maybenull_
 PVOID
 WINAPI
-EncodePointer(
+EncodePointer (
     _In_opt_ PVOID Ptr
     )
 {
 	// TODO
-
 	return Ptr;
 }
 
@@ -18,11 +17,10 @@ WINBASEAPI
 _Ret_maybenull_
 PVOID
 WINAPI
-DecodePointer(
+DecodePointer (
     _In_opt_ PVOID Ptr
     )
 {
 	// TODO
-
 	return Ptr;
 }

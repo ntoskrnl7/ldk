@@ -1,27 +1,35 @@
 ﻿#include "winbase.h"
 
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, DuplicateHandle)
+#endif
+
+
+
 WINBASEAPI
 BOOL
 WINAPI
-CloseHandle(
+CloseHandle (
     _In_ HANDLE hObject
     )
 {
-	ASSERT(ObIsKernelHandle(hObject) == TRUE);
+	ASSERT(ObIsKernelHandle( hObject ));
 
-	NTSTATUS Status = ZwClose(hObject);
+	NTSTATUS Status = ZwClose( hObject );
     if (NT_SUCCESS(Status)) {
         return TRUE;
     }
 
-	BaseSetLastNTError(Status);
+	LdkSetLastNTError( Status );
 	return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-DuplicateHandle(
+DuplicateHandle (
     _In_ HANDLE hSourceProcessHandle,
     _In_ HANDLE hSourceHandle,
     _In_ HANDLE hTargetProcessHandle,
@@ -31,19 +39,19 @@ DuplicateHandle(
     _In_ DWORD dwOptions
     )
 {
-    NTSTATUS Status = ZwDuplicateObject(
-                hSourceProcessHandle,
-                hSourceHandle,
-                hTargetProcessHandle,
-                lpTargetHandle,
-                (ACCESS_MASK)dwDesiredAccess,
-                bInheritHandle ? OBJ_INHERIT : 0,
-                dwOptions
-                );
+    PAGED_CODE();
+
+    NTSTATUS Status = ZwDuplicateObject( hSourceProcessHandle,
+                                         hSourceHandle,
+                                         hTargetProcessHandle,
+                                         lpTargetHandle,
+                                         (ACCESS_MASK)dwDesiredAccess,
+                                         bInheritHandle ? OBJ_INHERIT | OBJ_KERNEL_HANDLE : OBJ_KERNEL_HANDLE,
+                                         dwOptions );
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
-	} else {
-		BaseSetLastNTError(Status);
-		return FALSE;
 	}
+    
+    LdkSetLastNTError( Status );
+    return FALSE;
 }

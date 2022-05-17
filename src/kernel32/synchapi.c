@@ -1,7 +1,5 @@
 ﻿#include "winbase.h"
-
 #include "../ntdll/ntdll.h"
-#include "../nt/zwapi.h"
 
 
 
@@ -12,6 +10,36 @@
 #pragma alloc_text(PAGE, OpenEventA)
 #pragma alloc_text(PAGE, SetEvent)
 #pragma alloc_text(PAGE, ResetEvent)
+#pragma alloc_text(PAGE, PulseEvent)
+#pragma alloc_text(PAGE, InitializeSRWLock)
+#pragma alloc_text(PAGE, ReleaseSRWLockExclusive)
+#pragma alloc_text(PAGE, ReleaseSRWLockShared)
+#pragma alloc_text(PAGE, AcquireSRWLockExclusive)
+#pragma alloc_text(PAGE, AcquireSRWLockShared)
+#pragma alloc_text(PAGE, TryAcquireSRWLockExclusive)
+#pragma alloc_text(PAGE, TryAcquireSRWLockShared)
+#pragma alloc_text(PAGE, InitializeCriticalSection)
+#pragma alloc_text(PAGE, EnterCriticalSection)
+#pragma alloc_text(PAGE, TryEnterCriticalSection)
+#pragma alloc_text(PAGE, LeaveCriticalSection)
+#pragma alloc_text(PAGE, InitializeCriticalSectionEx)
+#pragma alloc_text(PAGE, InitializeCriticalSectionAndSpinCount)
+#pragma alloc_text(PAGE, DeleteCriticalSection)
+#pragma alloc_text(PAGE, InitOnceInitialize)
+#pragma alloc_text(PAGE, InitOnceExecuteOnce)
+#pragma alloc_text(PAGE, InitOnceBeginInitialize)
+#pragma alloc_text(PAGE, InitOnceComplete)
+#pragma alloc_text(PAGE, InitializeConditionVariable)
+#pragma alloc_text(PAGE, WakeConditionVariable)
+#pragma alloc_text(PAGE, WakeAllConditionVariable)
+#pragma alloc_text(PAGE, SleepConditionVariableCS)
+#pragma alloc_text(PAGE, SleepConditionVariableSRW)
+#pragma alloc_text(PAGE, WaitForSingleObject)
+#pragma alloc_text(PAGE, WaitForMultipleObjects)
+#pragma alloc_text(PAGE, WaitForSingleObjectEx)
+#pragma alloc_text(PAGE, WaitForMultipleObjectsEx)
+#pragma alloc_text(PAGE, Sleep)
+#pragma alloc_text(PAGE, SleepEx)
 #endif
 
 
@@ -20,162 +48,164 @@ WINBASEAPI
 _Ret_maybenull_
 HANDLE
 WINAPI
-CreateEventA(
+CreateEventA (
     _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
     _In_ BOOL bManualReset,
     _In_ BOOL bInitialState,
     _In_opt_ LPCSTR lpName
     )
 {
+    PCWSTR lpNameW = NULL;
+
     PAGED_CODE();
 
-	HANDLE handle;
-	ANSI_STRING name;
-	UNICODE_STRING nameW;
-
-	RtlInitString(&name, lpName);
-	NTSTATUS status = LdkAnsiStringToUnicodeString( &nameW,
-                                                    &name,
-                                                    TRUE );
-	if (!NT_SUCCESS(status)) {
-		return NULL;
-	}
-
-	handle = CreateEventW( lpEventAttributes,
-                           bManualReset,
-                           bInitialState,
-                           nameW.Buffer );
-
-	LdkFreeUnicodeString( &nameW );
-	return handle;
+    if (ARGUMENT_PRESENT(lpName)) {
+        PUNICODE_STRING NameW = LdkAnsiStringToStaticUnicodeString( lpName );
+        if (! NameW) {
+            return NULL;
+        }
+        lpNameW = (PCWSTR)NameW->Buffer;
+    }
+	return CreateEventW( lpEventAttributes,
+                         bManualReset,
+                         bInitialState,
+                         lpNameW );
 }
 
 WINBASEAPI
 _Ret_maybenull_
 HANDLE
 WINAPI
-CreateEventW(
+CreateEventW (
     _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
     _In_ BOOL bManualReset,
     _In_ BOOL bInitialState,
     _In_opt_ LPCWSTR lpName
     )
 {
+    NTSTATUS Status;
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+    
     PAGED_CODE();
 
-    NTSTATUS status;
-    OBJECT_ATTRIBUTES objectAttributes;
-    HANDLE handle;
-    UNICODE_STRING name;
-
     if (ARGUMENT_PRESENT(lpName)) {
-        RtlInitUnicodeString(&name,lpName);
-        InitializeObjectAttributes(&objectAttributes, &name, OBJ_KERNEL_HANDLE, NULL, lpEventAttributes);
+        RtlInitUnicodeString( &Name,
+                              lpName );
+        InitializeObjectAttributes( &ObjectAttributes,
+                                    &Name,
+                                    OBJ_OPENIF | OBJ_KERNEL_HANDLE,
+                                    NULL,
+                                    NULL );
     } else {
-        InitializeObjectAttributes(&objectAttributes, &name, OBJ_KERNEL_HANDLE, NULL, lpEventAttributes);
+        InitializeObjectAttributes( &ObjectAttributes,
+                                    NULL,
+                                    OBJ_KERNEL_HANDLE,
+                                    NULL,
+                                    NULL );
     }
+	if (ARGUMENT_PRESENT(lpEventAttributes)) {
+		ObjectAttributes.SecurityDescriptor = lpEventAttributes->lpSecurityDescriptor;
+		if (lpEventAttributes->bInheritHandle) {
+			SetFlag(ObjectAttributes.Attributes, OBJ_INHERIT);
+		}
+	}
 
-    status = ZwCreateEvent( &handle,
+    Status = ZwCreateEvent( &Handle,
                             EVENT_ALL_ACCESS,
-                            &objectAttributes,
+                            &ObjectAttributes,
                             bManualReset ? NotificationEvent : SynchronizationEvent,
                             (BOOLEAN)bInitialState );
 
-    if (NT_SUCCESS(status)) {
-        if (status == STATUS_OBJECT_NAME_EXISTS) {
-            SetLastError(ERROR_ALREADY_EXISTS);
+    if (NT_SUCCESS(Status)) {
+        if (Status == STATUS_OBJECT_NAME_EXISTS) {
+            SetLastError( ERROR_ALREADY_EXISTS );
         } else {
-            SetLastError(ERROR_SUCCESS);
+            SetLastError( ERROR_SUCCESS );
         }
-        return handle;
-    } else {
-        BaseSetLastNTError(status);
-        return NULL;
+        return Handle;
     }
+    LdkSetLastNTError( Status );
+    return NULL;
 }
 
 WINBASEAPI
 _Ret_maybenull_
 HANDLE
 WINAPI
-OpenEventA(
+OpenEventA (
     _In_ DWORD dwDesiredAccess,
     _In_ BOOL bInheritHandle,
     _In_ LPCSTR lpName
     )
 {
+    PUNICODE_STRING Name;
+
     PAGED_CODE();
 
-	HANDLE handle;
-	ANSI_STRING name;
-	UNICODE_STRING nameW;
-
-	RtlInitString(&name, lpName);
-	NTSTATUS status = LdkAnsiStringToUnicodeString( &nameW,
-                                                    &name,
-                                                    TRUE );
-	if (!NT_SUCCESS(status)) {
-		return NULL;
-	}
-
-	handle = OpenEventW( dwDesiredAccess,
-                         bInheritHandle,
-                         nameW.Buffer );
-
-	LdkFreeUnicodeString( &nameW );
-	return handle;
+    Name = LdkAnsiStringToStaticUnicodeString( lpName );
+    if (Name == NULL) {
+        return NULL;
+    }
+	return OpenEventW( dwDesiredAccess,
+                       bInheritHandle,
+                       (LPCWSTR)Name->Buffer );
 }
 
 WINBASEAPI
 _Ret_maybenull_
 HANDLE
 WINAPI
-OpenEventW(
+OpenEventW (
     _In_ DWORD dwDesiredAccess,
     _In_ BOOL bInheritHandle,
     _In_ LPCWSTR lpName
     )
 {
+    NTSTATUS Status;
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+
     PAGED_CODE();
 
-    NTSTATUS status;
-    OBJECT_ATTRIBUTES objectAttributes;
-    HANDLE handle;
-    UNICODE_STRING name;
+    RtlInitUnicodeString( &Name,
+                          lpName );
 
-    if (ARGUMENT_PRESENT(lpName)) {
-        RtlInitUnicodeString(&name,lpName);
-        InitializeObjectAttributes(&objectAttributes, &name, ((bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE), NULL, NULL);
-    } else {
-        InitializeObjectAttributes(&objectAttributes, &name, ((bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE), NULL, NULL);
-    }
+    InitializeObjectAttributes( &ObjectAttributes,
+                                &Name,
+                                ((bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE),
+                                NULL,
+                                NULL);
 
-    status = ZwOpenEvent( &handle,
+    Status = ZwOpenEvent( &Handle,
                           dwDesiredAccess,
-                          &objectAttributes );
+                          &ObjectAttributes );
 
-    if (NT_SUCCESS(status)) {
-        return handle;
+    if (NT_SUCCESS(Status)) {
+        return Handle;
     }
 
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return NULL;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-SetEvent(
+SetEvent (
     _In_ HANDLE hEvent
     )
 {
     PAGED_CODE();
 
-    NTSTATUS status = ZwSetEvent( hEvent, NULL );
-    if ( NT_SUCCESS(status) ) {
+    NTSTATUS Status = ZwSetEvent( hEvent,
+                                  NULL );
+    if (NT_SUCCESS(Status)) {
         return TRUE;
     }
-    BaseSetLastNTError(status);
+    LdkSetLastNTError(Status);
     return FALSE;
 }
 
@@ -189,94 +219,123 @@ ResetEvent(
 {
     PAGED_CODE();
 
-    NTSTATUS status = ZwClearEvent( hEvent );
-    if ( NT_SUCCESS(status) ) {
+    NTSTATUS Status = ZwClearEvent( hEvent );
+    if (NT_SUCCESS(Status)) {
         return TRUE;
     }
-    BaseSetLastNTError(status);
+    LdkSetLastNTError(Status);
+    return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+PulseEvent (
+    _In_ HANDLE hEvent
+    )
+{
+	PAGED_CODE();
+
+    NTSTATUS Status = ZwPulseEvent( hEvent,
+									NULL );
+    if (NT_SUCCESS(Status)) {
+        return TRUE;
+    }
+    LdkSetLastNTError(Status);
     return FALSE;
 }
 
 
 
-#if (_WIN32_WINNT >= 0x0600)
-
 WINBASEAPI
 VOID
 WINAPI
-InitializeSRWLock(
+InitializeSRWLock (
     _Out_ PSRWLOCK SRWLock
     )
 {
-    RtlInitializeSRWLock(SRWLock);
+    PAGED_CODE();
+
+    RtlInitializeSRWLock( SRWLock );
 }
 
 WINBASEAPI
 _Releases_exclusive_lock_(*SRWLock)
 VOID
 WINAPI
-ReleaseSRWLockExclusive(
+ReleaseSRWLockExclusive (
     _Inout_ PSRWLOCK SRWLock
     )
 {
-    RtlReleaseSRWLockExclusive(SRWLock);	
+    PAGED_CODE();
+
+    RtlReleaseSRWLockExclusive( SRWLock );	
 }
 
 WINBASEAPI
 _Releases_shared_lock_(*SRWLock)
 VOID
 WINAPI
-ReleaseSRWLockShared(
+ReleaseSRWLockShared (
     _Inout_ PSRWLOCK SRWLock
     )
 {
-    RtlReleaseSRWLockShared(SRWLock);
+    PAGED_CODE();
+
+    RtlReleaseSRWLockShared( SRWLock );
 }
 
 WINBASEAPI
 _Acquires_exclusive_lock_(*SRWLock)
 VOID
 WINAPI
-AcquireSRWLockExclusive(
+AcquireSRWLockExclusive (
     _Inout_ PSRWLOCK SRWLock
     )
 {
-    RtlAcquireSRWLockExclusive(SRWLock);
+    PAGED_CODE();
+
+    RtlAcquireSRWLockExclusive( SRWLock );
 }
 
 WINBASEAPI
 _Acquires_shared_lock_(*SRWLock)
 VOID
 WINAPI
-AcquireSRWLockShared(
+AcquireSRWLockShared (
     _Inout_ PSRWLOCK SRWLock
     )
 {
-    RtlAcquireSRWLockShared(SRWLock);
+    PAGED_CODE();
+
+    RtlAcquireSRWLockShared( SRWLock );
 }
 
 WINBASEAPI
 _When_(return!=0, _Acquires_exclusive_lock_(*SRWLock))
 BOOLEAN
 WINAPI
-TryAcquireSRWLockExclusive(
+TryAcquireSRWLockExclusive (
     _Inout_ PSRWLOCK SRWLock
     )
 {
-    return RtlTryAcquireSRWLockExclusive(SRWLock);
+    PAGED_CODE();
+
+    return RtlTryAcquireSRWLockExclusive( SRWLock );
 }
 
 WINBASEAPI
 _When_(return!=0, _Acquires_shared_lock_(*SRWLock))
 BOOLEAN
 WINAPI
-TryAcquireSRWLockShared(
+TryAcquireSRWLockShared (
     _Inout_ PSRWLOCK SRWLock
     )
 {
-    return RtlTryAcquireSRWLockShared(SRWLock);
+    PAGED_CODE();
+
+    return RtlTryAcquireSRWLockShared( SRWLock );
 }
-#endif // (_WIN32_WINNT >= 0x0600)
 
 
 
@@ -285,60 +344,68 @@ _Maybe_raises_SEH_exception_
 WINBASEAPI
 VOID
 WINAPI
-InitializeCriticalSection(
+InitializeCriticalSection (
     _Out_ LPCRITICAL_SECTION lpCriticalSection
     )
 #else
 WINBASEAPI
 VOID
 WINAPI
-InitializeCriticalSection(
+InitializeCriticalSection (
     _Out_ LPCRITICAL_SECTION lpCriticalSection
     )
 #endif  // (_WIN32_WINNT < 0x0600)
 {
-    NTSTATUS status;
-    status = RtlInitializeCriticalSection(lpCriticalSection);
-    if (!NT_SUCCESS(status)) {
-        BaseSetLastNTError(status);
+    PAGED_CODE();
+
+    NTSTATUS Status;
+    Status = RtlInitializeCriticalSection( lpCriticalSection );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
     }
 }
 
 WINBASEAPI
 VOID
 WINAPI
-EnterCriticalSection(
+EnterCriticalSection (
     _Inout_ LPCRITICAL_SECTION lpCriticalSection
     )
 {
-    NTSTATUS status;
-    status = RtlEnterCriticalSection(lpCriticalSection);
-    if (!NT_SUCCESS(status)) {
-        BaseSetLastNTError(status);
+    PAGED_CODE();
+
+    NTSTATUS Status;
+    Status = RtlEnterCriticalSection( lpCriticalSection );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
     }
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-TryEnterCriticalSection(
+TryEnterCriticalSection (
     _Inout_ LPCRITICAL_SECTION lpCriticalSection
     )
 {
-    return (BOOL)RtlTryEnterCriticalSection(lpCriticalSection);
+    PAGED_CODE();
+
+    return (BOOL)RtlTryEnterCriticalSection( lpCriticalSection );
 }
 
 WINBASEAPI
 VOID
 WINAPI
-LeaveCriticalSection(
+LeaveCriticalSection (
     _Inout_ LPCRITICAL_SECTION lpCriticalSection
     )
 {
-    NTSTATUS status;
-    status = RtlLeaveCriticalSection(lpCriticalSection);
-    if (!NT_SUCCESS(status)) {
-        BaseSetLastNTError(status);
+    PAGED_CODE();
+
+    NTSTATUS Status;
+    Status = RtlLeaveCriticalSection( lpCriticalSection );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
     }
 }
 
@@ -346,20 +413,24 @@ WINBASEAPI
 _Must_inspect_result_
 BOOL
 WINAPI
-InitializeCriticalSectionEx(
+InitializeCriticalSectionEx (
     _Out_ LPCRITICAL_SECTION lpCriticalSection,
     _In_ DWORD dwSpinCount,
 	_In_ DWORD dwFlags
     )
 {
+    PAGED_CODE();
+
 	UNREFERENCED_PARAMETER(dwFlags);
 
-    NTSTATUS status;
-    status = RtlInitializeCriticalSectionEx(lpCriticalSection, dwSpinCount, dwFlags);
-    if (NT_SUCCESS(status)) {
+    NTSTATUS Status;
+    Status = RtlInitializeCriticalSectionEx( lpCriticalSection,
+                                             dwSpinCount,
+                                             dwFlags );
+    if (NT_SUCCESS( Status )) {
         return TRUE;
     }
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
@@ -367,31 +438,36 @@ WINBASEAPI
 _Must_inspect_result_
 BOOL
 WINAPI
-InitializeCriticalSectionAndSpinCount(
+InitializeCriticalSectionAndSpinCount (
     _Out_ LPCRITICAL_SECTION lpCriticalSection,
     _In_ DWORD dwSpinCount
     )
 {
-    NTSTATUS status;
-    status = RtlInitializeCriticalSectionAndSpinCount(lpCriticalSection, dwSpinCount);
-    if (NT_SUCCESS(status)) {
+    PAGED_CODE();
+
+    NTSTATUS Status;
+    Status = RtlInitializeCriticalSectionAndSpinCount( lpCriticalSection,
+                                                       dwSpinCount );
+    if (NT_SUCCESS(Status)) {
         return TRUE;
     }
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
 WINBASEAPI
 VOID
 WINAPI
-DeleteCriticalSection(
+DeleteCriticalSection (
     _Inout_ LPCRITICAL_SECTION lpCriticalSection
     )
 {
-    NTSTATUS status;
-    status = RtlDeleteCriticalSection(lpCriticalSection);
-    if (!NT_SUCCESS(status)) {
-        BaseSetLastNTError(status);
+    PAGED_CODE();
+
+    NTSTATUS Status;
+    Status = RtlDeleteCriticalSection( lpCriticalSection );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
     }
 }
 
@@ -400,72 +476,85 @@ DeleteCriticalSection(
 WINBASEAPI
 VOID
 WINAPI
-InitOnceInitialize(
+InitOnceInitialize (
     _Out_ PINIT_ONCE InitOnce
     )
 {
-    RtlRunOnceInitialize(InitOnce);
+    PAGED_CODE();
+
+    RtlRunOnceInitialize( InitOnce );
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-InitOnceExecuteOnce(
+InitOnceExecuteOnce (
     _Inout_ PINIT_ONCE InitOnce,
     _In_ __callback PINIT_ONCE_FN InitFn,
     _Inout_opt_ PVOID Parameter,
     _Outptr_opt_result_maybenull_ LPVOID * Context
     )
 {
-    NTSTATUS status;
+    PAGED_CODE();
+
+    NTSTATUS Status;
     try {
-        status = RtlRunOnceExecuteOnce(InitOnce, (PRTL_RUN_ONCE_INIT_FN)InitFn, Parameter, Context);
-        if (NT_SUCCESS(status)) {
+        Status = RtlRunOnceExecuteOnce( InitOnce,
+                                        (PRTL_RUN_ONCE_INIT_FN)InitFn,
+                                        Parameter,
+                                        Context );
+        if (NT_SUCCESS(Status)) {
             return TRUE;
         }
     } except(EXCEPTION_EXECUTE_HANDLER) {
-        status = GetExceptionCode();
+        Status = GetExceptionCode();
     }
 
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-InitOnceBeginInitialize(
+InitOnceBeginInitialize (
     _Inout_ LPINIT_ONCE lpInitOnce,
     _In_ DWORD dwFlags,
     _Out_ PBOOL fPending,
     _Outptr_opt_result_maybenull_ LPVOID* lpContext
     )
 {
-    NTSTATUS status = RtlRunOnceBeginInitialize(lpInitOnce, dwFlags, lpContext);
-    if (NT_SUCCESS(status)) {
-        *fPending = (status == STATUS_PENDING);
+    PAGED_CODE();
+
+    NTSTATUS Status = RtlRunOnceBeginInitialize( lpInitOnce,
+                                                 dwFlags,
+                                                 lpContext );
+    if (NT_SUCCESS(Status)) {
+        *fPending = (Status == STATUS_PENDING);
         return TRUE;
     }
-
-    BaseSetLastNTError(status);
+    LdkSetLastNTError(Status);
     return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-InitOnceComplete(
+InitOnceComplete (
     _Inout_ LPINIT_ONCE lpInitOnce,
     _In_ DWORD dwFlags,
     _In_opt_ LPVOID lpContext
     )
 {
-    NTSTATUS status = RtlRunOnceComplete(lpInitOnce, dwFlags, lpContext);
-    if (NT_SUCCESS(status)) {
+    PAGED_CODE();
+
+    NTSTATUS Status = RtlRunOnceComplete( lpInitOnce,
+                                          dwFlags,
+                                          lpContext );
+    if (NT_SUCCESS(Status)) {
         return TRUE;
     }
-
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
@@ -474,71 +563,84 @@ InitOnceComplete(
 WINBASEAPI
 VOID
 WINAPI
-InitializeConditionVariable(
+InitializeConditionVariable (
     _Out_ PCONDITION_VARIABLE ConditionVariable
     )
 {
-    RtlInitializeConditionVariable(ConditionVariable);
+    PAGED_CODE();
+
+    RtlInitializeConditionVariable( ConditionVariable );
 }
 
 WINBASEAPI
 VOID
 WINAPI
-WakeConditionVariable(
+WakeConditionVariable (
     _Inout_ PCONDITION_VARIABLE ConditionVariable
     )
 {
-    RtlWakeConditionVariable(ConditionVariable);
+    PAGED_CODE();
+
+    RtlWakeConditionVariable( ConditionVariable );
 }
 
 WINBASEAPI
 VOID
 WINAPI
-WakeAllConditionVariable(
+WakeAllConditionVariable (
     _Inout_ PCONDITION_VARIABLE ConditionVariable
     )
 {
-    RtlWakeAllConditionVariable(ConditionVariable);
+    PAGED_CODE();
+
+    RtlWakeAllConditionVariable( ConditionVariable );
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-SleepConditionVariableCS(
+SleepConditionVariableCS (
     _Inout_ PCONDITION_VARIABLE ConditionVariable,
     _Inout_ PCRITICAL_SECTION CriticalSection,
     _In_ DWORD dwMilliseconds
     )
 {
-    LARGE_INTEGER Timeout;
+    PAGED_CODE();
 
-    NTSTATUS status;
-    status = RtlSleepConditionVariableCS(ConditionVariable, CriticalSection, BaseFormatTimeout(&Timeout, dwMilliseconds));
-    if (NT_SUCCESS(status)) {
+    LARGE_INTEGER Timeout;
+    NTSTATUS Status = RtlSleepConditionVariableCS( ConditionVariable,
+                                                   CriticalSection,
+                                                   LdkFormatTimeout( &Timeout,
+                                                                     dwMilliseconds ) );
+    if (NT_SUCCESS(Status)) {
         return TRUE;
     }
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-SleepConditionVariableSRW(
+SleepConditionVariableSRW (
     _Inout_ PCONDITION_VARIABLE ConditionVariable,
     _Inout_ PSRWLOCK SRWLock,
     _In_ DWORD dwMilliseconds,
     _In_ ULONG Flags
     )
 {
-    LARGE_INTEGER Timeout;
+    PAGED_CODE();
 
-    NTSTATUS status;
-    status = RtlSleepConditionVariableSRW(ConditionVariable, SRWLock, BaseFormatTimeout(&Timeout, dwMilliseconds), Flags);
-    if (NT_SUCCESS(status)) {
+    LARGE_INTEGER Timeout;
+    NTSTATUS Status = RtlSleepConditionVariableSRW( ConditionVariable,
+                                                    SRWLock,
+                                                    LdkFormatTimeout( &Timeout,
+                                                                      dwMilliseconds ),
+                                                    Flags );
+    if (NT_SUCCESS(Status)) {
         return TRUE;
     }
-    BaseSetLastNTError(status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
@@ -547,55 +649,70 @@ SleepConditionVariableSRW(
 WINBASEAPI
 DWORD
 WINAPI
-WaitForSingleObject(
+WaitForSingleObject (
     _In_ HANDLE hHandle,
     _In_ DWORD dwMilliseconds
     )
 {
-	return WaitForSingleObjectEx(hHandle, dwMilliseconds, FALSE);
+    PAGED_CODE();
+
+	return WaitForSingleObjectEx( hHandle,
+                                  dwMilliseconds,
+                                  FALSE );
 }
 
 WINBASEAPI
 DWORD
 WINAPI
-WaitForMultipleObjects(
+WaitForMultipleObjects (
     _In_ DWORD nCount,
     _In_reads_(nCount) CONST HANDLE* lpHandles,
     _In_ BOOL bWaitAll,
     _In_ DWORD dwMilliseconds
     )
 {
-    return WaitForMultipleObjectsEx(nCount, lpHandles, bWaitAll, dwMilliseconds, FALSE);
+    PAGED_CODE();
+
+    return WaitForMultipleObjectsEx( nCount,
+                                     lpHandles,
+                                     bWaitAll,
+                                     dwMilliseconds,
+                                     FALSE );
 }
 
 WINBASEAPI
 DWORD
 WINAPI
-WaitForSingleObjectEx(
+WaitForSingleObjectEx (
     _In_ HANDLE hHandle,
     _In_ DWORD dwMilliseconds,
     _In_ BOOL bAlertable
     )
 {
-	LARGE_INTEGER timeout;
-    PLARGE_INTEGER pTimeout = BaseFormatTimeout(&timeout, dwMilliseconds);
+    PAGED_CODE();
 
-    NTSTATUS status;
+    NTSTATUS Status;
+	LARGE_INTEGER Timeout;
+    PLARGE_INTEGER pTimeout = LdkFormatTimeout( &Timeout,
+                                                dwMilliseconds );
+
     do {
-        status = ZwWaitForSingleObject(hHandle, (BOOLEAN)bAlertable, pTimeout);
-        if (!NT_SUCCESS(status)) {
-            BaseSetLastNTError(status);
-            status = WAIT_FAILED;
+        Status = ZwWaitForSingleObject( hHandle,
+                                        (BOOLEAN)bAlertable,
+                                        pTimeout );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            Status = WAIT_FAILED;
         }
-    } while (bAlertable && (status == STATUS_ALERTED));
+    } while (bAlertable && (Status == STATUS_ALERTED));
 
-	return (DWORD)status;
+	return (DWORD)Status;
 }
 
 WINBASEAPI
 DWORD
 WINAPI
-WaitForMultipleObjectsEx(
+WaitForMultipleObjectsEx (
     _In_ DWORD nCount,
     _In_reads_(nCount) CONST HANDLE* lpHandles,
     _In_ BOOL bWaitAll,
@@ -603,67 +720,88 @@ WaitForMultipleObjectsEx(
     _In_ BOOL bAlertable
     )
 {
-	LARGE_INTEGER timeout;
-    PLARGE_INTEGER pTimeout = BaseFormatTimeout(&timeout, dwMilliseconds);
-    HANDLE handlesTmp[8];
-    PHANDLE handles;
+    PAGED_CODE();
+
+	LARGE_INTEGER Timeout;
+    PLARGE_INTEGER pTimeout = LdkFormatTimeout( &Timeout,
+                                                dwMilliseconds );
+    HANDLE HandlesTmp[8];
+    PHANDLE Handles;
     if (nCount > 8) {
-        handles = ExAllocatePoolWithTag(PagedPool, sizeof(HANDLE) * nCount, TAG_TMP_POOL);
-        if (!handles) {
-            BaseSetLastNTError(STATUS_NO_MEMORY);
+        Handles = ExAllocatePoolWithTag( PagedPool,
+                                         sizeof(HANDLE) * nCount,
+                                         TAG_TMP_POOL );
+        if (!Handles) {
+            LdkSetLastNTError(STATUS_NO_MEMORY);
             return WAIT_FAILED;
         }
     } else {
-        handles = handlesTmp;
+        Handles = HandlesTmp;
     }
-    RtlCopyMemory(handles, lpHandles, sizeof(HANDLE) * nCount);
+    RtlCopyMemory( Handles,
+                   lpHandles,
+                   sizeof(HANDLE) * nCount);
 
-    NTSTATUS status;
+    NTSTATUS Status;
     do {
-        status = ZwWaitForMultipleObjects(nCount, handles, bWaitAll ? WaitAll : WaitAny, (BOOLEAN)bAlertable, pTimeout);
-        if (!NT_SUCCESS(status)) {
-            BaseSetLastNTError(status);
-            status = WAIT_FAILED;
+        Status = ZwWaitForMultipleObjects( nCount,
+                                           Handles,
+                                           bWaitAll ? WaitAll : WaitAny,
+                                           (BOOLEAN)bAlertable,
+                                           pTimeout);
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            Status = WAIT_FAILED;
         }
-    } while (bAlertable && (status == STATUS_ALERTED));
+    } while (bAlertable && (Status == STATUS_ALERTED));
 
-    if (handles != handlesTmp) {
-        ExFreePoolWithTag(handles, TAG_TMP_POOL);
+    if (Handles != HandlesTmp) {
+        ExFreePoolWithTag( Handles,
+                           TAG_TMP_POOL );
     }
-	return (DWORD)status;
+	return (DWORD)Status;
 }
+
 
 
 WINBASEAPI
 VOID
 WINAPI
-Sleep(
+Sleep (
     _In_ DWORD dwMilliseconds
     )
 {
-	SleepEx(dwMilliseconds, FALSE);
+    PAGED_CODE();
+
+	SleepEx( dwMilliseconds,
+             FALSE );
 }
 
 WINBASEAPI
 DWORD
 WINAPI
-SleepEx(
+SleepEx (
     _In_ DWORD dwMilliseconds,
     _In_ BOOL bAlertable
     )
 {
+    PAGED_CODE();
+
 	LARGE_INTEGER Timeout;
-    PLARGE_INTEGER pTimeout = BaseFormatTimeout(&Timeout, dwMilliseconds);
-	if (!pTimeout) {
+    PLARGE_INTEGER pTimeout = LdkFormatTimeout( &Timeout,
+                                                dwMilliseconds );
+	if (pTimeout == NULL) {
         Timeout.LowPart = 0x0;
         Timeout.HighPart = 0x80000000;
         pTimeout = &Timeout;
 	}
 
-    NTSTATUS status;
+    NTSTATUS Status;
 	do {
-        status = KeDelayExecutionThread(KernelMode, (BOOLEAN)bAlertable, pTimeout);
-	} while (bAlertable && (status == STATUS_ALERTED));
+        Status = KeDelayExecutionThread( KernelMode,
+                                         (BOOLEAN)bAlertable,
+                                         pTimeout );
+	} while (bAlertable && (Status == STATUS_ALERTED));
 
-	return status == STATUS_USER_APC ? WAIT_IO_COMPLETION : 0;
+	return Status == STATUS_USER_APC ? WAIT_IO_COMPLETION : 0;
 }

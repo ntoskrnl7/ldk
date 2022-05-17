@@ -1,7 +1,21 @@
 ﻿#include "ntdll.h"
 
-#define __ALIGNED(n)    __declspec(align(n))
 
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, RtlInitializeSRWLock)
+#pragma alloc_text(PAGE, RtlAcquireSRWLockShared)
+#pragma alloc_text(PAGE, RtlReleaseSRWLockShared)
+#pragma alloc_text(PAGE, RtlTryAcquireSRWLockShared)
+#pragma alloc_text(PAGE, RtlAcquireSRWLockExclusive)
+#pragma alloc_text(PAGE, RtlReleaseSRWLockExclusive)
+#pragma alloc_text(PAGE, RtlTryAcquireSRWLockExclusive)
+#endif
+
+
+
+#define __ALIGNED(n)        __declspec(align(n))
+#define NtClose             ZwClose
 #pragma warning(disable: 4201)
 
 /*

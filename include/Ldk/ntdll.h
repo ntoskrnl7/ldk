@@ -6,10 +6,23 @@
 
 #include "winnt.h"
 
+#include "ldk.h"
+
+#define PEB	                    LDK_PEB
+#define PPEB	                PLDK_PEB
+#define TEB	                    LDK_TEB
+#define PTEB	                PLDK_TEB
+#define USER_SHARED_DATA        SharedUserData
+
+#define NtQueryAttributesFile   ZwQueryAttributesFile
+
 #include "ntdll/ntldr.h"
 #include "ntdll/nturtl.h"
 #include "ntdll/ntexapi.h"
 #include "ntdll/ntrtl.h"
+#include "ntdll/ntpsapi.h"
+#include "ntdll/ntioapi.h"
+#include "ntdll/zwapi.h"
 
 EXTERN_C_START
 
@@ -30,26 +43,8 @@ RtlRaiseException(
 
 #define RtlRaiseStatus          ExRaiseStatus
 
-
-
 #define NtCreateEvent           ZwCreateEvent
 #define NtSetEvent              ZwSetEvent
-
-
-
-_When_(Timeout == NULL, _IRQL_requires_max_(APC_LEVEL))
-_When_(Timeout->QuadPart != 0, _IRQL_requires_max_(APC_LEVEL))
-_When_(Timeout->QuadPart == 0, _IRQL_requires_max_(DISPATCH_LEVEL))
-NTSYSAPI
-NTSTATUS
-NTAPI
-ZwWaitForMultipleObjects (
-    _In_ ULONG Count,
-    _In_reads_(Count) HANDLE Handles[],
-    _In_ _Strict_type_match_ WAIT_TYPE WaitType,
-    _In_ BOOLEAN Alertable,
-    _In_opt_ PLARGE_INTEGER Timeout
-    );
 
 #define NtWaitForSingleObject       ZwWaitForSingleObject
 #define NtWaitForMultipleObjects    ZwWaitForMultipleObjects

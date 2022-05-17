@@ -59,6 +59,13 @@ ResetEvent(
     _In_ HANDLE hEvent
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+PulseEvent(
+    _In_ HANDLE hEvent
+    );
+
 
 
 //
@@ -68,8 +75,6 @@ ResetEvent(
 #define SRWLOCK_INIT RTL_SRWLOCK_INIT
 
 typedef RTL_SRWLOCK SRWLOCK, *PSRWLOCK;
-
-#if (_WIN32_WINNT >= 0x0600)
 
 WINBASEAPI
 VOID
@@ -126,7 +131,6 @@ TryAcquireSRWLockShared(
     _Inout_ PSRWLOCK SRWLock
     );
 
-#endif // (_WIN32_WINNT >= 0x0600)
 
 
 //
@@ -134,7 +138,6 @@ TryAcquireSRWLockShared(
 //
 
 #if (_WIN32_WINNT < 0x0600)
-
 _Maybe_raises_SEH_exception_
 WINBASEAPI
 VOID
@@ -142,19 +145,14 @@ WINAPI
 InitializeCriticalSection(
     _Out_ LPCRITICAL_SECTION lpCriticalSection
     );
-
 #else
-
 WINBASEAPI
 VOID
 WINAPI
 InitializeCriticalSection(
     _Out_ LPCRITICAL_SECTION lpCriticalSection
     );
-
 #endif  // (_WIN32_WINNT < 0x0600)
-
-
 
 WINBASEAPI
 VOID
@@ -279,8 +277,6 @@ typedef RTL_CONDITION_VARIABLE CONDITION_VARIABLE, *PCONDITION_VARIABLE;
 
 #define CONDITION_VARIABLE_LOCKMODE_SHARED RTL_CONDITION_VARIABLE_LOCKMODE_SHARED
 
-#if (_WIN32_WINNT >= 0x0600)
-
 WINBASEAPI
 VOID
 WINAPI
@@ -320,11 +316,6 @@ SleepConditionVariableSRW(
     _In_ DWORD dwMilliseconds,
     _In_ ULONG Flags
     );
-
-#endif // (_WIN32_WINNT >= 0x0600)
-
-
-
 
 
 

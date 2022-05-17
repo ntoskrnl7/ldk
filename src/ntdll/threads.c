@@ -1,5 +1,17 @@
 ﻿#include "ntdll.h"
 
+
+
+NTSTATUS
+LdkpInitializeRtlWorkItem (
+    VOID
+    );
+
+VOID
+LdkpTerminateRtlWorkItem (
+    VOID
+    );
+
 #define TAG_WORK_ITEM       'kWdL'
 
 typedef struct _LDK_WORK_ITEM {
@@ -8,6 +20,24 @@ typedef struct _LDK_WORK_ITEM {
     PVOID Context;
 } LDK_WORK_ITEM, *PLDK_WORK_ITEM;
 
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_IRQL_requires_same_
+_Function_class_(WORKER_THREAD_ROUTINE)
+VOID
+LdkpWokerThreadRoutine (
+    _In_ PLDK_WORK_ITEM WorkItem
+    );
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeRtlWorkItem)
+#pragma alloc_text(PAGE, LdkpTerminateRtlWorkItem)
+#pragma alloc_text(PAGE, LdkpWokerThreadRoutine)
+#endif
+
+
+
 NPAGED_LOOKASIDE_LIST LdkpRtlWorkItemLookaside;
 
 NTSTATUS
@@ -15,6 +45,8 @@ LdkpInitializeRtlWorkItem (
     VOID
     )
 {
+    PAGED_CODE();
+
 	ExInitializeNPagedLookasideList( &LdkpRtlWorkItemLookaside,
 									 NULL,
 									 NULL,
@@ -30,6 +62,8 @@ LdkpTerminateRtlWorkItem (
     VOID
     )
 {
+    PAGED_CODE();
+
     ExDeleteNPagedLookasideList( &LdkpRtlWorkItemLookaside );
 }
 
@@ -41,6 +75,8 @@ LdkpWokerThreadRoutine (
     _In_ PLDK_WORK_ITEM WorkItem
     )
 {
+    PAGED_CODE();
+
     WorkItem->Function( WorkItem->Context );
 
     ExFreeToNPagedLookasideList( &LdkpRtlWorkItemLookaside,

@@ -148,99 +148,157 @@ KeyedEventTest (
 {
     PAGED_CODE();
 
-    BOOLEAN result = TRUE;
+    BOOLEAN Result = TRUE;
 
-    HANDLE threads[10] = { NULL, };
-    NTSTATUS status = NtCreateKeyedEvent(&TestKeyedEventHandle, KEYEDEVENT_ALL_ACCESS, NULL, 0);
-    if (!NT_SUCCESS(status)) {
+    HANDLE Threads[10] = { NULL, };
+    NTSTATUS Status = NtCreateKeyedEvent( &TestKeyedEventHandle,
+                                          KEYEDEVENT_ALL_ACCESS,
+                                          NULL,
+                                          0 );
+    if (! NT_SUCCESS(Status)) {
         return FALSE;
     }
 
     for (ULONG_PTR i = 0; i < 10; i++) {
-        threads[i] = CreateThread(NULL, 0, KeyedEventTestThreadProc, (PVOID)((i % 4 + 1) << 8), 0, NULL);
+        Threads[i] = CreateThread( NULL,
+                                   0,
+                                   KeyedEventTestThreadProc,
+                                   (PVOID)((i % 4 + 1) << 8),
+                                   0,
+                                   NULL );
         TestCount[i % 4]++;
     }
 
-    HANDLE hdls[3];
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x100), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    HANDLE Handles[3];
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x100),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    hdls[0] = threads[0];
-    hdls[1] = threads[4];
-    hdls[2] = threads[8];
-    NtWaitForMultipleObjects(3, hdls, WaitAny, FALSE, NULL);
+    Handles[0] = Threads[0];
+    Handles[1] = Threads[4];
+    Handles[2] = Threads[8];
+    NtWaitForMultipleObjects( 3,
+                              Handles,
+                              WaitAny,
+                              FALSE,
+                              NULL );
     if (TestCount[0] != 2) {
-        result = FALSE;
+        Result = FALSE;
     }
 
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x200), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x200),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    hdls[0] = threads[1];
-    hdls[1] = threads[5];
-    hdls[2] = threads[9];
-    status = NtWaitForMultipleObjects(3, hdls, WaitAny, FALSE, NULL);
+    Handles[0] = Threads[1];
+    Handles[1] = Threads[5];
+    Handles[2] = Threads[9];
+    Status = NtWaitForMultipleObjects( 3,
+                                       Handles,
+                                       WaitAny,
+                                       FALSE,
+                                       NULL );
     if (TestCount[1] != 2) {
-        result = FALSE;
+        Result = FALSE;
     }
 
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x300), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x300),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    hdls[0] = threads[2];
-    hdls[1] = threads[6];
-    NtWaitForMultipleObjects(2, hdls, WaitAny, FALSE, NULL);
+    Handles[0] = Threads[2];
+    Handles[1] = Threads[6];
+    NtWaitForMultipleObjects( 2,
+                              Handles,
+                              WaitAny,
+                              FALSE,
+                              NULL );
     if (TestCount[2] != 1) {
-        result = FALSE;
+        Result = FALSE;
     }
 
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x400), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x400),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    hdls[0] = threads[3];
-    hdls[1] = threads[7];
-    NtWaitForMultipleObjects(2, hdls, WaitAny, FALSE, NULL);
+    Handles[0] = Threads[3];
+    Handles[1] = Threads[7];
+    NtWaitForMultipleObjects( 2,
+                              Handles,
+                              WaitAny,
+                              FALSE,
+                              NULL );
     if (TestCount[3] != 1) {
-        result = FALSE;
+        Result = FALSE;
     }
 
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x100), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x100),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x100), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x100),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x200), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x200),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x200), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x200),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x300), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x300),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
-    status = NtReleaseKeyedEvent(TestKeyedEventHandle, (PVOID)(0x400), FALSE, NULL);
-    if (!NT_SUCCESS(status)) {
-        result = FALSE;
+    Status = NtReleaseKeyedEvent( TestKeyedEventHandle,
+                                  (PVOID)(0x400),
+                                  FALSE,
+                                  NULL );
+    if (! NT_SUCCESS(Status)) {
+        Result = FALSE;
     }
 
-    NtWaitForMultipleObjects(10, threads, WaitAll, FALSE, NULL);
+    NtWaitForMultipleObjects( 10,
+                              Threads,
+                              WaitAll,
+                              FALSE,
+                              NULL );
     for (int i = 0; i < 10; i++) {
-        if (threads[i]) {
-            NtClose(threads[i]);
+        if (Threads[i]) {
+            NtClose(Threads[i]);
         }
     }
 
     NtClose(TestKeyedEventHandle);
 
-    return result;
+    return Result;
 }

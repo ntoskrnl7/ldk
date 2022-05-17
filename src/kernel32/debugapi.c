@@ -5,17 +5,29 @@
 WINBASEAPI
 BOOL
 WINAPI
-IsDebuggerPresent(
+IsDebuggerPresent (
     VOID
     )
 {
 	return (KdRefreshDebuggerNotPresent() == FALSE);
 }
 
+
+
 WINBASEAPI
 VOID
 WINAPI
-OutputDebugStringA(
+DebugBreak (
+    VOID
+    )
+{
+    DbgBreakPoint();
+}
+
+WINBASEAPI
+VOID
+WINAPI
+OutputDebugStringA (
     _In_opt_ LPCSTR lpOutputString
     )
 {
@@ -27,7 +39,7 @@ OutputDebugStringA(
 WINBASEAPI
 VOID
 WINAPI
-OutputDebugStringW(
+OutputDebugStringW (
     _In_opt_ LPCWSTR lpOutputString
     )
 {

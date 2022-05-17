@@ -6,8 +6,7 @@
 #include "internal.h"
 #include "teb.h"
 #include "peb.h"
-#include "nt/ntldr.h"
-#include "nt/zwapi.h"
+#include "../include/Ldk/ntdll.h"
 
 
 

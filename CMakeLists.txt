@@ -45,3 +45,18 @@ endif()
 set_target_properties(Ldk PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib/${PLATFROM_SHORT_NAME})
 
 target_include_directories(Ldk PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
+
+#
+# Generate Debug Info
+#
+target_compile_options(Ldk PUBLIC "$<$<CONFIG:Release>:/Zi>")
+target_link_options(Ldk PUBLIC "$<$<CONFIG:Release>:/DEBUG>")
+
+#
+# set library output path (release only)
+#
+string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFROM_SHORT_NAME)
+if(PLATFROM_SHORT_NAME STREQUAL "win32")
+    set(PLATFROM_SHORT_NAME "x86")
+endif()
+set_target_properties(Ldk PROPERTIES ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/lib/${PLATFROM_SHORT_NAME})

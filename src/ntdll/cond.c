@@ -1,6 +1,19 @@
 ﻿#include "ntdll.h"
 
-#define __ALIGNED(n)    __declspec(align(n))
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, RtlInitializeConditionVariable)
+#pragma alloc_text(PAGE, RtlWakeConditionVariable)
+#pragma alloc_text(PAGE, RtlWakeAllConditionVariable)
+#pragma alloc_text(PAGE, RtlSleepConditionVariableCS)
+#pragma alloc_text(PAGE, RtlSleepConditionVariableSRW)
+#endif
+
+
+
+#define __ALIGNED(n)        __declspec(align(n))
+#define NtClose             ZwClose
 
 /*
 * ReactOS :-)

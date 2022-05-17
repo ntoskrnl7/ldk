@@ -1,7 +1,6 @@
 ﻿#include "winbase.h"
-#include "../nt/ntpsapi.h"
-#include "../nt/ntexapi.h"
-#include "../nt/zwapi.h"
+#include "../ldk.h"
+#include "../ntdll/ntdll.h"
 
 
 
@@ -19,10 +18,16 @@ KSTART_ROUTINE LdkpThreadStartRoutine;
 #pragma alloc_text(PAGE, LdkpThreadStartExpandStackAndCallout)
 #pragma alloc_text(PAGE, LdkpThreadStartRoutine)
 #pragma alloc_text(PAGE, CreateThread)
+#pragma alloc_text(PAGE, OpenThread)
+#pragma alloc_text(PAGE, GetThreadPriority)
+#pragma alloc_text(PAGE, SetThreadPriority)
+#pragma alloc_text(PAGE, GetThreadPriorityBoost)
+#pragma alloc_text(PAGE, SetThreadPriorityBoost)
 #pragma alloc_text(PAGE, GetExitCodeThread)
 #pragma alloc_text(PAGE, GetThreadTimes)
 #pragma alloc_text(PAGE, ExitProcess)
 #pragma alloc_text(PAGE, TerminateProcess)
+#pragma alloc_text(PAGE, IsProcessorFeaturePresent)
 #endif
 
 
@@ -114,7 +119,7 @@ WINBASEAPI
 _Ret_maybenull_
 HANDLE
 WINAPI
-CreateThread(
+CreateThread (
     _In_opt_ LPSECURITY_ATTRIBUTES lpThreadAttributes,
     _In_ SIZE_T dwStackSize,
     _In_ LPTHREAD_START_ROUTINE lpStartAddress,
@@ -132,8 +137,8 @@ CreateThread(
 	}
 
 	PLDK_THREAD_CONTEXT Context = ExAllocateFromPagedLookasideList( &LdkpThreadContextLookaside );
-	if (!Context) {
-		BaseSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
+	if (! Context) {
+		LdkSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
 		return NULL;
 	}
 
@@ -170,7 +175,7 @@ CreateThread(
 	if (! NT_SUCCESS(Status)) {
 		ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
 									Context );
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return NULL;
 	}
 	
@@ -182,9 +187,168 @@ CreateThread(
 }
 
 WINBASEAPI
+_Ret_maybenull_
 HANDLE
 WINAPI
-GetCurrentThread(
+OpenThread (
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ DWORD dwThreadId
+    )
+{
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+    CLIENT_ID ClientId;
+
+    ClientId.UniqueThread = (HANDLE)LongToHandle(dwThreadId);
+    ClientId.UniqueProcess = (HANDLE)NULL;
+
+    InitializeObjectAttributes( &ObjectAttributes,
+								NULL,
+        						(bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE,
+        						NULL,
+								NULL );
+    Status = ZwOpenThread( &Handle,
+						   (ACCESS_MASK)dwDesiredAccess,
+						   &ObjectAttributes,
+						   &ClientId );
+    if (NT_SUCCESS(Status)) {
+		return Handle;
+    }
+    
+	LdkSetLastNTError( Status );
+	return NULL;
+}
+
+WINBASEAPI
+int
+WINAPI
+GetThreadPriority (
+    _In_ HANDLE hThread
+    )
+{
+	NTSTATUS Status;
+	THREAD_BASIC_INFORMATION BasicInformation;
+	int BasePriority;
+
+	PAGED_CODE();
+
+	Status = ZwQueryInformationThread( hThread,
+									   ThreadBasicInformation,
+									   &BasicInformation,
+									   sizeof(BasicInformation),
+									   NULL );
+	if (! NT_SUCCESS(Status)) {
+		LdkSetLastNTError( Status );
+		return (int)THREAD_PRIORITY_ERROR_RETURN;
+	}
+
+	BasePriority = (int)BasicInformation.BasePriority;
+	if (BasePriority == ((HIGH_PRIORITY + 1) / 2)) {
+		BasePriority = THREAD_PRIORITY_TIME_CRITICAL;
+	} else if ( BasePriority == -((HIGH_PRIORITY + 1) / 2) ) {
+		BasePriority = THREAD_PRIORITY_IDLE;
+	}
+	return BasePriority;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadPriority (
+    _In_ HANDLE hThread,
+    _In_ int nPriority
+    )
+{
+    NTSTATUS Status;
+    LONG BasePriority= (LONG)nPriority;
+
+	PAGED_CODE();
+
+    if (BasePriority == THREAD_PRIORITY_TIME_CRITICAL) {
+        BasePriority = ((HIGH_PRIORITY + 1) / 2);
+    }
+    else if (BasePriority == THREAD_PRIORITY_IDLE ) {
+        BasePriority = -((HIGH_PRIORITY + 1) / 2);
+    }
+    Status = ZwSetInformationThread( hThread,
+									 ThreadBasePriority,
+									 &BasePriority,
+									 sizeof(BasePriority) );
+    if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	LdkSetLastNTError(Status);
+	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetThreadPriorityBoost (
+    _In_ HANDLE hThread,
+    _Out_ PBOOL pDisablePriorityBoost
+    )
+{
+    NTSTATUS Status;
+    ULONG DisableBoost;
+
+	PAGED_CODE();
+
+	Status = ZwQueryInformationThread( hThread,
+									   ThreadPriorityBoost,
+									   &DisableBoost,
+									   sizeof(DisableBoost),
+									   NULL );
+	if (NT_SUCCESS(Status)) {
+		*pDisablePriorityBoost = DisableBoost;
+    	return TRUE;
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadPriorityBoost (
+    _In_ HANDLE hThread,
+    _In_ BOOL bDisablePriorityBoost
+    )
+{
+    NTSTATUS Status;
+    ULONG DisableBoost = bDisablePriorityBoost ? TRUE : FALSE;
+
+	PAGED_CODE();
+
+    Status = ZwSetInformationThread( hThread,
+									 ThreadPriorityBoost,
+									 &DisableBoost,
+									 sizeof(DisableBoost) );
+    if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	LdkSetLastNTError(Status);
+	return FALSE;
+}
+
+WINBASEAPI
+DECLSPEC_NORETURN
+VOID
+WINAPI
+ExitThread (
+    _In_ DWORD dwExitCode
+    )
+{
+	KdBreakPoint();
+	PsTerminateSystemThread( (NTSTATUS)dwExitCode );
+}
+
+WINBASEAPI
+HANDLE
+WINAPI
+GetCurrentThread (
     VOID
     )
 {
@@ -194,7 +358,7 @@ GetCurrentThread(
 WINBASEAPI
 DWORD
 WINAPI
-GetCurrentThreadId(
+GetCurrentThreadId (
     VOID
     )
 {
@@ -205,7 +369,7 @@ WINBASEAPI
 _Success_(return != 0)
 BOOL
 WINAPI
-GetExitCodeThread(
+GetExitCodeThread (
     _In_ HANDLE hThread,
     _Out_ LPDWORD lpExitCode
     )
@@ -225,14 +389,14 @@ GetExitCodeThread(
 		return TRUE;
 	}
 
-	BaseSetLastNTError(Status);
+	LdkSetLastNTError( Status );
 	return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-GetThreadTimes(
+GetThreadTimes (
     _In_ HANDLE hThread,
     _Out_ LPFILETIME lpCreationTime,
     _Out_ LPFILETIME lpExitTime,
@@ -250,8 +414,8 @@ GetThreadTimes(
 									  (PVOID)&TimeInfo,
 									  sizeof(TimeInfo),
 									  NULL );
-	if (!NT_SUCCESS(Status)) {
-		BaseSetLastNTError(Status);
+	if (! NT_SUCCESS(Status)) {
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 
@@ -263,12 +427,27 @@ GetThreadTimes(
 }
 
 WINBASEAPI
+VOID
+WINAPI
+GetCurrentThreadStackLimits (
+    _Out_ PULONG_PTR LowLimit,
+    _Out_ PULONG_PTR HighLimit
+    )
+{
+	PAGED_CODE();
+
+	IoGetStackLimits(LowLimit, HighLimit);
+}
+
+WINBASEAPI
 BOOL
 WINAPI
-SwitchToThread(
+SwitchToThread (
     VOID
     )
 {
+	PAGED_CODE();
+
     return ZwYieldExecution() != STATUS_NO_YIELD_PERFORMED;
 }
 
@@ -277,7 +456,7 @@ SwitchToThread(
 WINBASEAPI
 HANDLE
 WINAPI
-GetCurrentProcess(
+GetCurrentProcess (
     VOID
     )
 {
@@ -287,7 +466,7 @@ GetCurrentProcess(
 WINBASEAPI
 DWORD
 WINAPI
-GetCurrentProcessId(
+GetCurrentProcessId (
     VOID
     )
 {
@@ -295,10 +474,44 @@ GetCurrentProcessId(
 }
 
 WINBASEAPI
+HANDLE
+WINAPI
+OpenProcess (
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ DWORD dwProcessId
+    )
+{
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+    CLIENT_ID ClientId;
+
+    ClientId.UniqueThread = (HANDLE)NULL;
+    ClientId.UniqueProcess = (HANDLE)LongToHandle(dwProcessId);
+
+    InitializeObjectAttributes( &ObjectAttributes,
+								NULL,
+        						(bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE,
+        						NULL,
+								NULL );
+    Status = ZwOpenProcess( &Handle,
+							(ACCESS_MASK)dwDesiredAccess,
+							&ObjectAttributes,
+							&ClientId );
+    if (NT_SUCCESS(Status)) {
+		return Handle;
+    }
+    
+	LdkSetLastNTError( Status );
+	return NULL;
+}
+
+WINBASEAPI
 DECLSPEC_NORETURN
 VOID
 WINAPI
-ExitProcess(
+ExitProcess (
     _In_ UINT uExitCode
     )
 {
@@ -314,7 +527,7 @@ ExitProcess(
 WINBASEAPI
 BOOL
 WINAPI
-TerminateProcess(
+TerminateProcess (
     _In_ HANDLE hProcess,
     _In_ UINT uExitCode
     )
@@ -332,18 +545,79 @@ TerminateProcess(
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
 	}
-	BaseSetLastNTError( Status );
+	LdkSetLastNTError( Status );
 	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetExitCodeProcess (
+    _In_ HANDLE hProcess,
+    _Out_ LPDWORD lpExitCode
+    )
+{
+	NTSTATUS Status;
+	PROCESS_BASIC_INFORMATION BasicInformation;
+
+	PAGED_CODE();
+
+	Status = ZwQueryInformationProcess( hProcess,
+										ProcessBasicInformation,
+										&BasicInformation,
+										sizeof(BasicInformation),
+										NULL );
+	if (NT_SUCCESS(Status)) {
+		*lpExitCode = BasicInformation.ExitStatus;
+		return TRUE;
+	}
+
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+IsProcessorFeaturePresent (
+	_In_ DWORD ProcessorFeature
+	)
+{
+	PAGED_CODE();
+
+	return (BOOL)ExIsProcessorFeaturePresent( ProcessorFeature );
 }
 
 
 
 WINBASEAPI
-BOOL
+VOID
 WINAPI
-IsProcessorFeaturePresent(
-	_In_ DWORD ProcessorFeature
-	)
+GetStartupInfoA (
+    _Out_ LPSTARTUPINFOA lpStartupInfo
+    )
 {
-	return (BOOL)ExIsProcessorFeaturePresent( ProcessorFeature );
+	RtlZeroMemory( lpStartupInfo,
+				   sizeof(STARTUPINFOA) );
+	lpStartupInfo->cb = sizeof(STARTUPINFOA);
+	lpStartupInfo->hStdInput = NtCurrentPeb()->ProcessParameters->StandardInput;
+	lpStartupInfo->hStdOutput = NtCurrentPeb()->ProcessParameters->StandardOutput;
+	lpStartupInfo->hStdError = NtCurrentPeb()->ProcessParameters->StandardError;
+	SetFlag(lpStartupInfo->dwFlags, STARTF_USESTDHANDLES);
+}
+
+WINBASEAPI
+VOID
+WINAPI
+GetStartupInfoW (
+    _Out_ LPSTARTUPINFOW lpStartupInfo
+    )
+{
+	RtlZeroMemory( lpStartupInfo,
+				   sizeof(STARTUPINFOW) );
+	lpStartupInfo->cb = sizeof(STARTUPINFOW);
+	lpStartupInfo->hStdInput = NtCurrentPeb()->ProcessParameters->StandardInput;
+	lpStartupInfo->hStdOutput = NtCurrentPeb()->ProcessParameters->StandardOutput;
+	lpStartupInfo->hStdError = NtCurrentPeb()->ProcessParameters->StandardError;
+	SetFlag(lpStartupInfo->dwFlags, STARTF_USESTDHANDLES);
 }

@@ -1,8 +1,19 @@
-﻿#pragma once
+#pragma once
 
+EXTERN_C_START
 
+#define PROCESS_HARDERROR_ALIGNMENT_BIT 0x0004
+#if defined(_AMD64_)
+#define PROCESS_HARDERROR_DEFAULT (1 | PROCESS_HARDERROR_ALIGNMENT_BIT)
+#else
+#define PROCESS_HARDERROR_DEFAULT 1
+#endif
 
-typedef struct TEB* PTEB;
+NTKERNELAPI
+BOOLEAN
+PsIsProcessBeingDebugged (
+    __in PEPROCESS Process
+    );
 
 
 
@@ -39,3 +50,15 @@ ZwQueryInformationProcess (
 	_In_ ULONG ProcessInformationLength,
 	_Out_opt_ PULONG ReturnLength
     );
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+ZwSetInformationProcess (
+    _In_ HANDLE ProcessHandle,
+    _In_ PROCESSINFOCLASS ProcessInformationClass,
+    _In_bytecount_(ProcessInformationLength) PVOID ProcessInformation,
+    _In_ ULONG ProcessInformationLength
+    );
+
+EXTERN_C_END

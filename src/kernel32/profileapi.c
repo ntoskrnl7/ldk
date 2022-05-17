@@ -5,22 +5,22 @@
 WINBASEAPI
 BOOL
 WINAPI
-QueryPerformanceCounter(
-    _Out_ LARGE_INTEGER * lpPerformanceCount
+QueryPerformanceCounter (
+    _Out_ LARGE_INTEGER* lpPerformanceCount
     )
 {
 	LARGE_INTEGER PerformanceFrequency;
-	*lpPerformanceCount = KeQueryPerformanceCounter(&PerformanceFrequency);
+	*lpPerformanceCount = KeQueryPerformanceCounter( &PerformanceFrequency );
 	return TRUE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-QueryPerformanceFrequency(
-    _Out_ LARGE_INTEGER * lpFrequency
+QueryPerformanceFrequency (
+    _Out_ LARGE_INTEGER* lpFrequency
     )
 {
-	KeQueryPerformanceCounter(lpFrequency);
+	KeQueryPerformanceCounter( lpFrequency );
 	return TRUE;
 }
