@@ -2,6 +2,18 @@
 #include "../peb.h"
 
 
+
+NTSTATUS
+LdkpInitializeNls (
+	VOID
+	);
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeNls)
+#endif
+
+
+
 LCID LdkpSystemLocale;
 
 extern USHORT *NlsAnsiCodePage;
@@ -9,11 +21,12 @@ extern USHORT *NlsOemCodePage;
 extern PUSHORT *NlsLeadByteInfo;
 
 NTSTATUS
-LdkInitializeNls (
+LdkpInitializeNls (
 	VOID
 	)
 {
 	NTSTATUS Status;
+
     PAGED_CODE();
 
 	Status = ZwQueryDefaultLocale( FALSE,
@@ -58,7 +71,6 @@ GetOEMCP (
 
 
 BOOL
-WINAPI
 UTFCPInfo (
 	_In_ UINT CodePage,
 	_Out_ LPCPINFO lpCPInfo,
@@ -142,11 +154,11 @@ GetCPInfoExA (
     Ansi.MaximumLength = MAX_PATH;
     Ansi.Buffer = lpCPInfoEx->CodePageName;
 
-    NTSTATUS status = LdkAnsiStringToUnicodeString( &Unicode,
+    NTSTATUS Status = LdkAnsiStringToUnicodeString( &Unicode,
                                                     &Ansi,
                                                     FALSE ) ;
-    if (! NT_SUCCESS(status)) {
-        BaseSetLastNTError( status );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
         return FALSE;
     }
 
@@ -1921,12 +1933,13 @@ LCIDToLocaleName (
 {
     UNREFERENCED_PARAMETER(dwFlags);
 
-    if (! IsValidLocale(Locale, 0)) {
+    if (! IsValidLocale( Locale,
+                         0 )) {
         SetLastError( ERROR_INVALID_PARAMETER );
         return 0;
     }
 
-    PCWSTR name = LdkpGetLocaleName(Locale);
+    PCWSTR name = LdkpGetLocaleName( Locale );
     int len = (int)wcslen(name) + 1;
 
     if (cchName < len) {
@@ -1934,7 +1947,9 @@ LCIDToLocaleName (
         return 0;
     }
 
-    wcscpy_s(lpName, cchName, name);
+    wcscpy_s( lpName,
+              cchName,
+              name );
     return len;
 }
 
@@ -1963,4 +1978,40 @@ LocaleNameToLCID (
     } else {
         return LdkpGetLCID(lpName);
     }
+}
+
+WINBASEAPI
+LCID
+WINAPI
+GetUserDefaultLCID (
+    VOID
+    )
+{
+    LCID Lcid;
+    NTSTATUS Status;
+    Status = ZwQueryDefaultLocale( TRUE,
+                                   &Lcid );
+    if (NT_SUCCESS(Status)) {
+        return Lcid;
+    }
+    LdkSetLastNTError( Status );
+    return 0;
+}
+
+WINBASEAPI
+int
+WINAPI
+GetUserDefaultLocaleName (
+    _Out_writes_(cchLocaleName) LPWSTR lpLocaleName,
+    _In_ int cchLocaleName
+    )
+{
+    LCID Locale = GetUserDefaultLCID();
+    if (Locale == 0) {
+        return 0;
+    }
+    return LCIDToLocaleName( Locale,
+                             lpLocaleName,
+                             cchLocaleName,
+                             0 );
 }

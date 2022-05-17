@@ -11,11 +11,11 @@ extern UINT LdkpConsoleOutputCP;
 WINBASEAPI
 BOOL
 WINAPI
-SetConsoleCP(
+SetConsoleCP (
     _In_ UINT wCodePageID
     )
 {
-    if (! IsValidCodePage(wCodePageID)) {
+    if (! IsValidCodePage( wCodePageID )) {
         return FALSE;
     }
     LdkpConsoleCp = wCodePageID;
@@ -25,11 +25,11 @@ SetConsoleCP(
 WINBASEAPI
 BOOL
 WINAPI
-SetConsoleOutputCP(
+SetConsoleOutputCP (
     _In_ UINT wCodePageID
     )
 {
-    if (! IsValidCodePage(wCodePageID)) {
+    if (! IsValidCodePage( wCodePageID )) {
         return FALSE;
     }
     LdkpConsoleOutputCP = wCodePageID;

@@ -101,7 +101,7 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/ldk@0.3.0")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.6.0")
 
 # add dependencies
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
@@ -237,9 +237,9 @@ DriverUnload (
  아직 Dll을 로드하여 사용하기에는 API가 조금밖에 구현되지 않아서 간단한 Dll 밖에는 사용할 수 없습니다.
 
 - [ ] 빠른 구현을 위해서 ReactOS 코드를 일부 사용하였으며, 추후 자체 구현해야합니다.
-- [ ] Kernel32
-  - [ ] LoadLibrary 시 환경 변수 등 특정 경로의 모듈을 로드할수있도록 개선해야함
-- [ ] Ntdll
-  - [ ] LdrLoadDll를 정상적으로 구현해야함.
+- [x] Kernel32
+  - [x] LoadLibrary 시 환경 변수 등 특정 경로의 모듈을 로드할수있도록 개선해야함
+- [x] Ntdll
+  - [x] LdrLoadDll를 정상적으로 구현해야함.
 - [ ] 문서화
 - [ ] 기타

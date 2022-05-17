@@ -1,8 +1,39 @@
 ﻿#include "ntdll.h"
+#include "../ldk.h"
+
+
+
+VOID
+NTAPI
+RtlpDeleteDeferedCriticalSection (
+    VOID
+    );
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, RtlInitializeCriticalSectionEx)
+#pragma alloc_text(PAGE, RtlpDeleteDeferedCriticalSection)
+#pragma alloc_text(PAGE, RtlInitializeCriticalSection)
+#pragma alloc_text(PAGE, RtlInitializeCriticalSection)
+#pragma alloc_text(PAGE, RtlInitializeCriticalSectionAndSpinCount)
+#pragma alloc_text(PAGE, RtlEnterCriticalSection)
+#pragma alloc_text(PAGE, RtlDeleteCriticalSection)
+#pragma alloc_text(PAGE, RtlTryEnterCriticalSection)
+#pragma alloc_text(PAGE, RtlLeaveCriticalSection)
+#pragma alloc_text(PAGE, RtlGetCriticalSectionRecursionCount)
+#pragma alloc_text(PAGE, RtlInitializeConditionVariable)
+#pragma alloc_text(PAGE, RtlWakeConditionVariable)
+#pragma alloc_text(PAGE, RtlWakeAllConditionVariable)
+#pragma alloc_text(PAGE, RtlSleepConditionVariableCS)
+#pragma alloc_text(PAGE, RtlSleepConditionVariableSRW)
+#endif
+
+
 
 NTSTATUS
 NTAPI
-RtlInitializeCriticalSectionEx(
+RtlInitializeCriticalSectionEx (
     _Inout_ PRTL_CRITICAL_SECTION CriticalSection,
     _In_ ULONG SpinCount,
     _In_ ULONG Flags
@@ -10,15 +41,18 @@ RtlInitializeCriticalSectionEx(
 {
     UNREFERENCED_PARAMETER(Flags);
 
-    return RtlInitializeCriticalSectionAndSpinCount(CriticalSection, SpinCount);
+    PAGED_CODE();
+
+    return RtlInitializeCriticalSectionAndSpinCount( CriticalSection,
+                                                     SpinCount );
 }
 
-#define RtlAllocateHeap(a, b, size)        ExAllocatePoolWithTag(PagedPool, size, TAG_HEAP_POOL);
-#define RtlFreeHeap(a, b, c)               ExFreePoolWithTag(a, TAG_HEAP_POOL);
-#define DPRINT DbgPrint
-#define DPRINT1 DbgPrint
-#define ERROR_DBGBREAK KdBreakPoint();
-#define UNIMPLEMENTED KdBreakPoint();
+#define DPRINT              DbgPrint
+#define DPRINT1             DbgPrint
+#define ERROR_DBGBREAK      KdBreakPoint();
+#define UNIMPLEMENTED       KdBreakPoint();
+#define RtlGetProcessHeap   RtlProcessHeap
+#define NtClose             ZwClose
 
 #define RTL_CRITSECT_TYPE                                   0
 
@@ -37,8 +71,12 @@ RtlInitializeCriticalSectionEx(
 
 VOID
 NTAPI
-RtlpDeleteDeferedCriticalSection(VOID)
+RtlpDeleteDeferedCriticalSection (
+    VOID
+    )
 {
+    PAGED_CODE();
+
     RtlpCritSectInitialized = FALSE;
     RtlDeleteCriticalSection(&RtlCriticalSectionLock);
 }

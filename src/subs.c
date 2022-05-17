@@ -1,5 +1,4 @@
 ﻿#include "ldk.h"
-#include "nt/ntexapi.h"
 
 _Must_inspect_result_
 _At_(String->Length, _Out_range_(==, 0))
@@ -98,17 +97,18 @@ Return Value:
 
 --*/
 {
-	NTSTATUS status;
+	NTSTATUS Status;
 
     StringOut->MaximumLength = StringIn->MaximumLength;
-	
-	status = LdkAllocateUnicodeString( StringOut );
-	
-    if (NT_SUCCESS(status)) {
-        RtlCopyUnicodeString( StringOut, StringIn );
+
+	Status = LdkAllocateUnicodeString( StringOut );
+
+    if (NT_SUCCESS(Status)) {
+        RtlCopyUnicodeString( StringOut,
+                              StringIn );
     }
-	
-    return status;
+
+    return Status;
 }
 
 
@@ -210,17 +210,18 @@ Return Value:
 
 --*/
 {
-	NTSTATUS status;
+	NTSTATUS Status;
 
     StringOut->MaximumLength = StringIn->MaximumLength;
 	
-	status = LdkAllocateAnsiString( StringOut );
+	Status = LdkAllocateAnsiString( StringOut );
 	
-    if (NT_SUCCESS(status)) {
-        RtlCopyString( StringOut, StringIn );
+    if (NT_SUCCESS(Status)) {
+        RtlCopyString( StringOut,
+                       StringIn );
     }
 	
-    return status;
+    return Status;
 }
 
 
@@ -235,30 +236,25 @@ LdkAnsiStringToUnicodeString (
     _In_ BOOLEAN AllocateDestinationString
     )
 {
-	NTSTATUS status;
-	UNICODE_STRING newString;
-
+	NTSTATUS Status;
 	if (AllocateDestinationString) {
-		newString.MaximumLength = (USHORT)RtlAnsiStringToUnicodeSize(SourceString);
-		status = LdkAllocateUnicodeString(&newString);
-		if (!NT_SUCCESS(status)) {
-			return status;
+        DestinationString->MaximumLength = (USHORT)RtlAnsiStringToUnicodeSize( SourceString );
+		Status = LdkAllocateUnicodeString( DestinationString );
+		if (! NT_SUCCESS(Status)) {
+			return Status;
 		}
+        Status = RtlAnsiStringToUnicodeString( DestinationString,
+                                               SourceString,
+                                               FALSE );
+        if (! NT_SUCCESS(Status)) {
+            LdkFreeUnicodeString( DestinationString );
+        }
+	    return Status;
 	} else {
-		newString = *DestinationString;
+        return RtlAnsiStringToUnicodeString( DestinationString,
+                                             SourceString,
+                                             FALSE );
 	}
-
-	status = RtlAnsiStringToUnicodeString(&newString, SourceString, FALSE);
-
-	if (AllocateDestinationString) {
-		if (NT_SUCCESS(status)) {
-			*DestinationString = newString;
-		} else {
-            LdkFreeUnicodeString(&newString);
-		}
-	}
-
-	return status;
 }
 
 _When_(AllocateDestinationString,
@@ -277,30 +273,25 @@ LdkUnicodeStringToAnsiString (
     _In_ BOOLEAN AllocateDestinationString
     )
 {
-	NTSTATUS status;
-	ANSI_STRING newString;
-
+	NTSTATUS Status;
 	if (AllocateDestinationString) {
-		newString.MaximumLength = (USHORT)RtlUnicodeStringToAnsiSize(SourceString);
-        status = LdkAllocateAnsiString(&newString);
-        if (!NT_SUCCESS(status)) {
-            return status;
-        }
-	} else {
-		newString = *DestinationString;
-	}
-
-	status = RtlUnicodeStringToAnsiString(&newString, SourceString, FALSE);
-
-	if (AllocateDestinationString) {
-		if (NT_SUCCESS(status)) {
-			*DestinationString = newString;
-		} else {
-            LdkFreeAnsiString(&newString);
+        DestinationString->MaximumLength = (USHORT)RtlUnicodeStringToAnsiSize( SourceString );
+		Status = LdkAllocateAnsiString( DestinationString );
+		if (! NT_SUCCESS(Status)) {
+			return Status;
 		}
+        Status = RtlUnicodeStringToAnsiString( DestinationString,
+                                               SourceString,
+                                               FALSE );
+        if (! NT_SUCCESS(Status)) {
+            LdkFreeAnsiString( DestinationString );
+        }
+	    return Status;
+	} else {
+        return RtlUnicodeStringToAnsiString( DestinationString,
+                                             SourceString,
+                                             FALSE );
 	}
-
-	return status;
 }
 
 

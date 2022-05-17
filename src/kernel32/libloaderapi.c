@@ -1,14 +1,37 @@
 ﻿#include "winbase.h"
 #include "../ntdll/ntdll.h"
-
-#include "../nt/ntldr.h"
-
 #include <ntimage.h>
 
 
 
+LPWSTR
+LdkpComputeDllPath (
+	VOID
+	);
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, LdkpComputeDllPath)
+#pragma alloc_text(PAGE, GetModuleFileNameA)
+#pragma alloc_text(PAGE, GetModuleFileNameW)
+#pragma alloc_text(PAGE, GetModuleHandleA)
+#pragma alloc_text(PAGE, GetModuleHandleW)
+#pragma alloc_text(PAGE, GetModuleHandleExA)
+#pragma alloc_text(PAGE, GetModuleHandleExW)
+#pragma alloc_text(PAGE, GetProcAddress)
+#pragma alloc_text(PAGE, LoadLibraryA)
+#pragma alloc_text(PAGE, LoadLibraryW)
+#pragma alloc_text(PAGE, LoadLibraryExA)
+#pragma alloc_text(PAGE, LoadLibraryExW)
+#pragma alloc_text(PAGE, FreeLibrary)
+#pragma alloc_text(PAGE, FreeLibraryAndExitThread)
+#endif
+
+
+
 PVOID
-BasepMapModuleHandle(
+LdkpMapModuleHandle (
     _In_opt_ HMODULE hModule,
     _In_ BOOLEAN bResourcesOnly
     )
@@ -26,13 +49,12 @@ BasepMapModuleHandle(
 
 
 
-
 WINBASEAPI
 _Success_(return != 0)
 _Ret_range_(1, nSize)
 DWORD
 WINAPI
-GetModuleFileNameA(
+GetModuleFileNameA (
     _In_opt_ HMODULE hModule,
     _Out_writes_to_(nSize, ((return < nSize) ? (return + 1) : nSize)) LPSTR lpFilename,
     _In_ DWORD nSize
@@ -41,9 +63,12 @@ GetModuleFileNameA(
 	PSTR FileName = NULL;
 	DWORD FileNameLength = 0;
 
+	PAGED_CODE();
+
 	if (ARGUMENT_PRESENT(hModule)) {
 		PLDK_MODULE Module;
-		if (NT_SUCCESS(LdkGetModuleByBase((PVOID)hModule, &Module))) {
+		if (NT_SUCCESS(LdkGetModuleByBase( (PVOID)hModule,
+										   &Module ))) {
 			FileName = Module->FullPathName.Buffer;
 			FileNameLength = Module->FullPathName.Length;
 		}
@@ -53,16 +78,20 @@ GetModuleFileNameA(
 	}
 
 	if (FileNameLength == 0) {
-		SetLastError(ERROR_NOT_FOUND);
+		SetLastError( ERROR_NOT_FOUND );
 		return 0;
 	}
 
 	if (FileNameLength > nSize) {
-		RtlCopyMemory(lpFilename, FileName, nSize);
-		SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		RtlCopyMemory( lpFilename,
+					   FileName,
+					   nSize );
+		SetLastError( ERROR_INSUFFICIENT_BUFFER );
 		return nSize;
 	} else {
-		RtlCopyMemory(lpFilename, FileName, FileNameLength);
+		RtlCopyMemory( lpFilename,
+					   FileName,
+					   FileNameLength );
 		lpFilename[FileNameLength] = ANSI_NULL;
 		return FileNameLength;
 	}
@@ -73,23 +102,27 @@ _Success_(return != 0)
 _Ret_range_(1, nSize)
 DWORD
 WINAPI
-GetModuleFileNameW(
+GetModuleFileNameW (
     _In_opt_ HMODULE hModule,
     _Out_writes_to_(nSize, ((return < nSize) ? (return + 1) : nSize)) LPWSTR lpFilename,
     _In_ DWORD nSize
     )
 {
-	NTSTATUS status;
-
+	NTSTATUS Status;
 	ANSI_STRING FileName;
+
+	PAGED_CODE();
+
 	FileName.MaximumLength = (USHORT)nSize;
-	status = LdkAllocateAnsiString(&FileName);
-	if (!NT_SUCCESS(status)) {
-		BaseSetLastNTError(status);
+	Status = LdkAllocateAnsiString( &FileName );
+	if (! NT_SUCCESS(Status)) {
+		LdkSetLastNTError( Status );
 		return 0;
 	}
 
-	DWORD length = GetModuleFileNameA(hModule, FileName.Buffer, FileName.MaximumLength);
+	DWORD length = GetModuleFileNameA( hModule,
+									   FileName.Buffer,
+									   FileName.MaximumLength );
 	if (length) {
 		FileName.Length = (USHORT)length;
 
@@ -97,17 +130,19 @@ GetModuleFileNameW(
 		FileNameW.Buffer = lpFilename;
 		FileNameW.Length = 0;
 		FileNameW.MaximumLength = (USHORT)nSize;
-		status = LdkAnsiStringToUnicodeString(&FileNameW, &FileName, FALSE);
+		Status = LdkAnsiStringToUnicodeString( &FileNameW,
+											   &FileName,
+											   FALSE );
 
-		if (!NT_SUCCESS(status)) {
-			LdkFreeAnsiString(&FileName);
-			BaseSetLastNTError(status);
+		if (! NT_SUCCESS(Status)) {
+			LdkFreeAnsiString( &FileName );
+			LdkSetLastNTError( Status );
 			return 0;
 		}
 		length = FileNameW.Length / sizeof(WCHAR);
 	}
 
-	LdkFreeAnsiString(&FileName);
+	LdkFreeAnsiString( &FileName );
 	return length;
 }
 
@@ -116,13 +151,17 @@ _When_(lpModuleName == NULL, _Ret_notnull_)
 _When_(lpModuleName != NULL, _Ret_maybenull_)
 HMODULE
 WINAPI
-GetModuleHandleA(
+GetModuleHandleA (
     _In_opt_ LPCSTR lpModuleName
     )
 {
 	HMODULE hModule;
 	
-	if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, lpModuleName, &hModule)) {
+	PAGED_CODE();
+
+	if (! GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+							  lpModuleName,
+							  &hModule )) {
 		return NULL;
 	}
 
@@ -134,13 +173,17 @@ _When_(lpModuleName == NULL, _Ret_notnull_)
 _When_(lpModuleName != NULL, _Ret_maybenull_)
 HMODULE
 WINAPI
-GetModuleHandleW(
+GetModuleHandleW (
     _In_opt_ LPCWSTR lpModuleName
     )
 {
 	HMODULE hModule;
 
-	if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, lpModuleName, &hModule)) {
+	PAGED_CODE();
+
+	if (! GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+							  lpModuleName,
+							  &hModule )) {
 		return NULL;
 	}
 
@@ -150,14 +193,16 @@ GetModuleHandleW(
 WINBASEAPI
 BOOL
 WINAPI
-GetModuleHandleExA(
+GetModuleHandleExA (
     _In_ DWORD dwFlags,
     _In_opt_ LPCSTR lpModuleName,
     _Out_ HMODULE * phModule
     )
 {
+	PAGED_CODE();
+
 	if (! ARGUMENT_PRESENT(phModule)) {
-		SetLastError(ERROR_INVALID_PARAMETER);
+		SetLastError( ERROR_INVALID_PARAMETER );
 		return FALSE;
 	}
 
@@ -169,10 +214,11 @@ GetModuleHandleExA(
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByAddress((PVOID)lpModuleName, &Module);
+			Status = LdkGetModuleByAddress( (PVOID)lpModuleName,
+											&Module );
 
-			if (!NT_SUCCESS(Status)) {
-				BaseSetLastNTError(Status);
+			if (! NT_SUCCESS(Status)) {
+				LdkSetLastNTError( Status );
 				return FALSE;
 			}
 
@@ -185,10 +231,10 @@ GetModuleHandleExA(
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByName(lpModuleName, &Module);
-
-			if (!NT_SUCCESS(Status)) {
-				BaseSetLastNTError(Status);
+			Status = LdkGetModuleByName( lpModuleName,
+										 &Module );
+			if (! NT_SUCCESS(Status)) {
+				LdkSetLastNTError( Status );
 				return FALSE;
 			}
 
@@ -205,7 +251,7 @@ GetModuleHandleExA(
 
 		if (FlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)) {
 			*phModule = NULL;
-			SetLastError(ERROR_INVALID_PARAMETER);
+			SetLastError( ERROR_INVALID_PARAMETER );
 			return FALSE;
 		}
 
@@ -214,19 +260,21 @@ GetModuleHandleExA(
 
 	}
 
-	SetLastError(ERROR_MOD_NOT_FOUND);
+	SetLastError( ERROR_MOD_NOT_FOUND );
 	return FALSE;
 }
 
 WINBASEAPI
 BOOL
 WINAPI
-GetModuleHandleExW(
+GetModuleHandleExW (
     _In_ DWORD dwFlags,
     _In_opt_ LPCWSTR lpModuleName,
     _Out_ HMODULE * phModule
     )
 {
+	PAGED_CODE();
+
 	if (ARGUMENT_PRESENT(lpModuleName) &&
 		(! FlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS))) {
 
@@ -235,19 +283,26 @@ GetModuleHandleExW(
 		UNICODE_STRING Unicode;
 		ANSI_STRING Ansi;
 		
-		RtlInitUnicodeString(&Unicode, lpModuleName);
-		Status = LdkUnicodeStringToAnsiString(&Ansi, &Unicode, TRUE);
-		if (!NT_SUCCESS(Status)) {
-			BaseSetLastNTError(Status);
+		RtlInitUnicodeString( &Unicode,
+							  lpModuleName );
+		Status = LdkUnicodeStringToAnsiString( &Ansi,
+											   &Unicode,
+											   TRUE );
+		if (! NT_SUCCESS(Status)) {
+			LdkSetLastNTError(Status);
 			return FALSE;
 		}
 
-		bRet = GetModuleHandleExA(dwFlags, Ansi.Buffer, phModule);
+		bRet = GetModuleHandleExA( dwFlags,
+								   Ansi.Buffer,
+								   phModule );
 		LdkFreeAnsiString(&Ansi);
 		return bRet;
 	}
 
-	return GetModuleHandleExA(dwFlags, (PCSTR)lpModuleName, phModule);;
+	return GetModuleHandleExA( dwFlags,
+							   (PCSTR)lpModuleName,
+							   phModule );
 }
 
 
@@ -255,80 +310,175 @@ GetModuleHandleExW(
 WINBASEAPI
 FARPROC
 WINAPI
-GetProcAddress(
+GetProcAddress (
    _In_ HMODULE hModule,
    _In_ LPCSTR lpProcName
    )
 {
-    NTSTATUS status;
+    NTSTATUS Status;
 	PVOID ProcedureAddress = NULL;
     STRING ProcedureName;
 
+	PAGED_CODE();
+
     if ((ULONG_PTR)lpProcName > 0xffff) {
         RtlInitString(&ProcedureName, lpProcName);
-        status = LdrGetProcedureAddress(BasepMapModuleHandle(hModule, FALSE),&ProcedureName,0L,&ProcedureAddress);
+        Status = LdrGetProcedureAddress( LdkpMapModuleHandle( hModule,
+															  FALSE ),
+										 &ProcedureName,
+										 0L,
+										 &ProcedureAddress);
     } else {
-        status = LdrGetProcedureAddress(BasepMapModuleHandle(hModule, FALSE),NULL,PtrToUlong((PVOID)lpProcName),&ProcedureAddress);
+        Status = LdrGetProcedureAddress( LdkpMapModuleHandle( hModule,
+															  FALSE),
+										 NULL,
+										 PtrToUlong( (PVOID)lpProcName ),
+										 &ProcedureAddress );
     }
-    if (!NT_SUCCESS(status)) {
-		BaseSetLastNTError(status);
-		return NULL;
-    } else {
-        if (ProcedureAddress == BasepMapModuleHandle(hModule, FALSE)) {
-            if ((ULONG_PTR)lpProcName > 0xffff) {
-                status = STATUS_ENTRYPOINT_NOT_FOUND;
-			} else {
-                status = STATUS_ORDINAL_NOT_FOUND;
-            }
-            BaseSetLastNTError(status);
-            return NULL;
+    if (NT_SUCCESS(Status)) {
+        if (ProcedureAddress == LdkpMapModuleHandle( hModule,
+													 FALSE )) {
+            Status = ((ULONG_PTR)lpProcName > 0xffff) ? STATUS_ENTRYPOINT_NOT_FOUND : STATUS_ORDINAL_NOT_FOUND;
         } else {
             return (FARPROC)ProcedureAddress;
         }
     }
+
+	LdkSetLastNTError( Status );
+	return NULL;
 }
 
 WINBASEAPI
 _Ret_maybenull_
 HMODULE
 WINAPI
-LoadLibraryExA(
+LoadLibraryA (
+    _In_ LPCSTR lpLibFileName
+    )
+{
+	PUNICODE_STRING Unicode;
+	
+	PAGED_CODE();
+
+	Unicode = Ldk8BitStringToStaticUnicodeString( lpLibFileName );
+	if (Unicode == NULL) {
+		return NULL;
+	}
+	return LoadLibraryExW( Unicode->Buffer,
+						   NULL,
+						   0 );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HMODULE
+WINAPI
+LoadLibraryW (
+    _In_ LPCWSTR lpLibFileName
+    )
+{
+	PAGED_CODE();
+
+	return LoadLibraryExW( lpLibFileName,
+						   NULL,
+						   0 );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HMODULE
+WINAPI
+LoadLibraryExA (
     _In_ LPCSTR lpLibFileName,
     _Reserved_ HANDLE hFile,
     _In_ DWORD dwFlags
     )
 {
-	HMODULE hModule;
-	ANSI_STRING FileName;
-	UNICODE_STRING FileNameW;
+	PUNICODE_STRING Unicode;
 
-	RtlInitString(&FileName, lpLibFileName);
-	NTSTATUS status = LdkAnsiStringToUnicodeString(&FileNameW, &FileName, TRUE);
-	if (!NT_SUCCESS(status)) {
+	PAGED_CODE()
+
+	Unicode = Ldk8BitStringToStaticUnicodeString( lpLibFileName );
+	if (Unicode == NULL) {
 		return NULL;
 	}
-	hModule = LoadLibraryExW(FileNameW.Buffer, hFile, dwFlags);
+	return LoadLibraryExW( Unicode->Buffer,
+						   hFile,
+						   dwFlags );
+}
 
-	LdkFreeUnicodeString(&FileNameW);
+LPWSTR
+LdkpComputeDllPath (
+	VOID
+	)
+{
+	PAGED_CODE();
 
-	return hModule;
+	UNICODE_STRING ImagePath = NtCurrentPeb()->ProcessParameters->ImagePathName;
+	PWSTR p = (PWSTR)Add2Ptr(ImagePath.Buffer, ImagePath.Length);
+	while (p > ImagePath.Buffer) {
+		if (*(--p) == OBJ_NAME_PATH_SEPARATOR) {
+			ImagePath.Length = (USHORT)((p - ImagePath.Buffer) * sizeof(WCHAR));
+			break;
+		}
+	}
+
+	UNICODE_STRING Value;
+	Value.MaximumLength = (4096 * sizeof(WCHAR)) + sizeof(WCHAR) + ImagePath.Length + sizeof(WCHAR);
+	Value.Buffer = RtlAllocateHeap( RtlProcessHeap(),
+									HEAP_ZERO_MEMORY,
+									Value.MaximumLength );
+retry:
+	if (! Value.Buffer) {
+		return NULL;
+	}
+	Value.Length = (USHORT)GetEnvironmentVariableW( L"PATH",
+													Value.Buffer,
+													Value.MaximumLength / sizeof(WCHAR) ) * sizeof(WCHAR);
+	if (Value.Length == 0) {
+		RtlCopyMemory( Value.Buffer,
+					   ImagePath.Buffer,
+					   ImagePath.Length );
+		return Value.Buffer;
+	}
+	if (Value.MaximumLength - Value.Length < ImagePath.Length) {
+		Value.MaximumLength = Value.Length + sizeof(WCHAR) + ImagePath.Length;
+		PVOID Buffer = RtlReAllocateHeap( RtlProcessHeap(),
+										  HEAP_ZERO_MEMORY,
+										  Value.Buffer,
+										  Value.MaximumLength );
+		if (Buffer) {
+			Value.Buffer = Buffer;
+			goto retry;
+		}
+		RtlCopyMemory( Value.Buffer,
+					   ImagePath.Buffer,
+					   ImagePath.Length );
+		return Value.Buffer;
+	}
+	RtlAppendUnicodeToString( &Value,
+							  L";" );
+	RtlAppendUnicodeStringToString( &Value,
+									&ImagePath );
+	return Value.Buffer;
 }
 
 WINBASEAPI
 _Ret_maybenull_
 HMODULE
 WINAPI
-LoadLibraryExW(
+LoadLibraryExW (
     _In_ LPCWSTR lpLibFileName,
     _Reserved_ HANDLE hFile,
     _In_ DWORD dwFlags
     )
 {
+	NTSTATUS Status;
 	HMODULE hModule;
-	NTSTATUS status;
 	UNICODE_STRING DllName;
 	ULONG DllCharacteristics = 0;
 	
+	PAGED_CODE();
 	UNREFERENCED_PARAMETER(hFile);
 
 	hModule = GetModuleHandleW( lpLibFileName );
@@ -343,22 +493,25 @@ LoadLibraryExW(
 	RtlInitUnicodeString( &DllName,
 						  lpLibFileName );
 
-	PLDK_PEB peb = NtCurrentPeb();
-
-	if (! (dwFlags & LOAD_LIBRARY_AS_DATAFILE) && (DllName.Length == peb->ProcessParameters->ImagePathName.Length)) {
+	PPEB Peb = NtCurrentPeb();
+	if (! (dwFlags & LOAD_LIBRARY_AS_DATAFILE) && (DllName.Length == Peb->ProcessParameters->ImagePathName.Length)) {
 		if (RtlEqualUnicodeString( &DllName,
-								   &peb->ProcessParameters->ImagePathName,
+								   &Peb->ProcessParameters->ImagePathName,
 								   TRUE )) {
-			return (HMODULE)peb->ImageBaseAddress;
+			return (HMODULE)Peb->ImageBaseAddress;
 		}
 	}
 
-	status = LdrLoadDll( NULL,
+	PWSTR DllPath = LdkpComputeDllPath();
+	Status = LdrLoadDll( DllPath,
 						 &DllCharacteristics,
 						 &DllName,
 						 (PVOID *)&hModule );
-	if (! NT_SUCCESS(status) ) {
-		BaseSetLastNTError(status);
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 DllPath );
+	if (! NT_SUCCESS(Status) ) {
+		LdkSetLastNTError( Status );
 		return NULL;
 	} else {
 		return hModule;
@@ -368,15 +521,33 @@ LoadLibraryExW(
 WINBASEAPI
 BOOL
 WINAPI
-FreeLibrary(
+FreeLibrary (
     _In_ HMODULE hLibModule
     )
 {
-	NTSTATUS status;
-	status = LdrUnloadDll(hLibModule);
-	if (NT_SUCCESS(status)) {
+	NTSTATUS Status;
+
+	PAGED_CODE()
+
+	Status = LdrUnloadDll( hLibModule );
+	if (NT_SUCCESS(Status)) {
 		return TRUE;
 	}
-	BaseSetLastNTError(status);
+	LdkSetLastNTError( Status );
 	return FALSE;
+}
+
+WINBASEAPI
+DECLSPEC_NORETURN
+VOID
+WINAPI
+FreeLibraryAndExitThread (
+    _In_ HMODULE hLibModule,
+    _In_ DWORD dwExitCode
+    )
+{
+	PAGED_CODE();
+
+	FreeLibrary( hLibModule );
+	ExitThread( dwExitCode );
 }

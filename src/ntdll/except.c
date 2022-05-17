@@ -1,6 +1,5 @@
-#include "../ntdll.h"
-#include "../../kernel32/winbase.h"
-#include "../../nt/zwapi.h"
+#include "ntdll.h"
+#include "../kernel32/winbase.h"
 #include <Ldk/winnt.h>
 
 #if _LDK_DEFINE_RTL_RAISE_EXCEPTION

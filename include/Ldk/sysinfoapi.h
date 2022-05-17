@@ -75,6 +75,13 @@ GetSystemTime(
     _Out_ LPSYSTEMTIME lpSystemTime
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+SetLocalTime(
+    _In_ CONST SYSTEMTIME* lpSystemTime
+    );
+
 #if (NTDDI_VERSION >= NTDDI_WIN8)
 WINBASEAPI
 VOID
@@ -108,16 +115,12 @@ GetTickCount(
     VOID
     );
 
-#if (_WIN32_WINNT >= 0x0600)
-
 WINBASEAPI
 ULONGLONG
 WINAPI
 GetTickCount64(
     VOID
     );
-
-#endif
 
 
 

@@ -25,13 +25,13 @@ KeIsExecutingDpc (
 #define EXIT_WHEN_DPC_WITH_NO_RETURN()	\
 	if (KeIsExecutingDpc()) {	\
 		KdBreakPoint();	\
-		BaseSetLastNTError(STATUS_NOT_SUPPORTED);	\
+		LdkSetLastNTError(STATUS_NOT_SUPPORTED);	\
 		return;	\
 	}
 
 #define EXIT_WHEN_DPC_WITH_RETURN(ReturnValue)	\
 	if (KeIsExecutingDpc()) {	\
 		KdBreakPoint();	\
-		BaseSetLastNTError(STATUS_NOT_SUPPORTED);	\
+		LdkSetLastNTError(STATUS_NOT_SUPPORTED);	\
 		return ReturnValue;	\
 	}

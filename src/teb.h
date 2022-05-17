@@ -10,13 +10,14 @@ typedef struct _LDK_FLS_SLOT {
 	PFLS_CALLBACK_FUNCTION Callback;
 } LDK_FLS_SLOT, *PLDK_FLS_SLOT;
 
+
+
+#define STATIC_UNICODE_BUFFER_LENGTH 261
 typedef struct _LDK_TEB {
 
 	EX_RUNDOWN_REF RundownProtect;
 
 	LIST_ENTRY ActiveLinks;
-
-	PWSTR StaticUnicodeBuffer;
 
 	PLDK_FLS_SLOT FlsSlots;
 
@@ -35,6 +36,16 @@ typedef struct _LDK_TEB {
 	LIST_ENTRY KeyedWaitChain;
 
 	PVOID KeyedWaitValue;
+
+	ULONG HardErrorsAreDisabled;
+
+	UNICODE_STRING StaticUnicodeString;
+
+	WCHAR StaticUnicodeBuffer[STATIC_UNICODE_BUFFER_LENGTH];
+
+	ULONG HardErrorMode;
+
+	SLIST_ENTRY TempLinks;
 
 } LDK_TEB, *PLDK_TEB;
 

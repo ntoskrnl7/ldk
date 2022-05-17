@@ -6,6 +6,11 @@ DRIVER_INITIALIZE DriverEntry;
 DRIVER_UNLOAD DriverUnload;
 
 BOOLEAN
+FileTest (
+    VOID
+    );
+
+BOOLEAN
 LegacyThreadPoolTest (
     VOID
     );
@@ -21,7 +26,27 @@ ConditionVariableTest (
     );
 
 BOOLEAN
+CurrentDirectoryTest (
+    VOID
+    );
+
+BOOLEAN
+EnvironmentVariableTest (
+    VOID
+    );
+
+BOOLEAN
 LibraryTest (
+    VOID
+    );
+
+BOOLEAN
+NtdllCurrentDirectoryTest (
+    VOID
+    );
+
+BOOLEAN
+NtdllEnvironmentVariableTest (
     VOID
     );
 
@@ -58,21 +83,28 @@ DriverEntry (
     )
 {
     PLDK_TEST_ROUTINE Tests[] = {
+        NtdllCurrentDirectoryTest,
+        NtdllEnvironmentVariableTest,
+        KeyedEventTest,
+        LdrTest,
+        FileTest,
+        CurrentDirectoryTest,
+        EnvironmentVariableTest,
         LegacyThreadPoolTest,
         ThreadPoolTest,
         ConditionVariableTest,
         LibraryTest,
-        KeyedEventTest,
-        LdrTest,
         NULL
     };
+
+    KdBreakPoint();
 
     PAGED_CODE();
 
     UNREFERENCED_PARAMETER(RegistryPath);
 
     for (PLDK_TEST_ROUTINE *test = Tests; *test; test++) {
-        if (!(*test)()) {
+        if (! (*test)()) {
             LdkTerminate();
             return STATUS_UNSUCCESSFUL;
         }

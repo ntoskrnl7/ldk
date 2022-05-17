@@ -1,36 +1,53 @@
 ﻿#include "ntdll.h"
-#include "../nt/ntpsapi.h"
-
 #include <ntimage.h>
-#include "../nt/ntrtl.h"
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, LdrLoadDll)
+#pragma alloc_text(PAGE, LdrUnloadDll)
+#pragma alloc_text(PAGE, LdrGetProcedureAddress)
+#pragma alloc_text(PAGE, LdrGetDllHandle)
+#endif
+
+
 
 BOOLEAN LdrpInLdrInit = FALSE;
 BOOLEAN LdrpShutdownInProgress = FALSE;
 HANDLE LdrpShutdownThreadId = NULL;
 
+
+
 NTSTATUS
 NTAPI
-LdrLoadDll(
+LdrLoadDll (
     _In_opt_ PWSTR DllPath,
     _In_opt_ PULONG DllCharacteristics,
     _In_ PUNICODE_STRING DllName,
     _Out_ PVOID *DllHandle
     )
 {
-    if (LdrpInLdrInit == FALSE) {
+    PAGED_CODE()
+
+    if (LdrpInLdrInit) {
         return STATUS_UNSUCCESSFUL;
     }
 
-    return LdkLoadDll(DllPath, DllCharacteristics, DllName, DllHandle);
+    return LdkLoadDll( DllPath,
+                       DllCharacteristics,
+                       DllName,
+                       DllHandle );
 }
 
 NTSTATUS
 NTAPI
-LdrUnloadDll(
+LdrUnloadDll (
     _In_ PVOID DllHandle
     )
 {
-    return LdkUnloadDll(DllHandle);
+    PAGED_CODE();
+
+    return LdkUnloadDll( DllHandle );
 }
 
 NTSTATUS
@@ -42,7 +59,12 @@ LdrGetProcedureAddress (
     _Out_ PVOID *ProcedureAddress
     )
 {
-    return LdkGetProcedureAddress(DllHandle, ProcedureName, ProcedureNumber, ProcedureAddress);
+    PAGED_CODE();
+
+    return LdkGetProcedureAddress( DllHandle,
+                                   ProcedureName, 
+                                   ProcedureNumber,
+                                   ProcedureAddress );
 }
 
 NTSTATUS
@@ -54,5 +76,10 @@ LdrGetDllHandle (
     _Out_ PVOID *DllHandle
     )
 {
-    return LdkGetDllHandle(DllPath, DllCharacteristics, DllName, DllHandle);
+    PAGED_CODE();
+
+    return LdkGetDllHandle( DllPath,
+                            DllCharacteristics,
+                            DllName,
+                            DllHandle );
 }

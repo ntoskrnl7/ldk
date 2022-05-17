@@ -1,6 +1,24 @@
 ﻿#include "ntdll.h"
 
-#include "../nt/zwapi.h"
+
+
+NTSTATUS
+LdkpInitializeKeyedEventList (
+    VOID
+    );
+
+VOID
+LdkpTerminateKeyedEventList(
+    VOID
+    );
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeKeyedEventList)
+#pragma alloc_text(PAGE, NtCreateKeyedEvent)
+#pragma alloc_text(PAGE, NtOpenKeyedEvent)
+#endif
 
 
 
@@ -17,10 +35,12 @@ LIST_ENTRY LdkpKeyedEventWaitListHead;
 NPAGED_LOOKASIDE_LIST LdkpKeyedEventWaitLookaside;
 
 NTSTATUS
-LdkpInitializeKeyedEventList(
+LdkpInitializeKeyedEventList (
     VOID
     )
 {
+    PAGED_CODE();
+
     LdkpKeyedEventWaitListLock = 0;
 
     InitializeListHead( &LdkpKeyedEventWaitListHead );
@@ -39,7 +59,7 @@ LdkpTerminateKeyedEventList(
     VOID
     )
 {
-    KIRQL oldIrql = ExAcquireSpinLockExclusive( &LdkpKeyedEventWaitListLock );
+    KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpKeyedEventWaitListLock );
     PLIST_ENTRY current;
     PLIST_ENTRY next;
     LIST_FOR_EACH_SAFE(current, next, &LdkpKeyedEventWaitListHead) {
@@ -57,7 +77,7 @@ LdkpTerminateKeyedEventList(
                                      entry );
     }
     ExReleaseSpinLockExclusive( &LdkpKeyedEventWaitListLock,
-                                oldIrql );
+                                OldIrql );
 
     ExDeleteNPagedLookasideList( &LdkpKeyedEventWaitLookaside );
 }
@@ -75,6 +95,7 @@ NtCreateKeyedEvent (
 {
     UNREFERENCED_PARAMETER(DesiredAccess);
     UNREFERENCED_PARAMETER(Flags);
+    PAGED_CODE();
 
     if (ARGUMENT_PRESENT(ObjectAttributes)) {
         SetFlag( ObjectAttributes->Attributes, OBJ_KERNEL_HANDLE );
@@ -95,6 +116,7 @@ NtOpenKeyedEvent (
     )
 {
     UNREFERENCED_PARAMETER(DesiredAccess);
+    PAGED_CODE();
 
     if (ARGUMENT_PRESENT(ObjectAttributes)) {
         SetFlag( ObjectAttributes->Attributes, OBJ_KERNEL_HANDLE );
@@ -106,7 +128,7 @@ NtOpenKeyedEvent (
 
 NTSTATUS
 NTAPI
-NtWaitForKeyedEvent(
+NtWaitForKeyedEvent (
     _In_ HANDLE KeyedEventHandle,
     _In_ PVOID Key,
     _In_ BOOLEAN Alertable,
@@ -119,80 +141,81 @@ NtWaitForKeyedEvent(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    KIRQL oldIrql = ExAcquireSpinLockExclusive( &LdkpKeyedEventWaitListLock );
+    KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpKeyedEventWaitListLock );
     entry->Key = Key;
     entry->Teb = teb;
     InsertTailList( &LdkpKeyedEventWaitListHead,
                     &entry->Links );
     ExReleaseSpinLockExclusive( &LdkpKeyedEventWaitListLock,
-                                oldIrql );
+                                OldIrql );
 
     ZwPulseEvent( KeyedEventHandle,
                   NULL );
     
     teb->KeyedWaitValue = Key;
-    NTSTATUS status;
-    status = KeWaitForSingleObject( &teb->KeyedWaitSemaphore,
+    NTSTATUS Status;
+    Status = KeWaitForSingleObject( &teb->KeyedWaitSemaphore,
                                     Executive,
                                     KernelMode,
                                     Alertable,
                                     Timeout );
-    if (NT_SUCCESS(status)) {
+    if (NT_SUCCESS(Status)) {
     } else {
         KdBreakPoint();
     }
-    return status;
+    return Status;
 }
 
 NTSTATUS
 NTAPI
-NtReleaseKeyedEvent(
+NtReleaseKeyedEvent (
     _In_ HANDLE KeyedEventHandle,
     _In_ PVOID Key,
     _In_ BOOLEAN Alertable,
     _In_opt_ PLARGE_INTEGER Timeout
     )
 {
-    NTSTATUS status = STATUS_SUCCESS;
-    PLDK_TEB found = NULL;
+    NTSTATUS Status = STATUS_SUCCESS;
+    PLDK_TEB Found = NULL;
+
     do {
-        KIRQL oldIrql = ExAcquireSpinLockShared( &LdkpKeyedEventWaitListLock );
-        PLIST_ENTRY current;
-        PLIST_ENTRY next;
-        LIST_FOR_EACH_SAFE(current, next, &LdkpKeyedEventWaitListHead) {
-            PLDK_KEYED_EVENT_WAIT_ENTRY entry = CONTAINING_RECORD( current, LDK_KEYED_EVENT_WAIT_ENTRY, Links );
-            if (entry->Key == Key) {
+        KIRQL OldIrql = ExAcquireSpinLockShared( &LdkpKeyedEventWaitListLock );
+        PLIST_ENTRY Current;
+        PLIST_ENTRY Next;
+        LIST_FOR_EACH_SAFE(Current, Next, &LdkpKeyedEventWaitListHead) {
+            PLDK_KEYED_EVENT_WAIT_ENTRY Entry = CONTAINING_RECORD( Current, LDK_KEYED_EVENT_WAIT_ENTRY, Links );
+            if (Entry->Key == Key) {
                 while (!ExTryConvertSharedSpinLockExclusive( &LdkpKeyedEventWaitListLock )) {
                     YieldProcessor();
                 }
-                found = entry->Teb;
-                entry->Teb = NULL;
-                entry->Key = NULL;
-                RemoveEntryList( &entry->Links );
+                Found = Entry->Teb;
+                Entry->Teb = NULL;
+                Entry->Key = NULL;
+                RemoveEntryList( &Entry->Links );
                 ExFreeToNPagedLookasideList( &LdkpKeyedEventWaitLookaside,
-                                             entry );
+                                             Entry );
                 break;
             }
         }
-        if (found) {
+        if (Found) {
             ExReleaseSpinLockExclusive( &LdkpKeyedEventWaitListLock,
-                                        oldIrql );
+                                        OldIrql );
             break;
         } else {
             ExReleaseSpinLockShared( &LdkpKeyedEventWaitListLock,
-                                     oldIrql );
+                                     OldIrql );
         }        
-        status = ZwWaitForSingleObject( KeyedEventHandle,
+        Status = ZwWaitForSingleObject( KeyedEventHandle,
                                         Alertable,
                                         Timeout );
-    } while (NT_SUCCESS(status));
+    } while (NT_SUCCESS(Status));
 
-    if (!NT_SUCCESS(status)) {
+    if (! NT_SUCCESS(Status)) {
         KdBreakPoint();
-        return status;
+        return Status;
     }
 
-    KeReleaseSemaphore( &found->KeyedWaitSemaphore,
+    KeReleaseSemaphore( &Found->KeyedWaitSemaphore,
                         SEMAPHORE_INCREMENT,
                         1,
                         FALSE );

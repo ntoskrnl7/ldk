@@ -1,6 +1,37 @@
 ﻿#include "ntdll.h"
-
 #include "../ldk.h"
+
+
+
+_Function_class_(RTL_ALLOCATE_STRING_ROUTINE)
+_IRQL_requires_max_(PASSIVE_LEVEL)
+__drv_allocatesMem(Mem)
+PVOID
+NTAPI
+LdkpNtdllAllocateStringRoutine (
+    _In_ SIZE_T NumberOfBytes
+    )
+{
+    return RtlAllocateHeap( RtlProcessHeap(),
+                            0,
+                            NumberOfBytes );
+}
+
+_Function_class_(RTL_FREE_STRING_ROUTINE)
+_IRQL_requires_max_(PASSIVE_LEVEL)
+VOID
+NTAPI
+LdkpNtdllFreeStringRoutine (
+    _In_ __drv_freesMem(Mem) _Post_invalid_ PVOID Buffer
+    )
+{
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 Buffer );
+}
+
+const PRTL_ALLOCATE_STRING_ROUTINE RtlAllocateStringRoutine = LdkpNtdllAllocateStringRoutine;
+const PRTL_FREE_STRING_ROUTINE RtlFreeStringRoutine = LdkpNtdllFreeStringRoutine;
 
 #pragma warning(disable:4152)
 LDK_FUNCTION_REGISTRATION LdkpNtdllFunctionRegistration[] = {
@@ -85,6 +116,8 @@ RtlpDeleteDeferedCriticalSection(
 
 
 
+LDK_TERMINATE_COMPONENT LdkpTerminateCurDir;
+
 LDK_INITIALIZE_COMPONENT LdkpInitializeKeyedEventList;
 LDK_TERMINATE_COMPONENT LdkpTerminateKeyedEventList;
 
@@ -115,27 +148,27 @@ LdkpNtdllInitialize (
     VOID
     )
 {
-    NTSTATUS status;
+    NTSTATUS Status;
 
     PAGED_CODE();
 
-    status = LdkpInitializeKeyedEventList();
-    if (!NT_SUCCESS(status)) {
-        return status;
+    Status = LdkpInitializeKeyedEventList();
+    if (! NT_SUCCESS(Status)) {
+        return Status;
     }
 
-    status = LdkpInitializeRtlWorkItem();
-    if (!NT_SUCCESS(status)) {
+    Status = LdkpInitializeRtlWorkItem();
+    if (! NT_SUCCESS(Status)) {
         LdkpTerminateKeyedEventList();
-        return status;
+        return Status;
     }
 
 #if _LDK_DEFINE_RTL_RAISE_EXCEPTION
-	status = LdkpInitializeDispatchExceptionStackVariables();
-	if (!NT_SUCCESS(status)) {
+	Status = LdkpInitializeDispatchExceptionStackVariables();
+	if (! NT_SUCCESS(Status)) {
 		LdkpTerminateRtlWorkItem();
 		LdkpTerminateKeyedEventList();
-		return status;
+		return Status;
 	}
 #endif
 
@@ -151,6 +184,8 @@ LdkpNtdllTerminate(
     VOID
     )
 {
+    LdkpTerminateCurDir();
+
     RtlpCloseKeyedEvent();
 
     RtlpDeleteDeferedCriticalSection();

@@ -2,7 +2,15 @@
 #include "../ldk.h"
 #include "../ntdll/ntdll.h"
 
-#define TAG_EA_BUFFER						'fBaE'
+
+
+BOOL
+IsThisARootDirectory (
+    _In_ HANDLE RootHandle,
+    _In_opt_ PUNICODE_STRING FileName
+    );
+
+
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, CreateDirectoryA)
@@ -21,6 +29,14 @@
 #pragma alloc_text(PAGE, GetFileSizeEx)
 #pragma alloc_text(PAGE, GetFileType)
 #pragma alloc_text(PAGE, SetFileTime)
+#pragma alloc_text(PAGE, DeleteFileA)
+#pragma alloc_text(PAGE, DeleteFileW)
+#pragma alloc_text(PAGE, GetFileInformationByHandle)
+#pragma alloc_text(PAGE, GetFullPathNameA)
+#pragma alloc_text(PAGE, GetFullPathNameW)
+#pragma alloc_text(PAGE, GetDriveTypeA)
+#pragma alloc_text(PAGE, GetDriveTypeW)
+#pragma alloc_text(PAGE, IsThisARootDirectory)
 #endif
 
 
@@ -33,24 +49,17 @@ CreateDirectoryA (
     _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
     )
 {
-	BOOL bSuccess;
-    UNICODE_STRING Unicode;
-	ANSI_STRING Ansi;
+    PUNICODE_STRING Unicode;
 
 	PAGED_CODE();
 
-	RtlInitAnsiString( &Ansi,
-					   lpPathName );
+    Unicode = Ldk8BitStringToStaticUnicodeString( lpPathName );
+    if (Unicode == NULL) {
+        return FALSE;
+    }
 
-	LdkAnsiStringToUnicodeString( &Unicode,
-								  &Ansi,
-								  TRUE );
-
-	bSuccess = CreateDirectoryW( Unicode.Buffer,
-								lpSecurityAttributes );
-
-	LdkFreeUnicodeString( &Unicode );
-	return bSuccess;
+    return CreateDirectoryW( (LPCWSTR)Unicode->Buffer,
+							 lpSecurityAttributes );
 }
 
 WINBASEAPI
@@ -77,9 +86,11 @@ CreateDirectoryW (
 								OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
 								NULL,
 								NULL );
-
 	if (ARGUMENT_PRESENT(lpSecurityAttributes)) {
 		ObjectAttributes.SecurityDescriptor = lpSecurityAttributes->lpSecurityDescriptor;
+		if (lpSecurityAttributes->bInheritHandle) {
+			SetFlag(ObjectAttributes.Attributes, OBJ_INHERIT);
+		}
 	}
 
 	Status = ZwCreateFile( &DirectoryHandle,
@@ -101,7 +112,7 @@ CreateDirectoryW (
 		if (RtlIsDosDeviceName_U( (LPWSTR)lpPathName) ) {
 			Status = STATUS_NOT_A_DIRECTORY;
 		}
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -121,29 +132,22 @@ CreateFileA (
     _In_opt_ HANDLE hTemplateFile
     )
 {
-	HANDLE hFile;
-    UNICODE_STRING Unicode;
-	ANSI_STRING Ansi;
+    PUNICODE_STRING Unicode;
 
 	PAGED_CODE();
 
-	RtlInitAnsiString( &Ansi,
-					   lpFileName );
+    Unicode = Ldk8BitStringToStaticUnicodeString( lpFileName );
+    if (Unicode == NULL) {
+        return INVALID_HANDLE_VALUE;
+    }
 
-	LdkAnsiStringToUnicodeString( &Unicode,
-								  &Ansi,
-								  TRUE );
-
-	hFile = CreateFileW( Unicode.Buffer,
-						 dwDesiredAccess,
-						 dwShareMode,
-						 lpSecurityAttributes,
-						 dwCreationDisposition,
-						 dwFlagsAndAttributes,
-						 hTemplateFile );
-
-	LdkFreeUnicodeString( &Unicode );
-	return hFile;
+    return CreateFileW( Unicode->Buffer,
+                        dwDesiredAccess,
+                        dwShareMode,
+                        lpSecurityAttributes,
+                        dwCreationDisposition,
+                        dwFlagsAndAttributes,
+                        hTemplateFile );
 }
 
 WINBASEAPI
@@ -196,25 +200,77 @@ CreateFileW (
 	case TRUNCATE_EXISTING:
 		CreateDisposition = FILE_OPEN;
 		if (! FlagOn(dwDesiredAccess,GENERIC_WRITE)) {
-			BaseSetLastNTError( STATUS_INVALID_PARAMETER );
+			LdkSetLastNTError( STATUS_INVALID_PARAMETER );
 			return INVALID_HANDLE_VALUE;
 		}
 		break;
 
 	default:
-		BaseSetLastNTError( STATUS_INVALID_PARAMETER );
+		LdkSetLastNTError( STATUS_INVALID_PARAMETER );
 		return INVALID_HANDLE_VALUE;
 	}
 	
-	RtlInitUnicodeString( &FileName,
-						  lpFileName );
-	
+	PVOID FreeBuffer = NULL;
+	RTL_RELATIVE_NAME_U RelativeName;
+    if (! RtlDosPathNameToNtPathName_U( lpFileName,
+										&FileName,
+										NULL,
+										&RelativeName )) {
+        SetLastError( ERROR_PATH_NOT_FOUND );
+        return INVALID_HANDLE_VALUE;
+    }
+	FreeBuffer = FileName.Buffer;
+
+    if (RelativeName.RelativeName.Length ) {
+    	FileName = *(PUNICODE_STRING)&RelativeName.RelativeName;
+    } else {
+    	RelativeName.ContainingDirectory = NULL;
+    }
+
+    SQOSFlags = dwFlagsAndAttributes & SECURITY_VALID_SQOS_FLAGS;
+	if (FlagOn(SQOSFlags, SECURITY_SQOS_PRESENT)) {
+		SQOSFlags &= ~SECURITY_SQOS_PRESENT;
+		if (FlagOn(SQOSFlags, SECURITY_CONTEXT_TRACKING)) {
+			SecurityQualityOfService.ContextTrackingMode = TRUE;
+			SQOSFlags &= ~SECURITY_CONTEXT_TRACKING;
+		} else {
+			SecurityQualityOfService.ContextTrackingMode = FALSE;
+		}
+		if (FlagOn(SQOSFlags, SECURITY_EFFECTIVE_ONLY)) {
+			SecurityQualityOfService.EffectiveOnly = TRUE;
+			SQOSFlags &= ~SECURITY_EFFECTIVE_ONLY;
+		} else {
+			SecurityQualityOfService.EffectiveOnly = FALSE;
+		}
+		SecurityQualityOfService.ImpersonationLevel = SQOSFlags >> 16;
+	} else {
+		SecurityQualityOfService.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING;
+		SecurityQualityOfService.ImpersonationLevel = SecurityImpersonation;
+		SecurityQualityOfService.EffectiveOnly = TRUE;
+	}
+    SecurityQualityOfService.Length = sizeof(SECURITY_QUALITY_OF_SERVICE);
+
 	InitializeObjectAttributes( &ObjectAttributes,
 								&FileName,
 								OBJ_KERNEL_HANDLE | (dwFlagsAndAttributes & FILE_FLAG_POSIX_SEMANTICS ? 0 : OBJ_CASE_INSENSITIVE),
-								NULL,
+								RelativeName.ContainingDirectory,
 								NULL );
 
+	ObjectAttributes.SecurityQualityOfService = &SecurityQualityOfService;
+
+	if (ARGUMENT_PRESENT(lpSecurityAttributes)) {	
+		ObjectAttributes.SecurityDescriptor = lpSecurityAttributes->lpSecurityDescriptor;
+		if (lpSecurityAttributes->bInheritHandle) {
+			ObjectAttributes.Attributes |= OBJ_INHERIT;
+		}
+	}
+
+	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_BACKUP_SEMANTICS) ? FILE_OPEN_FOR_BACKUP_INTENT : 0 ));
+	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_SEQUENTIAL_SCAN) ? FILE_SEQUENTIAL_ONLY : 0 ));
+	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_RANDOM_ACCESS) ? FILE_RANDOM_ACCESS : 0 ));
+	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_NO_BUFFERING) ? FILE_NO_INTERMEDIATE_BUFFERING : 0 ));
+	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_OVERLAPPED) ? 0 : FILE_SYNCHRONOUS_IO_NONALERT ));
+	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_WRITE_THROUGH) ? FILE_WRITE_THROUGH : 0 ));
 	if (! FlagOn(dwFlagsAndAttributes, FILE_FLAG_BACKUP_SEMANTICS)) {
 		SetFlag(CreateFlags, FILE_NON_DIRECTORY_FILE);
 	} else {
@@ -222,82 +278,26 @@ CreateFileW (
 			FlagOn(dwFlagsAndAttributes, FILE_ATTRIBUTE_DIRECTORY) &&
 			FlagOn(dwFlagsAndAttributes, FILE_FLAG_POSIX_SEMANTICS)
 			) {
-		SetFlag(CreateFlags, FILE_DIRECTORY_FILE);
+			SetFlag(CreateFlags, FILE_DIRECTORY_FILE);
 		}
 	}
-
 	if (FlagOn(dwFlagsAndAttributes, FILE_FLAG_OPEN_NO_RECALL)) {
 		SetFlag(CreateFlags, FILE_OPEN_NO_RECALL);
 	}
-
 	if (FlagOn(dwFlagsAndAttributes, FILE_FLAG_OPEN_REPARSE_POINT)) {
 		SetFlag(CreateFlags, FILE_OPEN_REPARSE_POINT);
 	}
-
 	if (FlagOn(dwFlagsAndAttributes, FILE_FLAG_DELETE_ON_CLOSE)) {
 		SetFlag(CreateFlags, FILE_DELETE_ON_CLOSE);
 		SetFlag(dwDesiredAccess, DELETE);
 	}
-	
-	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_BACKUP_SEMANTICS) ? FILE_OPEN_FOR_BACKUP_INTENT : 0 ));
-	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_SEQUENTIAL_SCAN) ? FILE_SEQUENTIAL_ONLY : 0 ));
-	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_RANDOM_ACCESS) ? FILE_RANDOM_ACCESS : 0 ));
-	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_NO_BUFFERING) ? FILE_NO_INTERMEDIATE_BUFFERING : 0 ));
-	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_OVERLAPPED) ? 0 : FILE_SYNCHRONOUS_IO_NONALERT ));
-	SetFlag(CreateFlags, (FlagOn(dwFlagsAndAttributes, FILE_FLAG_WRITE_THROUGH) ? FILE_WRITE_THROUGH : 0 ));
-
-
-    SQOSFlags = dwFlagsAndAttributes & SECURITY_VALID_SQOS_FLAGS;
-
-	if (FlagOn(SQOSFlags, SECURITY_SQOS_PRESENT)) {
-
-		SQOSFlags &= ~SECURITY_SQOS_PRESENT;
-
-		if (FlagOn(SQOSFlags, SECURITY_CONTEXT_TRACKING)) {
-			SecurityQualityOfService.ContextTrackingMode = TRUE;
-			SQOSFlags &= ~SECURITY_CONTEXT_TRACKING;
-		} else {
-			SecurityQualityOfService.ContextTrackingMode = FALSE;
-		}
-
-		if (FlagOn(SQOSFlags, SECURITY_EFFECTIVE_ONLY)) {
-			SecurityQualityOfService.EffectiveOnly = TRUE;
-			SQOSFlags &= ~SECURITY_EFFECTIVE_ONLY;
-		} else {
-			SecurityQualityOfService.EffectiveOnly = FALSE;
-		}
-
-		SecurityQualityOfService.ImpersonationLevel = SQOSFlags >> 16;
-
-	} else {
-
-		SecurityQualityOfService.ContextTrackingMode = SECURITY_DYNAMIC_TRACKING;
-		SecurityQualityOfService.ImpersonationLevel = SecurityImpersonation;
-		SecurityQualityOfService.EffectiveOnly = TRUE;
-
-	}
-
-    SecurityQualityOfService.Length = sizeof(SECURITY_QUALITY_OF_SERVICE);
-	ObjectAttributes.SecurityQualityOfService = &SecurityQualityOfService;
-
-	if (ARGUMENT_PRESENT(lpSecurityAttributes)) {		
-		ObjectAttributes.SecurityDescriptor = lpSecurityAttributes->lpSecurityDescriptor;
-		if (lpSecurityAttributes->bInheritHandle) {
-			ObjectAttributes.Attributes |= OBJ_INHERIT;
-		}
-	}
-
-	if (ObjectAttributes.SecurityDescriptor) {
-		KdBreakPoint();
-	}
-	if (ARGUMENT_PRESENT(hTemplateFile)) {
-		KdBreakPoint();
-	}
 
 	if (ARGUMENT_PRESENT(hTemplateFile)) {
 
-		FILE_EA_INFORMATION EaInfo;
-		
+		// untested :-(
+		KdBreakPoint();
+
+		FILE_EA_INFORMATION EaInfo;		
 		Status = ZwQueryInformationFile( hTemplateFile,
 										 &IoStatus,
 										 &EaInfo,
@@ -309,12 +309,14 @@ CreateFileW (
 
 			do {
 				EaSize *= 2;
-				EaBuffer = HeapAlloc( GetProcessHeap(),
-									  TAG_EA_BUFFER,
-									  EaSize );
-
+				EaBuffer = RtlAllocateHeap( RtlProcessHeap(),
+											MAKE_TAG( TMP_TAG ),
+							 				EaSize );
 				if (! EaBuffer) {
-					BaseSetLastNTError( STATUS_NO_MEMORY );
+					RtlFreeHeap( RtlProcessHeap(),
+								 0,
+								 FreeBuffer );
+					LdkSetLastNTError( STATUS_NO_MEMORY );
 					return INVALID_HANDLE_VALUE;
 				}
 
@@ -329,9 +331,9 @@ CreateFileW (
 										TRUE );
 
 				if (! NT_SUCCESS(Status)) {
-					HeapFree( GetProcessHeap(),
-							  0,
-							  EaBuffer );
+					RtlFreeHeap( RtlProcessHeap(),
+								 0,
+								 EaBuffer );
 					EaBuffer = NULL;
 					IoStatus.Information = 0;
 				}
@@ -353,10 +355,14 @@ CreateFileW (
 						   EaBuffer,
 						   EaSize );
 
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 FreeBuffer );
+
 	if (EaBuffer) {
-		HeapFree( GetProcessHeap(),
-				  0,
-				  EaBuffer );
+		RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					EaBuffer );
 	}
 
 	if (! NT_SUCCESS( Status )) {
@@ -365,7 +371,7 @@ CreateFileW (
 		} else if (Status == STATUS_FILE_IS_A_DIRECTORY) {
 			SetLastError( ERROR_PATH_NOT_FOUND );
 		} else {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 		}
 		return INVALID_HANDLE_VALUE;
 	}
@@ -374,7 +380,7 @@ CreateFileW (
 		((dwCreationDisposition == OPEN_ALWAYS) && (IoStatus.Information == FILE_OPENED))) {
 		SetLastError( ERROR_ALREADY_EXISTS );
 	} else {		
-		SetLastError( 0 );
+		SetLastError( ERROR_SUCCESS );
 	}
 
     if (dwCreationDisposition == TRUNCATE_EXISTING) {
@@ -388,7 +394,7 @@ CreateFileW (
 									   FileAllocationInformation );
 
 		if (! NT_SUCCESS(Status)) {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			ZwClose( FileHandle );
 			FileHandle = INVALID_HANDLE_VALUE;
 		}
@@ -439,7 +445,7 @@ ReadFile (
 			if (NT_SUCCESS(Status)) {
 				return TRUE;
 			} else {
-				BaseSetLastNTError( Status );
+				LdkSetLastNTError( Status );
 				return FALSE;
 			}
 		}
@@ -479,10 +485,10 @@ ReadFile (
 			if (ARGUMENT_PRESENT(lpNumberOfBytesRead)) {
 				*lpNumberOfBytesRead = 0;
 			}
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return FALSE;
 		} else {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return FALSE;
 		}
 	} else {
@@ -518,7 +524,7 @@ ReadFile (
 			if (NT_WARNING(Status)) {
 				*lpNumberOfBytesRead = (DWORD)IoStatus.Information;
 			}
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return FALSE;
 		}
 	}
@@ -582,7 +588,7 @@ WriteFile (
 			}
 			return TRUE;
 		} else {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return FALSE;
 		}
 	} else {
@@ -615,7 +621,7 @@ WriteFile (
 			if (NT_WARNING(Status)) {
 				*lpNumberOfBytesWritten = (DWORD)IoStatus.Information;
 			}
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return FALSE;
 		}
 	}
@@ -638,10 +644,10 @@ FlushFileBuffers (
 
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
-	} else {
-		BaseSetLastNTError( Status );
-		return FALSE;
 	}
+
+	LdkSetLastNTError( Status );
+	return FALSE;
 }
 
 WINBASEAPI
@@ -666,7 +672,7 @@ SetEndOfFile(
 									 FilePositionInformation );
 
 	if (! NT_SUCCESS(Status)) {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 
@@ -678,7 +684,7 @@ SetEndOfFile(
 								   FileEndOfFileInformation );
 	
 	if (! NT_SUCCESS(Status)) {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 
@@ -693,7 +699,7 @@ SetEndOfFile(
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
 	} else {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -736,7 +742,7 @@ SetFilePointer (
 										 FilePositionInformation );
 
 		if (! NT_SUCCESS(Status)) {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return (DWORD)-1;
 		}
 		PositionInfo.CurrentByteOffset.QuadPart += CurrentPosition.CurrentByteOffset.QuadPart;
@@ -750,7 +756,7 @@ SetFilePointer (
 										 FileStandardInformation );
 
 		if (! NT_SUCCESS(Status)) {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return (DWORD)-1;
 		}
 		PositionInfo.CurrentByteOffset.QuadPart += StandardInfo.EndOfFile.QuadPart;
@@ -790,7 +796,7 @@ SetFilePointer (
 
 		return PositionInfo.CurrentByteOffset.LowPart;
 	} else {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 
 		if (ARGUMENT_PRESENT(lpDistanceToMoveHigh)) {
 			*lpDistanceToMoveHigh = -1;
@@ -833,7 +839,7 @@ SetFilePointerEx (
 										 FilePositionInformation );
 
 		if (! NT_SUCCESS(Status)) {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return (DWORD)-1;
 		}
 
@@ -848,7 +854,7 @@ SetFilePointerEx (
 										 FileStandardInformation );
 
 		if (! NT_SUCCESS(Status)) {
-			BaseSetLastNTError( Status );
+			LdkSetLastNTError( Status );
 			return (DWORD)-1;
 		}
 
@@ -883,7 +889,7 @@ SetFilePointerEx (
 
 		return TRUE;
 	} else {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -895,24 +901,16 @@ GetFileAttributesA (
     _In_ LPCSTR lpFileName
     )
 {
-	DWORD dwFileAttributes;
-    UNICODE_STRING Unicode;
-	ANSI_STRING Ansi;
+    PUNICODE_STRING Unicode;
 
 	PAGED_CODE();
 
-	RtlInitAnsiString( &Ansi,
-					   lpFileName );
+    Unicode = Ldk8BitStringToStaticUnicodeString( lpFileName );
+    if (Unicode == NULL) {
+        return (DWORD)-1;
+    }
 
-	LdkAnsiStringToUnicodeString( &Unicode,
-								  &Ansi,
-								  TRUE );
-
-	dwFileAttributes = GetFileAttributesW( Unicode.Buffer );
-
-	LdkFreeUnicodeString(&Unicode);
-
-	return dwFileAttributes;
+    return GetFileAttributesW( (LPCWSTR)Unicode->Buffer );
 }
 
 WINBASEAPI
@@ -934,7 +932,7 @@ GetFileAttributesW (
 
 	InitializeObjectAttributes( &ObjectAttributes,
 								&FileName,
-								OBJ_CASE_INSENSITIVE,
+								OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
 								NULL,
 								NULL );
 
@@ -943,10 +941,10 @@ GetFileAttributesW (
 
 	if (NT_SUCCESS(Status)) {
 		return FileInformation.FileAttributes;
-	} else {
-		BaseSetLastNTError( Status );
-		return (DWORD)-1;
 	}
+
+	LdkSetLastNTError( Status );
+	return (DWORD)-1;
 }
 
 #include <limits.h>
@@ -960,6 +958,7 @@ GetFileSize (
     )
 {
 	LARGE_INTEGER fileSize;
+
 	PAGED_CODE();
 
 	if (GetFileSizeEx(hFile,&fileSize)) {
@@ -984,19 +983,19 @@ GetFileSizeEx (
     )
 {
     NTSTATUS Status;
-    IO_STATUS_BLOCK IoStatusBlock;
+    IO_STATUS_BLOCK IoStatus;
     FILE_STANDARD_INFORMATION StandardInfo;
 
 	PAGED_CODE();
 
     Status = ZwQueryInformationFile( hFile,
-									 &IoStatusBlock,
+									 &IoStatus,
 									 &StandardInfo,
 									 sizeof(StandardInfo),
 									 FileStandardInformation );
 
     if (! NT_SUCCESS(Status)) {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
         return FALSE;
 	}
 	*lpFileSize = StandardInfo.EndOfFile;
@@ -1012,7 +1011,7 @@ GetFileType (
 {
 	NTSTATUS Status;
 	FILE_FS_DEVICE_INFORMATION DeviceInformation;
-	IO_STATUS_BLOCK IoStatusBlock;
+	IO_STATUS_BLOCK IoStatus;
 
 	PAGED_CODE();
 
@@ -1024,12 +1023,12 @@ GetFileType (
 	}
 
 	Status = ZwQueryVolumeInformationFile( hFile,
-										   &IoStatusBlock,
+										   &IoStatus,
 										   &DeviceInformation,
 										   sizeof(FILE_FS_DEVICE_INFORMATION),
 										   FileFsDeviceInformation );
 	if (! NT_SUCCESS(Status)) {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FILE_TYPE_UNKNOWN;
 	}
 
@@ -1066,12 +1065,10 @@ GetFileType (
 	case FILE_DEVICE_TRANSPORT:
 	case FILE_DEVICE_UNKNOWN:
 	default:
-		SetLastError(NO_ERROR);
+		SetLastError( NO_ERROR );
 		return FILE_TYPE_UNKNOWN;
 	}
 }
-
-
 
 WINBASEAPI
 BOOL
@@ -1089,7 +1086,8 @@ SetFileTime (
 
 	PAGED_CODE();
 
-	RtlZeroMemory( &BasicInfo, sizeof(BasicInfo) );
+	RtlZeroMemory( &BasicInfo,
+				   sizeof(BasicInfo) );
 
 	if (ARGUMENT_PRESENT( lpCreationTime )) {
 		BasicInfo.CreationTime.LowPart = lpCreationTime->dwLowDateTime;
@@ -1115,7 +1113,7 @@ SetFileTime (
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
 	} else {
-		BaseSetLastNTError( Status );
+		LdkSetLastNTError( Status );
 		return FALSE;
 	}
 }
@@ -1146,4 +1144,746 @@ LocalFileTimeToFileTime (
 	lpFileTime->dwHighDateTime = FileTime.HighPart;
 
 	return TRUE;
+}
+
+
+
+WINBASEAPI
+BOOL
+WINAPI
+DeleteFileA (
+    _In_ LPCSTR lpFileName
+    )
+{
+    PUNICODE_STRING Unicode;
+
+	PAGED_CODE();
+
+    Unicode = Ldk8BitStringToStaticUnicodeString( lpFileName );
+    if (Unicode == NULL) {
+        return FALSE;
+    }
+
+    return DeleteFileW( (LPCWSTR)Unicode->Buffer );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+DeleteFileW (
+    _In_ LPCWSTR lpFileName
+    )
+{
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+    UNICODE_STRING FileName;
+    IO_STATUS_BLOCK IoStatus;
+    FILE_DISPOSITION_INFORMATION Disposition;
+    FILE_ATTRIBUTE_TAG_INFORMATION FileTagInformation;
+    BOOLEAN TranslationStatus;
+    RTL_RELATIVE_NAME_U RelativeName;
+    PVOID FreeBuffer;
+    BOOLEAN fIsSymbolicLink = FALSE;
+
+	PAGED_CODE();
+
+    TranslationStatus = RtlDosPathNameToNtPathName_U( lpFileName,
+													  &FileName,
+													  NULL,
+													  &RelativeName );
+
+    if (! TranslationStatus) {
+        SetLastError( ERROR_PATH_NOT_FOUND );
+        return FALSE;
+    }
+
+    FreeBuffer = FileName.Buffer;
+    if (RelativeName.RelativeName.Length) {
+        FileName = *(PUNICODE_STRING)&RelativeName.RelativeName;
+    } else {
+		RelativeName.ContainingDirectory = NULL;
+    }
+
+    InitializeObjectAttributes( &ObjectAttributes,
+								&FileName,
+								OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+								RelativeName.ContainingDirectory,
+								NULL );
+
+    Status = ZwOpenFile( &Handle,
+						 (ACCESS_MASK)DELETE | FILE_READ_ATTRIBUTES,
+						 &ObjectAttributes,
+						 &IoStatus,
+						 FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+						 FILE_NON_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT | FILE_OPEN_REPARSE_POINT );
+    if (! NT_SUCCESS(Status)) {
+        if (Status == STATUS_INVALID_PARAMETER) {
+            Status = ZwOpenFile( &Handle,
+								 (ACCESS_MASK)DELETE,
+								 &ObjectAttributes,
+								 &IoStatus,
+								 FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+								 FILE_NON_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT );
+            if (! NT_SUCCESS(Status)) {
+                RtlFreeHeap( RtlProcessHeap(),
+							 0,
+							 FreeBuffer );
+                LdkSetLastNTError( Status );
+                return FALSE;
+            }
+        } else {
+
+            if (Status != STATUS_ACCESS_DENIED) {
+                RtlFreeHeap( RtlProcessHeap(),
+							 0,
+							 FreeBuffer );
+                LdkSetLastNTError( Status );
+                return FALSE;
+            }
+            
+            Status = ZwOpenFile( &Handle,
+								 (ACCESS_MASK)DELETE,
+								 &ObjectAttributes,
+								 &IoStatus,
+								 FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+								 FILE_NON_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT | FILE_OPEN_REPARSE_POINT );
+            if (! NT_SUCCESS(Status)) {
+                RtlFreeHeap( RtlProcessHeap(),
+							 0,
+							 FreeBuffer );
+                LdkSetLastNTError( Status );
+                return FALSE;
+            }
+        }
+    } else {
+        Status = ZwQueryInformationFile( Handle,
+										 &IoStatus,
+										 (PVOID)&FileTagInformation,
+										 sizeof(FileTagInformation),
+										 FileAttributeTagInformation );
+        if (! NT_SUCCESS(Status)) {
+            if ((Status != STATUS_NOT_IMPLEMENTED) &&
+                (Status != STATUS_INVALID_PARAMETER)) {
+                RtlFreeHeap( RtlProcessHeap(),
+							 0,
+							 FreeBuffer );
+                ZwClose( Handle );
+                LdkSetLastNTError( Status );
+                return FALSE;
+            }
+        }
+        if (NT_SUCCESS(Status) &&
+            (FileTagInformation.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            if (FileTagInformation.ReparseTag == IO_REPARSE_TAG_MOUNT_POINT) {
+            	fIsSymbolicLink = TRUE;
+            }
+        }
+        if (NT_SUCCESS(Status) &&
+            (FileTagInformation.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+            !fIsSymbolicLink) {
+            ZwClose(Handle);
+            Status = ZwOpenFile( &Handle,
+								 (ACCESS_MASK)DELETE,
+                        		 &ObjectAttributes,
+                        		 &IoStatus,
+                        		 FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        		 FILE_NON_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT );
+            if (! NT_SUCCESS(Status)) {
+                if (Status == STATUS_IO_REPARSE_TAG_NOT_HANDLED) {
+                    Status = NtOpenFile( &Handle,
+                                		 (ACCESS_MASK)DELETE,
+                                		 &ObjectAttributes,
+                                		 &IoStatus,
+                                		 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                		 FILE_NON_DIRECTORY_FILE | FILE_OPEN_FOR_BACKUP_INTENT | FILE_OPEN_REPARSE_POINT );
+                }
+                if (! NT_SUCCESS(Status)) {
+                    RtlFreeHeap( RtlProcessHeap(),
+								 0,
+								 FreeBuffer );
+                    LdkSetLastNTError( Status );
+                    return FALSE;
+				}
+			}
+		}
+	}
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 FreeBuffer );
+
+    Disposition.DeleteFile = TRUE;
+
+    Status = ZwSetInformationFile( Handle,
+								   &IoStatus,
+								   &Disposition,
+                				   sizeof(Disposition),
+								   FileDispositionInformation );
+    ZwClose(Handle);
+    if (NT_SUCCESS(Status)) {
+        return TRUE;
+    }
+    LdkSetLastNTError( Status );
+    return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetFileInformationByHandle (
+    _In_ HANDLE hFile,
+    _Out_ LPBY_HANDLE_FILE_INFORMATION lpFileInformation
+    )
+{
+    NTSTATUS Status;
+    IO_STATUS_BLOCK IoStatus;
+    BY_HANDLE_FILE_INFORMATION LocalFileInformation;
+    FILE_ALL_INFORMATION FileInformation;
+    FILE_FS_VOLUME_INFORMATION VolumeInfo;
+
+	PAGED_CODE();
+
+	LdkGetConsoleHandle( hFile,
+						 &hFile );
+
+    if (LdkIsConsoleHandle( hFile )) {
+        LdkSetLastNTError( STATUS_INVALID_HANDLE );
+        return FALSE;
+    }
+
+    Status = ZwQueryVolumeInformationFile( hFile,
+										   &IoStatus,
+										   &VolumeInfo,
+										   sizeof(VolumeInfo),
+										   FileFsVolumeInformation );
+    if (! NT_ERROR(Status)) {
+        LocalFileInformation.dwVolumeSerialNumber = VolumeInfo.VolumeSerialNumber;
+    } else {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+    Status = NtQueryInformationFile( hFile,
+									 &IoStatus,
+									 &FileInformation,
+									 sizeof(FileInformation),
+									 FileAllInformation );
+
+    if (! NT_ERROR(Status)) {
+        LocalFileInformation.dwFileAttributes = FileInformation.BasicInformation.FileAttributes;
+        LocalFileInformation.ftCreationTime = *(LPFILETIME)&FileInformation.BasicInformation.CreationTime;
+        LocalFileInformation.ftLastAccessTime = *(LPFILETIME)&FileInformation.BasicInformation.LastAccessTime;
+        LocalFileInformation.ftLastWriteTime = *(LPFILETIME)&FileInformation.BasicInformation.LastWriteTime;
+        LocalFileInformation.nFileSizeHigh = FileInformation.StandardInformation.EndOfFile.HighPart;
+        LocalFileInformation.nFileSizeLow = FileInformation.StandardInformation.EndOfFile.LowPart;
+        LocalFileInformation.nNumberOfLinks = FileInformation.StandardInformation.NumberOfLinks;
+        LocalFileInformation.nFileIndexHigh = FileInformation.InternalInformation.IndexNumber.HighPart;
+        LocalFileInformation.nFileIndexLow = FileInformation.InternalInformation.IndexNumber.LowPart;
+    } else {
+    	LdkSetLastNTError( Status );
+        return FALSE;
+    }
+    *lpFileInformation = LocalFileInformation;
+    return TRUE;
+}
+
+
+
+WINBASEAPI
+_Success_(return != 0 && return < nBufferLength)
+DWORD
+WINAPI
+GetFullPathNameA (
+    _In_ LPCSTR lpFileName,
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPSTR lpBuffer,
+    _Outptr_opt_ LPSTR* lpFilePart
+    )
+{
+    NTSTATUS Status;
+    ULONG UnicodeLength;
+    UNICODE_STRING UnicodeString;
+    UNICODE_STRING UnicodeResult;
+    PWSTR Ubuff;
+    PWSTR FilePart = NULL;
+    PWSTR *FilePartPtr;
+    ULONG PrefixLength = 0;
+
+	PAGED_CODE();
+
+    if (ARGUMENT_PRESENT(lpFilePart)) {
+        FilePartPtr = &FilePart;
+    } else {
+        FilePartPtr = NULL;
+    }
+
+	if (! Ldk8BitStringToDynamicUnicodeString( &UnicodeString,
+										   	   lpFileName )) {
+		return 0;
+	}
+    Ubuff = RtlAllocateHeap( RtlProcessHeap(),
+							 MAKE_TAG( TMP_TAG ),
+							 (MAX_PATH << 1) + sizeof(UNICODE_NULL));
+    if (! Ubuff) {
+        RtlFreeUnicodeString( &UnicodeString );
+        LdkSetLastNTError( STATUS_NO_MEMORY );
+        return 0;
+    }
+
+    UnicodeLength = RtlGetFullPathName_U( UnicodeString.Buffer,
+										  (MAX_PATH << 1),
+                        				  Ubuff,
+										  FilePartPtr );
+
+    if ( UnicodeLength <= ((MAX_PATH * sizeof(WCHAR) + sizeof(UNICODE_NULL))) ) {
+
+        Status = RtlUnicodeToMultiByteSize( &UnicodeLength,
+											Ubuff,
+											UnicodeLength );
+
+        if (NT_SUCCESS(Status)) {
+            if (UnicodeLength && ARGUMENT_PRESENT(lpFilePart) && FilePart) {
+                ULONG UnicodePrefixLength;
+
+                UnicodePrefixLength = (ULONG)(FilePart - Ubuff) * sizeof(WCHAR);
+                Status = RtlUnicodeToMultiByteSize( &PrefixLength,
+                                                    Ubuff,
+                                                    UnicodePrefixLength );
+                if (! NT_SUCCESS(Status)) {
+                    LdkSetLastNTError( Status );
+                    UnicodeLength = 0;
+                }
+            }
+        } else {
+            LdkSetLastNTError( Status );
+            UnicodeLength = 0;
+        }
+    } else {
+        UnicodeLength = 0;
+    }
+    if (UnicodeLength && UnicodeLength < nBufferLength) {
+        RtlInitUnicodeString( &UnicodeResult,Ubuff );
+		ANSI_STRING AnsiResult;
+		Status = LdkUnicodeStringTo8BitString( &AnsiResult,
+											   &UnicodeResult,
+											   TRUE );
+        if (NT_SUCCESS(Status)) {
+            RtlMoveMemory( lpBuffer,
+						   AnsiResult.Buffer,
+						   UnicodeLength + 1 );
+			LdkFree8BitString( &AnsiResult );
+            if (ARGUMENT_PRESENT(lpFilePart)) {
+                if (FilePart == NULL) {
+                	*lpFilePart = NULL;
+                } else {
+					*lpFilePart = lpBuffer + PrefixLength;
+                }
+            }
+        } else {
+            LdkSetLastNTError( Status );
+            UnicodeLength = 0;
+        }
+    } else {
+        if (UnicodeLength) {
+            UnicodeLength++;
+        }
+    }
+
+    RtlFreeUnicodeString( &UnicodeString );
+    RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 Ubuff );
+
+    return (DWORD)UnicodeLength;
+}
+
+WINBASEAPI
+_Success_(return != 0 && return < nBufferLength)
+DWORD
+WINAPI
+GetFullPathNameW (
+    _In_ LPCWSTR lpFileName,
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPWSTR lpBuffer,
+    _Outptr_opt_ LPWSTR* lpFilePart
+    )
+{
+	PAGED_CODE();
+
+    return (DWORD)RtlGetFullPathName_U( lpFileName,
+										nBufferLength * sizeof(WCHAR),
+										lpBuffer,
+										lpFilePart ) /  sizeof(WCHAR);
+}
+
+WINBASEAPI
+UINT
+WINAPI
+GetDriveTypeA (
+    _In_opt_ LPCSTR lpRootPathName
+    )
+{
+    PUNICODE_STRING Unicode;
+    LPCWSTR lpRootPathName_U;
+
+	PAGED_CODE();
+
+    if (ARGUMENT_PRESENT(lpRootPathName)) {
+        Unicode = Ldk8BitStringToStaticUnicodeString( lpRootPathName );
+        if (Unicode == NULL) {
+            return 1;
+        }
+        lpRootPathName_U = (LPCWSTR)Unicode->Buffer;
+    } else {
+        lpRootPathName_U = NULL;
+    }
+
+    return GetDriveTypeW( lpRootPathName_U );
+}
+
+WINBASEAPI
+UINT
+WINAPI
+GetDriveTypeW (
+    _In_opt_ LPCWSTR lpRootPathName
+    )
+{
+    WCHAR wch;
+    ULONG n, DriveNumber;
+    WCHAR DefaultPath[MAX_PATH];
+    PWSTR RootPathName;
+    NTSTATUS Status;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+    UNICODE_STRING FileName;
+    IO_STATUS_BLOCK IoStatus;
+    BOOLEAN TranslationStatus;
+    PVOID FreeBuffer;
+    DWORD ReturnValue;
+    FILE_FS_DEVICE_INFORMATION DeviceInfo;
+    PROCESS_DEVICEMAP_INFORMATION ProcessDeviceMapInfo;
+
+	PAGED_CODE();
+
+    if (! ARGUMENT_PRESENT(lpRootPathName)) {
+        n = RtlGetCurrentDirectory_U( sizeof(DefaultPath),
+									  DefaultPath );
+        RootPathName = DefaultPath;
+        if (n > (3 * sizeof(WCHAR))) {
+            RootPathName[3]=UNICODE_NULL;
+        }
+    } else if (lpRootPathName == (PWSTR)IntToPtr(0xFFFFFFFF)) {
+        return 0;
+    } else {
+        RootPathName = (PWSTR)lpRootPathName;
+        if (wcslen( RootPathName ) == 2) {
+            wch = RtlUpcaseUnicodeChar( *RootPathName );
+            if (wch >= (WCHAR)'A' &&
+                wch <= (WCHAR)'Z' &&
+                RootPathName[1] == (WCHAR)':'
+               ) {
+                RootPathName = wcscpy( DefaultPath,
+									   lpRootPathName );
+                RootPathName[2] = (WCHAR)'\\';
+                RootPathName[3] = UNICODE_NULL;
+            }
+        }
+    }
+
+    wch = RtlUpcaseUnicodeChar( *RootPathName );
+    if (wch >= (WCHAR)'A' &&
+        wch <= (WCHAR)'Z' &&
+        RootPathName[1]==(WCHAR)':' &&
+        RootPathName[2]==(WCHAR)'\\' &&
+        RootPathName[3]==UNICODE_NULL
+       ) {
+    	Status = ZwQueryInformationProcess( NtCurrentProcess(),
+                                            ProcessDeviceMap,
+                                            &ProcessDeviceMapInfo.Query,
+                                            sizeof( ProcessDeviceMapInfo.Query ),
+                                            NULL );
+        if (! NT_SUCCESS(Status)) {
+            RtlZeroMemory( &ProcessDeviceMapInfo,
+						   sizeof(ProcessDeviceMapInfo) );
+        }
+
+        DriveNumber = wch - (WCHAR)'A';
+        if (ProcessDeviceMapInfo.Query.DriveMap & (1 << DriveNumber)) {
+            switch (ProcessDeviceMapInfo.Query.DriveType[DriveNumber]) {
+			case DOSDEVICE_DRIVE_UNKNOWN:
+				return DRIVE_UNKNOWN;
+			case DOSDEVICE_DRIVE_REMOVABLE:
+				return DRIVE_REMOVABLE;
+			case DOSDEVICE_DRIVE_FIXED:
+				return DRIVE_FIXED;
+			case DOSDEVICE_DRIVE_REMOTE:
+				return DRIVE_REMOTE;
+			case DOSDEVICE_DRIVE_CDROM:
+				return DRIVE_CDROM;
+			case DOSDEVICE_DRIVE_RAMDISK:
+				return DRIVE_RAMDISK;
+			}
+        }
+    }
+
+    if (! ARGUMENT_PRESENT(lpRootPathName)) {
+        RootPathName = L"\\";
+    }
+
+    TranslationStatus = RtlDosPathNameToNtPathName_U( RootPathName,
+                                                      &FileName,
+                                                      NULL,
+                                                      NULL );
+    if (! TranslationStatus) {
+        return DRIVE_NO_ROOT_DIR;
+    }
+    FreeBuffer = FileName.Buffer;
+
+    if (FileName.Buffer[(FileName.Length >> 1)-1] != '\\') {
+        RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					 FreeBuffer );
+        return DRIVE_NO_ROOT_DIR;
+    }
+
+    FileName.Length -= 2;
+    InitializeObjectAttributes( &ObjectAttributes,
+                                &FileName,
+                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                NULL,
+                                NULL );
+
+    Status = ZwOpenFile( &Handle,
+                         (ACCESS_MASK)FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                         &ObjectAttributes,
+                         &IoStatus,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE );
+
+    if (Status == STATUS_FILE_IS_A_DIRECTORY) {
+        Status = ZwOpenFile( &Handle,
+							 (ACCESS_MASK)FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+							 &ObjectAttributes,
+							 &IoStatus,
+							 FILE_SHARE_READ | FILE_SHARE_WRITE,
+							 FILE_SYNCHRONOUS_IO_NONALERT );
+    } else {
+        FileName.Length = FileName.Length + sizeof((WCHAR)'\\');
+        if (! IsThisARootDirectory( NULL,
+									&FileName )) {
+            FileName.Length = FileName.Length - sizeof((WCHAR)'\\');
+            if (NT_SUCCESS(Status)) {
+                ZwClose(Handle);
+            }
+            Status = ZwOpenFile( &Handle,
+								 (ACCESS_MASK)FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+								 &ObjectAttributes,
+								 &IoStatus,
+								 FILE_SHARE_READ | FILE_SHARE_WRITE,
+								 FILE_SYNCHRONOUS_IO_NONALERT );
+        }
+    }
+    RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 FreeBuffer );
+    if (! NT_SUCCESS(Status)) {
+        return DRIVE_NO_ROOT_DIR;
+    }
+
+    Status = ZwQueryVolumeInformationFile( Handle,
+                                           &IoStatus,
+                                           &DeviceInfo,
+                                           sizeof(DeviceInfo),
+                                           FileFsDeviceInformation );
+    if (! NT_SUCCESS(Status)) {
+        ReturnValue = DRIVE_UNKNOWN;
+    } else if (DeviceInfo.Characteristics & FILE_REMOTE_DEVICE) {
+        ReturnValue = DRIVE_REMOTE;
+    } else {
+    	switch (DeviceInfo.DeviceType) {
+		case FILE_DEVICE_NETWORK:
+		case FILE_DEVICE_NETWORK_FILE_SYSTEM:
+			ReturnValue = DRIVE_REMOTE;
+			break;
+		case FILE_DEVICE_CD_ROM:
+		case FILE_DEVICE_CD_ROM_FILE_SYSTEM:
+			ReturnValue = DRIVE_CDROM;
+			break;
+		case FILE_DEVICE_VIRTUAL_DISK:
+			ReturnValue = DRIVE_RAMDISK;
+			break;
+		case FILE_DEVICE_DISK:
+		case FILE_DEVICE_DISK_FILE_SYSTEM:
+			ReturnValue = (DeviceInfo.Characteristics & FILE_REMOVABLE_MEDIA) ? DRIVE_REMOVABLE : DRIVE_FIXED;
+			break;
+		default:
+			ReturnValue = DRIVE_UNKNOWN;
+			break;
+		}
+    }
+
+    ZwClose( Handle );
+    return ReturnValue;
+}
+
+BOOL
+IsThisARootDirectory (
+    _In_ HANDLE RootHandle,
+    _In_opt_ PUNICODE_STRING FileName
+    )
+{
+	NTSTATUS Status;
+	IO_STATUS_BLOCK IoStatus;
+
+    WCHAR Buffer[MAX_PATH + sizeof(FileNameInfo)];
+    PFILE_NAME_INFORMATION FileNameInfo = (PFILE_NAME_INFORMATION)Buffer;
+
+	PAGED_CODE();
+
+    Status = ZwQueryInformationFile( RootHandle,
+									 &IoStatus,
+									 FileNameInfo,
+									 sizeof(Buffer),
+									 FileNameInformation );
+    if (NT_SUCCESS(Status)) {
+		if (FileNameInfo->FileName[(FileNameInfo->FileNameLength >> 1) - 1] == (WCHAR)'\\') {
+			return TRUE;
+		}
+	}
+
+	if (ARGUMENT_PRESENT(FileName)) {
+		OBJECT_ATTRIBUTES ObjectAttributes;
+		HANDLE LinkHandle;
+		WCHAR LinkValueBuffer[2 * MAX_PATH];
+		UNICODE_STRING LinkValue;
+		ULONG ReturnedLength;
+		
+		FileName->Length = FileName->Length - sizeof((WCHAR)'\\');
+		InitializeObjectAttributes( &ObjectAttributes,
+									FileName,
+									OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+									NULL,
+									NULL );
+		Status = ZwOpenSymbolicLinkObject( &LinkHandle,
+										   SYMBOLIC_LINK_QUERY,
+										   &ObjectAttributes );
+		FileName->Length = FileName->Length + sizeof((WCHAR)'\\');
+		if (NT_SUCCESS(Status)) {
+			LinkValue.Buffer = LinkValueBuffer;
+			LinkValue.Length = 0;
+			LinkValue.MaximumLength = (USHORT)(sizeof(LinkValueBuffer));
+			ReturnedLength = 0;
+			Status = ZwQuerySymbolicLinkObject( LinkHandle,
+												&LinkValue,
+												&ReturnedLength );
+			ZwClose( LinkHandle );
+			if (NT_SUCCESS(Status)) {
+				return TRUE;
+			}
+		}
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
+
+
+
+ULONG
+LdkpUnicodeStringToAnsiSize (
+    _In_ PUNICODE_STRING UnicodeString
+    );
+
+ULONG
+LdkpUnicodeStringToOemSize (
+	_In_ PUNICODE_STRING UnicodeString
+	);
+
+ULONG
+LdkpAnsiStringToUnicodeSize (
+    _In_ PANSI_STRING AnsiString
+    );
+
+ULONG
+LdkpOemStringToUnicodeSize(
+    PANSI_STRING OemString
+    );
+
+
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSTATUS
+(*Ldk8BitStringToUnicodeString)(
+    _When_(AllocateDestinationString, _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem)))
+    _When_(!AllocateDestinationString, _Inout_)
+		PUNICODE_STRING DestinationString,
+    _In_ PANSI_STRING SourceString,
+    _In_ BOOLEAN AllocateDestinationString
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+ULONG
+(*Ldk8BitStringToUnicodeSize)(
+    _In_ PANSI_STRING AnsiString
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+_Must_inspect_result_
+NTSTATUS
+(*LdkUnicodeStringTo8BitString)(
+    _When_(AllocateDestinationString, _Out_ _At_(DestinationString->Buffer, __drv_allocatesMem(Mem)))
+    _When_(!AllocateDestinationString, _Inout_)
+    	PANSI_STRING DestinationString,
+    _In_ PUNICODE_STRING SourceString,
+    _In_ BOOLEAN AllocateDestinationString
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+ULONG
+(*LdkUnicodeStringTo8BitSize)(
+    _In_ PUNICODE_STRING UnicodeString
+    );
+
+_IRQL_requires_max_(PASSIVE_LEVEL)
+VOID
+(*LdkFree8BitString)(
+	_Inout_ _At_(String->Buffer, _Frees_ptr_opt_)
+    _In_ PSTRING String
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+AreFileApisANSI (
+    VOID
+    )
+{
+	return Ldk8BitStringToUnicodeString == RtlAnsiStringToUnicodeString;
+}
+
+WINBASEAPI
+VOID
+WINAPI
+SetFileApisToOEM (
+    VOID
+    )
+{
+    Ldk8BitStringToUnicodeString = RtlOemStringToUnicodeString;
+    Ldk8BitStringToUnicodeSize = LdkpOemStringToUnicodeSize;
+    LdkUnicodeStringTo8BitString = RtlUnicodeStringToOemString;
+    LdkUnicodeStringTo8BitSize  = LdkpUnicodeStringToOemSize;
+	LdkFree8BitString = RtlFreeOemString;	
+}
+
+WINBASEAPI
+VOID
+WINAPI
+SetFileApisToANSI (
+    VOID
+    )
+{
+    Ldk8BitStringToUnicodeString = RtlAnsiStringToUnicodeString;
+    Ldk8BitStringToUnicodeSize = LdkpAnsiStringToUnicodeSize;
+	LdkUnicodeStringTo8BitString = RtlUnicodeStringToAnsiString;
+    LdkUnicodeStringTo8BitSize  = LdkpUnicodeStringToAnsiSize;    
+	LdkFree8BitString = RtlFreeAnsiString;
 }

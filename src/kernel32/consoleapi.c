@@ -168,6 +168,8 @@ ReadConsoleW (
 {
     UNREFERENCED_PARAMETER( pInputControl );
 
+    PAGED_CODE();
+
     if (! LdkGetConsoleHandle( hConsoleInput,
                                &hConsoleInput )
         ||
@@ -177,22 +179,42 @@ ReadConsoleW (
         return FALSE;
     }
 
-    UNREFERENCED_PARAMETER( lpBuffer );
-    UNREFERENCED_PARAMETER( nNumberOfCharsToRead );
-    UNREFERENCED_PARAMETER( lpNumberOfCharsRead );
-
     KdBreakPoint();
 
-    return TRUE;
-    // if (ReadFile( hConsoleInput,
-    //               lpBuffer,
-    //               nNumberOfCharsToRead * sizeof(WCHAR),
-    //               lpNumberOfCharsRead,
-    //               NULL )) {
-    //     *lpNumberOfCharsRead /= sizeof(WCHAR);
-    //     return TRUE;
-    // }
-    // return FALSE;
+    NTSTATUS Status;
+    IO_STATUS_BLOCK ioStatus;
+
+    Status = ZwReadFile( hConsoleInput,
+                         NULL,
+                         NULL,
+                         NULL,
+                         &ioStatus,
+                         lpBuffer,
+                         nNumberOfCharsToRead * sizeof(WCHAR),
+                         NULL,
+                         NULL );
+
+    if (Status == STATUS_PENDING) {
+        Status = ZwWaitForSingleObject( hConsoleInput,
+                                        FALSE,
+                                        NULL );
+        if (NT_SUCCESS(Status)) {
+            Status = ioStatus.Status;
+        }
+    }
+	if (NT_SUCCESS(Status)) {
+        *lpNumberOfCharsRead = (DWORD)ioStatus.Information / sizeof(WCHAR);
+        return TRUE;
+    } else if (Status == STATUS_END_OF_FILE) {
+        *lpNumberOfCharsRead = 0;
+        return TRUE;
+    } else {
+        if (NT_WARNING(Status)) {
+            *lpNumberOfCharsRead = (DWORD)ioStatus.Information;
+        }
+    }
+    LdkSetLastNTError( Status );
+    return FALSE;
 }
 
 WINBASEAPI

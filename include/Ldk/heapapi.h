@@ -1,5 +1,11 @@
 ﻿#pragma once
 
+#if _MSC_VER < 1900
+#define DECLSPEC_ALLOCATOR
+#else
+#define DECLSPEC_ALLOCATOR __declspec(allocator)
+#endif
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -76,4 +82,32 @@ WINAPI
 GetProcessHeap(
     VOID
     );
+
+WINBASEAPI
+SIZE_T
+WINAPI
+HeapCompact(
+    _In_ HANDLE hHeap,
+    _In_ DWORD dwFlags
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+HeapWalk(
+    _In_ HANDLE hHeap,
+    _Inout_ LPPROCESS_HEAP_ENTRY lpEntry
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+HeapQueryInformation(
+    _In_opt_ HANDLE HeapHandle,
+    _In_ HEAP_INFORMATION_CLASS HeapInformationClass,
+    _Out_writes_bytes_to_opt_(HeapInformationLength,*ReturnLength) PVOID HeapInformation,
+    _In_ SIZE_T HeapInformationLength,
+    _Out_opt_ PSIZE_T ReturnLength
+    );
+
 EXTERN_C_END

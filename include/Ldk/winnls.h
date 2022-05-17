@@ -1176,22 +1176,6 @@ LocaleNameToLCID(
     _In_ DWORD dwFlags);
 
 WINBASEAPI
-int
-WINAPI
-GetLocaleInfoW(
-    _In_ LCID     Locale,
-    _In_ LCTYPE   LCType,
-    _Out_writes_opt_(cchData) LPWSTR lpLCData,
-    _In_ int      cchData);
-
-WINBASEAPI
-BOOL
-WINAPI
-EnumSystemLocalesW(
-    _In_ LOCALE_ENUMPROCW lpLocaleEnumProc,
-    _In_ DWORD            dwFlags);
-
-WINBASEAPI
 LCID
 WINAPI
 GetUserDefaultLCID(void);
@@ -1203,20 +1187,6 @@ GetUserDefaultLocaleName(
     _Out_writes_(cchLocaleName) LPWSTR lpLocaleName,
     _In_ int cchLocaleName
     );
-
-typedef BOOL (CALLBACK* LOCALE_ENUMPROCEX)(LPWSTR, DWORD, LPARAM);
-
-WINBASEAPI
-BOOL
-WINAPI
-EnumSystemLocalesEx(
-    _In_ LOCALE_ENUMPROCEX lpLocaleEnumProcEx,
-    _In_ DWORD dwFlags,
-    _In_ LPARAM lParam,
-    _In_opt_ LPVOID lpReserved
-);
-
-
 
 //
 // String based NLS APIs

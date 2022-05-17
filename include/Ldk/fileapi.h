@@ -206,6 +206,140 @@ SetFileTime(
 
 
 
+WINBASEAPI
+BOOL
+WINAPI
+DeleteFileA(
+    _In_ LPCSTR lpFileName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+DeleteFileW(
+    _In_ LPCWSTR lpFileName
+    );
+
+
+typedef struct _BY_HANDLE_FILE_INFORMATION {
+    DWORD dwFileAttributes;
+    FILETIME ftCreationTime;
+    FILETIME ftLastAccessTime;
+    FILETIME ftLastWriteTime;
+    DWORD dwVolumeSerialNumber;
+    DWORD nFileSizeHigh;
+    DWORD nFileSizeLow;
+    DWORD nNumberOfLinks;
+    DWORD nFileIndexHigh;
+    DWORD nFileIndexLow;
+} BY_HANDLE_FILE_INFORMATION, *PBY_HANDLE_FILE_INFORMATION, *LPBY_HANDLE_FILE_INFORMATION;
+
+WINBASEAPI
+BOOL
+WINAPI
+GetFileInformationByHandle(
+    _In_ HANDLE hFile,
+    _Out_ LPBY_HANDLE_FILE_INFORMATION lpFileInformation
+    );
+
+WINBASEAPI
+_Success_(return != 0 && return < nBufferLength)
+DWORD
+WINAPI
+GetFullPathNameA(
+    _In_ LPCSTR lpFileName,
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPSTR lpBuffer,
+    _Outptr_opt_ LPSTR* lpFilePart
+    );
+
+WINBASEAPI
+_Success_(return != 0 && return < nBufferLength)
+DWORD
+WINAPI
+GetFullPathNameW(
+    _In_ LPCWSTR lpFileName,
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPWSTR lpBuffer,
+    _Outptr_opt_ LPWSTR* lpFilePart
+    );
+
+
+
+WINBASEAPI
+UINT
+WINAPI
+GetDriveTypeA(
+    _In_opt_ LPCSTR lpRootPathName
+    );
+
+WINBASEAPI
+UINT
+WINAPI
+GetDriveTypeW(
+    _In_opt_ LPCWSTR lpRootPathName
+    );
+
+
+
+WINBASEAPI
+DWORD
+WINAPI
+GetTempPathA(
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPSTR lpBuffer
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetTempPathW(
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPWSTR lpBuffer
+    );
+
+WINBASEAPI
+UINT
+WINAPI
+GetTempFileNameA(
+    _In_ LPCSTR lpPathName,
+    _In_ LPCSTR lpPrefixString,
+    _In_ UINT uUnique,
+    _Out_writes_(MAX_PATH) LPSTR lpTempFileName
+    );
+
+WINBASEAPI
+UINT
+WINAPI
+GetTempFileNameW(
+    _In_ LPCWSTR lpPathName,
+    _In_ LPCWSTR lpPrefixString,
+    _In_ UINT uUnique,
+    _Out_writes_(MAX_PATH) LPWSTR lpTempFileName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+AreFileApisANSI(
+    VOID
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+SetFileApisToOEM(
+    VOID
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+SetFileApisToANSI(
+    VOID
+    );
+
+
 #ifdef __cplusplus
 }
 #endif

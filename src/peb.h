@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include "ntdll/ntdll.h"
-#include "nt/ntpsapi.h"
 
 typedef struct _CURDIR {
      UNICODE_STRING DosPath;
@@ -53,15 +52,14 @@ typedef struct _LDK_PEB {
 
 	PVOID ImageBaseAddress;
 	SIZE_T ImageBaseSize;
-
+     
+     // \??\X:\~~~
 	ANSI_STRING FullPathName;
 
 	PVOID ProcessHeap;
 	ULONG NumberOfProcessors;
 
 	LARGE_INTEGER CriticalSectionTimeout;
-
-	PVOID Environment;
 
 	PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
 
@@ -77,6 +75,8 @@ typedef struct _LDK_PEB {
 	ERESOURCE ModuleListResource;
 	LIST_ENTRY ModuleListHead;
 	NPAGED_LOOKASIDE_LIST ModuleListLookaside;
+
+     ULONG EnvironmentUpdateCount;
 
 } LDK_PEB, *PLDK_PEB;
 

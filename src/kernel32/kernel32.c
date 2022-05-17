@@ -1,5 +1,5 @@
 ﻿#include "winbase.h"
-
+#include <Ldk/ntdll/ntxcapi.h>
 #include "../ldk.h"
 
 
@@ -10,7 +10,7 @@ LDK_TERMINATE_COMPONENT LdkpTerminateThreadpoolApiset;
 LDK_INITIALIZE_COMPONENT LdkpInitializeThreadContexts;
 LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
 
-
+LDK_INITIALIZE_COMPONENT LdkpInitializeNls;
 
 LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
 LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
@@ -23,45 +23,241 @@ LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
 #endif
 
 
+#pragma warning(disable:4232)
+VOID
+LdkpInitializeSListHead (
+    _Out_ PSLIST_HEADER SListHead
+    )
+{
+	InitializeSListHead( SListHead );
+}
+
 
 #pragma warning(disable:4152)
 LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
+	//
+	// fileapi.c
+	//
 	{
-		"CreateThread",
-		CreateThread
+		"CreateFileA",
+		CreateFileA
 	},
+	{
+		"CreateFileW",
+		CreateFileW
+	},
+	{
+		"ReadFile",
+		ReadFile
+	},
+	{
+		"WriteFile",
+		WriteFile
+	},
+	{
+		"FlushFileBuffers",
+		FlushFileBuffers
+	},
+	{
+		"GetDriveTypeA",
+		GetDriveTypeA
+	},
+	{
+		"GetDriveTypeW",
+		GetDriveTypeW
+	},
+
+	//
+	// processenv.c
+	//
+	{
+		"GetEnvironmentStrings",
+		GetEnvironmentStrings
+	},
+	{
+		"GetEnvironmentStringsW",
+		GetEnvironmentStringsW
+	},
+	{
+		"FreeEnvironmentStringsA",
+		FreeEnvironmentStringsA
+	},
+	{
+		"FreeEnvironmentStringsW",
+		FreeEnvironmentStringsW
+	},
+	{
+		"GetEnvironmentVariableA",
+		GetEnvironmentVariableA
+	},
+	{
+		"GetEnvironmentVariableW",
+		GetEnvironmentVariableW
+	},
+	{
+		"GetCurrentDirectoryA",
+		GetCurrentDirectoryA
+	},
+	{
+		"GetCurrentDirectoryW",
+		GetCurrentDirectoryW
+	},
+	{
+		"SetCurrentDirectoryA",
+		SetCurrentDirectoryA
+	},
+	{
+		"SetCurrentDirectoryW",
+		SetCurrentDirectoryW
+	},
+	{
+		"GetStdHandle",
+		GetStdHandle
+	},
+	{
+		"SetStdHandle",
+		SetStdHandle
+	},
+	{
+		"SetStdHandleEx",
+		SetStdHandleEx
+	},
+	{
+		"GetCommandLineA",
+		GetCommandLineA
+	},
+	{
+		"GetCommandLineW",
+		GetCommandLineW
+	},
+
+	//
+	// utilapiset.c
+	//
+	{
+		"DecodePointer",
+		DecodePointer
+	},
+	{
+		"EncodePointer",
+		EncodePointer
+	},
+
+	//
+	// consoleapi.c
+	//
+	{
+		"GetConsoleCP",
+		GetConsoleCP
+	},
+	{
+		"GetConsoleOutputCP",
+		GetConsoleOutputCP
+	},
+	{
+		"GetConsoleMode",
+		GetConsoleMode
+	},
+	{
+		"SetConsoleMode",
+		SetConsoleMode
+	},
+	{
+		"ReadConsoleA",
+		ReadConsoleA
+	},
+	{
+		"ReadConsoleW",
+		ReadConsoleW
+	},
+	{
+		"WriteConsoleA",
+		WriteConsoleA
+	},
+	{
+		"WriteConsoleW",
+		WriteConsoleW
+	},
+	{
+		"SetConsoleCtrlHandler",
+		SetConsoleCtrlHandler
+	},
+
+	//
+	// consoleapi2.c
+	//
+	{
+		"SetConsoleCP",
+		SetConsoleCP
+	},
+	{
+		"SetConsoleOutputCP",
+		SetConsoleOutputCP
+	},
+
+	//
+	// handleapi.c
+	//
 	{
 		"CloseHandle",
 		CloseHandle
 	},
 	{
-		"GetSystemTime",
-		GetSystemTime
+		"DuplicateHandle",
+		DuplicateHandle
+	},
+
+	//
+	// heapapi.c
+	//
+	{
+		"HeapCreate",
+		HeapCreate
 	},
 	{
-		"GetLocalTime",
-		GetLocalTime
+		"HeapDestroy",
+		HeapDestroy
 	},
 	{
-		"GetSystemInfo",
-		GetSystemInfo
+		"HeapAlloc",
+		HeapAlloc
 	},
 	{
-		"GetSystemTimeAsFileTime",
-		GetSystemTimeAsFileTime
+		"HeapFree",
+		HeapFree
 	},
 	{
-		"GetTickCount",
-		GetTickCount
+		"HeapReAlloc",
+		HeapReAlloc
 	},
 	{
-		"GetTickCount64",
-		GetTickCount64
+		"GetProcessHeap",
+		GetProcessHeap
 	},
 	{
-		"GetThreadTimes",
-		GetThreadTimes
+		"HeapSize",
+		HeapSize
 	},
+	{
+		"HeapValidate",
+		HeapValidate
+	},
+	{
+		"HeapCompact",
+		HeapCompact
+	},
+	{
+		"HeapWalk",
+		HeapWalk
+	},
+	{
+		"HeapQueryInformation",
+		HeapQueryInformation
+	},
+
+	//
+	// profileapi.c
+	//
 	{
 		"QueryPerformanceCounter",
 		QueryPerformanceCounter
@@ -70,6 +266,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		"QueryPerformanceFrequency",
 		QueryPerformanceFrequency
 	},
+
+	//
+	// errhandlingapi.c
+	//
 	{
 		"GetLastError",
 		GetLastError
@@ -79,9 +279,29 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		SetLastError
 	},
 	{
-		"GlobalMemoryStatusEx",
-		GlobalMemoryStatusEx
+		"UnhandledExceptionFilter",
+		UnhandledExceptionFilter
 	},
+	{
+		"SetUnhandledExceptionFilter",
+		SetUnhandledExceptionFilter
+	},
+	{
+		"RaiseException",
+		RaiseException
+	},
+	{
+		"GetErrorMode",
+		GetErrorMode
+	},
+	{
+		"SetErrorMode",
+		SetErrorMode
+	},
+
+	//
+	// synchapi.h
+	//
 	{
 		"InitializeConditionVariable",
 		InitializeConditionVariable
@@ -146,17 +366,81 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		"Sleep",
 		Sleep
 	},
+
+	//
+	// fiberapi.c
+	//
 	{
-		"TerminateProcess",
-		TerminateProcess
+		"FlsAlloc",
+		FlsAlloc
 	},
 	{
-		"ExitProcess",
-		ExitProcess
+		"FlsFree",
+		FlsFree
 	},
 	{
-		"IsProcessorFeaturePresent",
-		IsProcessorFeaturePresent
+		"FlsGetValue",
+		FlsGetValue
+	},
+	{
+		"FlsSetValue",
+		FlsSetValue
+	},
+
+	//
+	// processthreadsapi.c
+	//
+	{
+		"CreateThread",
+		CreateThread
+	},
+	{
+		"OpenThread",
+		OpenThread
+	},
+	{
+		"GetThreadPriority",
+		GetThreadPriority
+	},
+	{
+		"SetThreadPriority",
+		SetThreadPriority
+	},
+	{
+		"GetThreadPriorityBoost",
+		GetThreadPriorityBoost
+	},
+	{
+		"SetThreadPriorityBoost",
+		SetThreadPriorityBoost
+	},
+	{
+		"ExitThread",
+		ExitThread
+	},
+	{
+		"SwitchToThread",
+		SwitchToThread
+	},
+	{
+		"GetExitCodeThread",
+		GetExitCodeThread
+	},
+	{
+		"GetCurrentThreadStackLimits",
+		GetCurrentThreadStackLimits
+	},
+	{
+		"GetThreadTimes",
+		GetThreadTimes
+	},
+	{
+		"GetCurrentThread",
+		GetCurrentThread
+	},
+	{
+		"GetCurrentThreadId",
+		GetCurrentThreadId
 	},
 	{
 		"GetCurrentProcess",
@@ -167,13 +451,37 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetCurrentProcessId
 	},
 	{
-		"GetCurrentThread",
-		GetCurrentThread
+		"OpenProcess",
+		OpenProcess
 	},
 	{
-		"GetCurrentThreadId",
-		GetCurrentThreadId
+		"TerminateProcess",
+		TerminateProcess
 	},
+	{
+		"ExitProcess",
+		ExitProcess
+	},
+	{
+		"GetExitCodeProcess",
+		GetExitCodeProcess
+	},
+	{
+		"IsProcessorFeaturePresent",
+		IsProcessorFeaturePresent
+	},
+	{
+		"GetStartupInfoA",
+		GetStartupInfoA
+	},
+	{
+		"GetStartupInfoW",
+		GetStartupInfoW
+	},
+
+	//
+	// libloaderapi.c
+	//
 	{
 		"GetProcAddress",
 		GetProcAddress
@@ -199,6 +507,63 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		LoadLibraryExW
 	},
 	{
+		"GetModuleHandleA",
+		GetModuleHandleA
+	},
+	{
+		"GetModuleHandleW",
+		GetModuleHandleW
+	},
+
+	{
+		"GetModuleHandleExA",
+		GetModuleHandleExA
+	},
+	{
+		"GetModuleHandleExW",
+		GetModuleHandleExW
+	},
+	{
+		"GetModuleFileNameA",
+		GetModuleFileNameA
+	},
+	{
+		"GetModuleFileNameW",
+		GetModuleFileNameW
+	},
+
+	//
+	// sysinfoappi.h
+	//
+	{
+		"GetSystemTime",
+		GetSystemTime
+	},
+	{
+		"GetLocalTime",
+		GetLocalTime
+	},
+	{
+		"SetLocalTime",
+		SetLocalTime
+	},
+	{
+		"GetSystemInfo",
+		GetSystemInfo
+	},
+	{
+		"GetSystemTimeAsFileTime",
+		GetSystemTimeAsFileTime
+	},
+	{
+		"GetTickCount",
+		GetTickCount
+	},
+	{
+		"GetTickCount64",
+		GetTickCount64
+	},
+	{
 		"GetVersion",
 		GetVersion
 	},
@@ -207,10 +572,41 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetVersionExA
 	},
 	{
+		"GlobalMemoryStatusEx",
+		GlobalMemoryStatusEx
+	},
+
+	//
+	// timezoneapi.c
+	//
+	{
+		"FileTimeToSystemTime",
+		FileTimeToSystemTime
+	},
+	{
+		"SystemTimeToFileTime",
+		SystemTimeToFileTime
+	},
+	{
+		"GetTimeZoneInformation",
+		GetTimeZoneInformation
+	},
+	{
+		"SystemTimeToTzSpecificLocalTime",
+		SystemTimeToTzSpecificLocalTime
+	},
+
+	//
+	// debugapi.c
+	//
+	{
 		"IsDebuggerPresent",
 		IsDebuggerPresent
 	},
-
+	{
+		"DebugBreak",
+		DebugBreak
+	},
 	{
 		"OutputDebugStringA",
 		OutputDebugStringA
@@ -219,11 +615,114 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		"OutputDebugStringW",
 		OutputDebugStringW
 	},
+
+	//
+	// nammepipe.c
+	//
+	{
+		"CreatePipe",
+		CreatePipe
+	},
+	{
+		"PeekNamedPipe",
+		PeekNamedPipe
+	},
+
+	//
+	// winnls.c
+	//
+	{
+		"IsValidCodePage",
+		IsValidCodePage
+	},
+	{
+		"GetACP",
+		GetACP
+	},
+	{
+		"GetOEMCP",
+		GetOEMCP
+	},
+	{
+		"GetCPInfo",
+		GetCPInfo
+	},
+	{
+		"GetCPInfoExA",
+		GetCPInfoExA
+	},
+	{
+		"GetCPInfoExW",
+		GetCPInfoExW
+	},
+	{
+		"IsValidLocale",
+		IsValidLocale
+	},
+	{
+		"LCIDToLocaleName",
+		LCIDToLocaleName
+	},
+	{
+		"LocaleNameToLCID",
+		LocaleNameToLCID
+	},
+	{
+		"GetUserDefaultLCID",
+		GetUserDefaultLCID
+	},
+	{
+		"GetUserDefaultLocaleName",
+		GetUserDefaultLocaleName
+	},
+
+	//
+	// etc
+	//
+	{
+		"InitializeSListHead",
+		LdkpInitializeSListHead
+	},
+	{
+		"RtlCaptureContext",
+		RtlCaptureContext
+	},
+	{
+		"RtlCaptureStackBackTrace",
+		RtlCaptureStackBackTrace
+	},
+	{
+		"RtlUnwind",
+		RtlUnwind
+	},
+	{
+		"RtlPcToFileHeader",
+		RtlPcToFileHeader
+	},
+	{
+		"DbgPrint",
+		DbgPrint
+	},
+#if _AMD64_
+	{
+		"RtlLookupFunctionEntry",
+		RtlLookupFunctionEntry
+	},
+	{
+		"RtlUnwindEx",
+		RtlUnwindEx
+	},
+	{
+		"RtlVirtualUnwind",
+		RtlVirtualUnwind
+	},
+#endif
 	{
 		NULL
 	}
 };
-#pragma warning(default:4152)
+
+
 
 LDK_MODULE LdkpKernel32Module = {
     RTL_CONSTANT_STRING("KERNEL32.DLL"),
@@ -241,11 +740,20 @@ LdkpKernel32Initialize (
 {
 	PAGED_CODE();
 
-	NTSTATUS status = LdkpInitializeThreadpoolApiset();
-	if (!NT_SUCCESS(status)) {
-		return status;
+	SetFileApisToANSI();
+
+	NTSTATUS Status = LdkpInitializeThreadpoolApiset();
+	if (! NT_SUCCESS(Status)) {
+		return Status;
 	}
-	return LdkpInitializeThreadContexts();
+
+	Status = LdkpInitializeThreadContexts();
+	if (! NT_SUCCESS(Status)) {
+		LdkpTerminateThreadpoolApiset();
+		return Status;
+	}
+
+	return LdkpInitializeNls();
 }
 
 VOID

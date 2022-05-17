@@ -397,7 +397,7 @@ RtlDeleteCriticalSection(PRTL_CRITICAL_SECTION CriticalSection)
     /* Close the Event Object Handle if it exists */
     if (CriticalSection->LockSemaphore)
     {
-        /* In case NtClose fails, return the status */
+        /* In case NtClose fails, return the Status */
         Status = NtClose(CriticalSection->LockSemaphore);
     }
 

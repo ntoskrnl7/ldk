@@ -7,12 +7,14 @@
 WINBASEAPI
 BOOL
 WINAPI
-QueueUserWorkItem(
+QueueUserWorkItem (
     _In_ LPTHREAD_START_ROUTINE Function,
     _In_opt_ PVOID Context,
     _In_ ULONG Flags
     )
 {
+    PAGED_CODE();
+
     NTSTATUS Status = RtlQueueWorkItem( (WORKERCALLBACKFUNC)Function,
                                         Context,
                                         Flags );
@@ -20,6 +22,6 @@ QueueUserWorkItem(
         return TRUE;
     }
 
-    BaseSetLastNTError(Status);
+    LdkSetLastNTError( Status );
     return FALSE;
 }

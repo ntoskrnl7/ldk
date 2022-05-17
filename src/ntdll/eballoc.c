@@ -1,6 +1,14 @@
 ﻿#include "ntdll.h"
-
 #include "../ldk.h"
+
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, RtlAcquirePebLock)
+#pragma alloc_text(PAGE, RtlReleasePebLock)
+#endif
+
+
 
 VOID
 NTAPI

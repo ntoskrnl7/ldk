@@ -80,6 +80,22 @@ WINBASEAPI
 _Ret_maybenull_
 HMODULE
 WINAPI
+LoadLibraryA(
+    _In_ LPCSTR lpLibFileName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HMODULE
+WINAPI
+LoadLibraryW(
+    _In_ LPCWSTR lpLibFileName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HMODULE
+WINAPI
 LoadLibraryExA(
     _In_ LPCSTR lpLibFileName,
     _Reserved_ HANDLE hFile,
@@ -138,6 +154,15 @@ BOOL
 WINAPI
 FreeLibrary(
     _In_ HMODULE hLibModule
+    );
+
+WINBASEAPI
+DECLSPEC_NORETURN
+VOID
+WINAPI
+FreeLibraryAndExitThread(
+    _In_ HMODULE hLibModule,
+    _In_ DWORD dwExitCode
     );
 
 EXTERN_C_END
