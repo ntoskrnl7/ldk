@@ -70,8 +70,6 @@ LdkAllocateHeap (
     _In_ SIZE_T Size
     )
 {
-	ASSERT(HeapHandle);
-
 	PLDK_HEAP_IMP_HEADER Buffer;
 	
 	union {
@@ -137,8 +135,6 @@ LdkReAllocateHeap (
     _In_ SIZE_T Size
     )
 {
-	ASSERT(HeapHandle);
-
 	if (! ARGUMENT_PRESENT(BaseAddress)) {
 		return NULL;
 	}
@@ -188,7 +184,6 @@ LdkFreeHeap (
     _Frees_ptr_opt_ PVOID BaseAddress
     )
 {
-	ASSERT(HeapHandle);
 	UNREFERENCED_PARAMETER(Flags);
 	if (BaseAddress) {
 		PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
@@ -206,7 +201,6 @@ LdkSizeHeap (
     _In_ LPCVOID BaseAddress
     )
 {
-	ASSERT(HeapHandle);
 	UNREFERENCED_PARAMETER(Flags);
 	if (ARGUMENT_PRESENT(BaseAddress)) {
 		PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
@@ -227,7 +221,6 @@ LdkValidateHeap (
     _In_ LPCVOID BaseAddress
     )
 {
-	ASSERT(HeapHandle);
 	UNREFERENCED_PARAMETER(Flags);
 
 	if (! ARGUMENT_PRESENT(BaseAddress)) {

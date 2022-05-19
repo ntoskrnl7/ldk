@@ -24,12 +24,6 @@ LibraryTest (
 {
     PAGED_CODE();
 
-    KdBreakPoint();
-
-    //
-    // TestFunction함수를 가진 Test.dll를 만들어주세요
-    //
-
     typedef LONG(__stdcall* TEST_FN)(LONG);
 
     HMODULE hModule = LoadLibraryW(L"Test.dll");
