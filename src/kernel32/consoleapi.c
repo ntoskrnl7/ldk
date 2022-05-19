@@ -250,10 +250,14 @@ WriteConsoleA (
         return FALSE;
     }
 
-    *lpNumberOfCharsWritten = nNumberOfCharsToWrite;
+    if (ARGUMENT_PRESENT(lpNumberOfCharsWritten)) {
+        *lpNumberOfCharsWritten = nNumberOfCharsToWrite;
+    }
 
     return NT_SUCCESS(DbgPrintEx( componentId,
                                   level,
+                                  "%.*s",
+                                  nNumberOfCharsToWrite,
                                   lpBuffer ));
 }
 
@@ -290,11 +294,13 @@ WriteConsoleW (
         return FALSE;
     }
 
-    *lpNumberOfCharsWritten = nNumberOfCharsToWrite;
-
+    if (ARGUMENT_PRESENT(lpNumberOfCharsWritten)) {
+        *lpNumberOfCharsWritten = nNumberOfCharsToWrite;
+    }
     return NT_SUCCESS(DbgPrintEx( componentId,
                                   level,
-                                  "%ws",
+                                  "%.*ws",
+                                  nNumberOfCharsToWrite,
                                   lpBuffer ));
 }
 

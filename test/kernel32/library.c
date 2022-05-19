@@ -12,8 +12,6 @@ LibraryTest (
 #else
 #include <windows.h>
 #include <stdio.h>
-
-#define DbgPrint        printf
 #define PAGED_CODE()
 #endif
 
@@ -26,20 +24,19 @@ LibraryTest (
 
     typedef LONG(__stdcall* TEST_FN)(LONG);
 
-    HMODULE hModule = LoadLibraryW(L"Test.dll");
+    HMODULE hModule = LoadLibraryW( L"Test.dll" );
     if (!hModule) {
        return FALSE;
     }
 
-    TEST_FN testFn = (TEST_FN)GetProcAddress(hModule, "TestFunction");
+    TEST_FN testFn = (TEST_FN)GetProcAddress( hModule, "TestFunction" );
     if (!testFn) {
-       FreeLibrary(hModule);
+       FreeLibrary( hModule );
        return FALSE;
     }
     if (testFn(10) != 10) {
-       FreeLibrary(hModule);
+       FreeLibrary( hModule );
        return FALSE;
     }
-    return FreeLibrary(hModule) == TRUE;
-    // return TRUE;
+    return FreeLibrary( hModule ) == TRUE;
 }

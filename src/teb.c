@@ -22,10 +22,16 @@ LdkpTerminateTeb (
 	_Inout_ PLDK_TEB Teb
 	);
 
+VOID
+LdkpInvokeFlsCallback (
+	_Inout_ PLDK_TEB Teb
+	);
+
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeTebMap)
+#pragma alloc_text(PAGE, LdkpInvokeFlsCallback)
 #endif
 
 
@@ -193,6 +199,8 @@ LdkpInvokeFlsCallback (
 	_Inout_ PLDK_TEB Teb
 	)
 {
+	PAGED_CODE();
+
 	if (ExAcquireRundownProtection( &Teb->RundownProtect )) {
 		for (DWORD i = 0; i < LDK_FLS_SLOTS_SIZE; i++) {
 			PVOID Data;
@@ -226,30 +234,31 @@ LdkpTerminateTebMap (
 	PLDK_TEB Teb = LdkCurrentTeb();
 
 	//
-	// Teb에 등록된 Fls callbck을 모두 호출합니다.
-	//
-	KIRQL OldIrql = ExAcquireSpinLockShared( &LdkpTebListLock );
-	PLIST_ENTRY Entry= LdkpTebListHead.Flink;
-	while (Entry != &LdkpTebListHead) {
-		Teb = CONTAINING_RECORD(Entry, LDK_TEB, ActiveLinks);
-		LdkpInvokeFlsCallback( Teb );
-		Entry = Entry->Flink;
-	}
-	ExReleaseSpinLockShared( &LdkpTebListLock,
-							 OldIrql );
+	// Fls Callback은 PASSIVE_LEVEL에서만 호출 가능한 함수를 호출할 가능성이 있으므로
+	// LdkpTebListLock을 획득한 상태에서 LdkpInvokeFlsCallback를 호출하면 안됩니다.
+	// 그래서 LdkpInvokeFlsCallback를 호출하기전에 TEB 목록을 임시 변수로 이동시키도록
+	// 처리했습니다.
+
+	LIST_ENTRY TebListHead;
+	KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpTebListLock );
+	LdkpTebListHead.Blink->Flink = &TebListHead;
+	TebListHead.Blink = LdkpTebListHead.Blink;
+	LdkpTebListHead.Flink->Blink = &TebListHead;
+	TebListHead.Flink = LdkpTebListHead.Flink;
+	InitializeListHead( &LdkpTebListHead );
+	ExReleaseSpinLockExclusive( &LdkpTebListLock,
+							 	OldIrql );
 
 	//
-	// Teb를 모두 할당 해제합니다.
+	// Teb에 등록된 Fls Callbck을 모두 호출 후 TEB를 할당 해제합니다.
 	//
-	OldIrql = ExAcquireSpinLockExclusive( &LdkpTebListLock );
-	Entry = RemoveHeadList( &LdkpTebListHead );
-	while (Entry != &LdkpTebListHead) {
+	PLIST_ENTRY Entry = RemoveHeadList( &TebListHead );
+	while (Entry != &TebListHead) {
 		Teb = CONTAINING_RECORD(Entry, LDK_TEB, ActiveLinks);
-		Entry = RemoveHeadList( &LdkpTebListHead );
+		Entry = RemoveHeadList( &TebListHead );
+		LdkpInvokeFlsCallback( Teb );
 		LdkDeleteTeb(Teb);
 	}
-	ExReleaseSpinLockExclusive( &LdkpTebListLock,
-								OldIrql );
 
 	PSLIST_ENTRY TempEntry = InterlockedPopEntrySList( &LdkpTemporaryTebListHead );
 	while (TempEntry) {

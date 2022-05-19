@@ -41,6 +41,11 @@ LibraryTest (
     );
 
 BOOLEAN
+ConsoleTest (
+    VOID
+    );
+
+BOOLEAN
 NtdllCurrentDirectoryTest (
     VOID
     );
@@ -94,6 +99,7 @@ DriverEntry (
         ThreadPoolTest,
         ConditionVariableTest,
         LibraryTest,
+        ConsoleTest,
         NULL
     };
 
