@@ -33,6 +33,15 @@ MultiByteToWideChar (
 	Dst.Length = 0;
 	Dst.MaximumLength = lpWideCharStr ? (USHORT)(cchWideChar * sizeof(WCHAR)) : 0;
 
+	if (lpMultiByteStr == NULL) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
+
+	if (cbMultiByte == -1) {
+		cbMultiByte = (int)strlen(lpMultiByteStr);
+	}
+
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
 	switch (CodePage) {
 	case CP_THREAD_ACP:
@@ -114,6 +123,15 @@ WideCharToMultiByte (
 	UNREFERENCED_PARAMETER( lpUsedDefaultChar );
 
 	PAGED_CODE();
+
+	if (lpWideCharStr == NULL) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
+
+	if (cchWideChar == -1) {
+		cchWideChar = (int)wcslen(lpWideCharStr);
+	}
 
 	UNICODE_STRING Src;
 	Src.Buffer = (PWCH)lpWideCharStr;

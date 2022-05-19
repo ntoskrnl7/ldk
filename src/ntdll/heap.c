@@ -184,6 +184,7 @@ LdkFreeHeap (
     _Frees_ptr_opt_ PVOID BaseAddress
     )
 {
+	UNREFERENCED_PARAMETER(HeapHandle);
 	UNREFERENCED_PARAMETER(Flags);
 	if (BaseAddress) {
 		PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
