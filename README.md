@@ -101,7 +101,7 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/ldk@0.6.0")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.6.1")
 
 # add dependencies
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
