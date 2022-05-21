@@ -74,10 +74,12 @@ LdkAllocateHeap (
 	
 	union {
 		struct {
+#pragma warning(disable:4214)
 			ULONG Value0: 8;
 			ULONG Value1: 8;
 			ULONG Value2: 8;
 			ULONG Value3: 8;
+#pragma warning(default:4214)
 		} Part;
 		ULONG Value;
 	} Tag;
