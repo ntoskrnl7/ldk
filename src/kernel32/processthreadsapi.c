@@ -24,6 +24,7 @@ KSTART_ROUTINE LdkpThreadStartRoutine;
 #pragma alloc_text(PAGE, GetThreadPriorityBoost)
 #pragma alloc_text(PAGE, SetThreadPriorityBoost)
 #pragma alloc_text(PAGE, GetExitCodeThread)
+#pragma alloc_text(PAGE, ExitThread)
 #pragma alloc_text(PAGE, GetThreadTimes)
 #pragma alloc_text(PAGE, ExitProcess)
 #pragma alloc_text(PAGE, TerminateProcess)
@@ -341,7 +342,7 @@ ExitThread (
     _In_ DWORD dwExitCode
     )
 {
-	KdBreakPoint();
+	PAGED_CODE();
 	PsTerminateSystemThread( (NTSTATUS)dwExitCode );
 }
 

@@ -97,6 +97,52 @@ LocalFileTimeToFileTime(
 WINBASEAPI
 BOOL
 WINAPI
+LockFile(
+    _In_ HANDLE hFile,
+    _In_ DWORD dwFileOffsetLow,
+    _In_ DWORD dwFileOffsetHigh,
+    _In_ DWORD nNumberOfBytesToLockLow,
+    _In_ DWORD nNumberOfBytesToLockHigh
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+LockFileEx(
+    _In_ HANDLE hFile,
+    _In_ DWORD dwFlags,
+    _Reserved_ DWORD dwReserved,
+    _In_ DWORD nNumberOfBytesToLockLow,
+    _In_ DWORD nNumberOfBytesToLockHigh,
+    _Inout_ LPOVERLAPPED lpOverlapped
+    );
+WINBASEAPI
+BOOL
+WINAPI
+UnlockFile(
+    _In_ HANDLE hFile,
+    _In_ DWORD dwFileOffsetLow,
+    _In_ DWORD dwFileOffsetHigh,
+    _In_ DWORD nNumberOfBytesToUnlockLow,
+    _In_ DWORD nNumberOfBytesToUnlockHigh
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+UnlockFileEx(
+    _In_ HANDLE hFile,
+    _Reserved_ DWORD dwReserved,
+    _In_ DWORD nNumberOfBytesToUnlockLow,
+    _In_ DWORD nNumberOfBytesToUnlockHigh,
+    _Inout_ LPOVERLAPPED lpOverlapped
+    );
+
+
+
+WINBASEAPI
+BOOL
+WINAPI
 SetEndOfFile(
     _In_ HANDLE hFile
     );

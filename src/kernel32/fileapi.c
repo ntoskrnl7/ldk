@@ -19,6 +19,10 @@ IsThisARootDirectory (
 #pragma alloc_text(PAGE, CreateFileW)
 #pragma alloc_text(PAGE, ReadFile)
 #pragma alloc_text(PAGE, WriteFile)
+#pragma alloc_text(PAGE, LockFile)
+#pragma alloc_text(PAGE, LockFileEx)
+#pragma alloc_text(PAGE, UnlockFile)
+#pragma alloc_text(PAGE, UnlockFileEx)
 #pragma alloc_text(PAGE, FlushFileBuffers)
 #pragma alloc_text(PAGE, SetEndOfFile)
 #pragma alloc_text(PAGE, SetFilePointer)
@@ -1147,6 +1151,198 @@ LocalFileTimeToFileTime (
 }
 
 
+
+WINBASEAPI
+BOOL
+WINAPI
+LockFile (
+    _In_ HANDLE hFile,
+    _In_ DWORD dwFileOffsetLow,
+    _In_ DWORD dwFileOffsetHigh,
+    _In_ DWORD nNumberOfBytesToLockLow,
+	_In_ DWORD nNumberOfBytesToLockHigh
+    )
+{
+	PAGED_CODE();
+
+	if (LdkIsConsoleHandle( hFile )) {
+		LdkSetLastNTError( STATUS_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	LARGE_INTEGER ByteOffset;
+	ByteOffset.LowPart = dwFileOffsetLow;
+	ByteOffset.HighPart = dwFileOffsetHigh;
+
+	LARGE_INTEGER Length;
+	Length.LowPart = nNumberOfBytesToLockLow;
+	Length.HighPart = nNumberOfBytesToLockHigh;
+
+	IO_STATUS_BLOCK IoStatus;
+	NTSTATUS Status = ZwLockFile( hFile,
+								  NULL,
+								  NULL,
+								  NULL,
+								  &IoStatus,
+								  &ByteOffset,
+								  &Length,
+								  0,
+								  TRUE,
+								  TRUE );
+	if (Status == STATUS_PENDING) {
+		Status = ZwWaitForSingleObject( hFile,
+										FALSE,
+										NULL );
+		if (NT_SUCCESS(Status)) {
+			Status = IoStatus.Status;
+		}
+	}
+	if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+LockFileEx (
+    _In_ HANDLE hFile,
+    _In_ DWORD dwFlags,
+    _Reserved_ DWORD dwReserved,
+    _In_ DWORD nNumberOfBytesToLockLow,
+    _In_ DWORD nNumberOfBytesToLockHigh,
+    _Inout_ LPOVERLAPPED lpOverlapped
+    )
+{
+	PAGED_CODE();
+
+	if (LdkIsConsoleHandle( hFile )) {
+		LdkSetLastNTError( STATUS_INVALID_HANDLE );
+		return FALSE;
+	}
+	if (dwReserved) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+	lpOverlapped->Internal = (DWORD)STATUS_PENDING;
+
+	LARGE_INTEGER ByteOffset;
+    ByteOffset.LowPart = lpOverlapped->Offset;
+    ByteOffset.HighPart = lpOverlapped->OffsetHigh;
+
+	LARGE_INTEGER Length;
+	Length.LowPart = nNumberOfBytesToLockLow;
+	Length.HighPart = nNumberOfBytesToLockHigh;
+
+	NTSTATUS Status = ZwLockFile( hFile,
+								  lpOverlapped->hEvent,
+								  NULL,
+								  (ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
+								  (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+								  &ByteOffset,
+								  &Length,
+								  0,
+								  BooleanFlagOn(dwFlags, LOCKFILE_FAIL_IMMEDIATELY),
+								  BooleanFlagOn(dwFlags, LOCKFILE_EXCLUSIVE_LOCK) );
+	if (NT_SUCCESS(Status) && Status != STATUS_PENDING) {
+		return TRUE;
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+UnlockFile	(
+    _In_ HANDLE hFile,
+    _In_ DWORD dwFileOffsetLow,
+    _In_ DWORD dwFileOffsetHigh,
+    _In_ DWORD nNumberOfBytesToUnlockLow,
+    _In_ DWORD nNumberOfBytesToUnlockHigh
+    )
+{
+	PAGED_CODE();
+
+	if (LdkIsConsoleHandle( hFile )) {
+		LdkSetLastNTError( STATUS_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	LARGE_INTEGER ByteOffset;
+	ByteOffset.LowPart = dwFileOffsetLow;
+	ByteOffset.HighPart = dwFileOffsetHigh;
+
+	LARGE_INTEGER Length;
+	Length.LowPart = nNumberOfBytesToUnlockLow;
+	Length.HighPart = nNumberOfBytesToUnlockHigh;
+
+	IO_STATUS_BLOCK IoStatus;
+	NTSTATUS Status = ZwUnlockFile( hFile,
+								    &IoStatus,
+									&ByteOffset,
+									&Length,
+									0 );
+	if (Status == STATUS_PENDING) {
+		Status = ZwWaitForSingleObject( hFile,
+										FALSE,
+										NULL );
+		if (NT_SUCCESS(Status)) {
+			Status = IoStatus.Status;
+		}
+	}
+	if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+UnlockFileEx(
+    _In_ HANDLE hFile,
+    _Reserved_ DWORD dwReserved,
+    _In_ DWORD nNumberOfBytesToUnlockLow,
+    _In_ DWORD nNumberOfBytesToUnlockHigh,
+    _Inout_ LPOVERLAPPED lpOverlapped
+    )
+{
+	PAGED_CODE();
+
+	if (LdkIsConsoleHandle( hFile )) {
+		LdkSetLastNTError( STATUS_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	if (dwReserved) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+    LARGE_INTEGER ByteOffset;
+	ByteOffset.LowPart = lpOverlapped->Offset;
+	ByteOffset.HighPart = lpOverlapped->OffsetHigh;
+
+    LARGE_INTEGER Length;
+	Length.LowPart = nNumberOfBytesToUnlockLow;
+	Length.HighPart = nNumberOfBytesToUnlockHigh;
+
+	NTSTATUS Status = ZwUnlockFile( hFile,
+						   			(PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+						   			&ByteOffset,
+						   			&Length,
+						   			0 );
+	if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
+}
 
 WINBASEAPI
 BOOL
