@@ -2,6 +2,11 @@
 
 
 
+#define LDK_TLS_SLOTS_SIZE			1024
+#define LDK_FLS_SLOTS_SIZE			1024
+
+
+
 #ifndef Add2Ptr
 #define Add2Ptr(P,I) ((PVOID)((PUCHAR)(P) + (I)))
 #endif

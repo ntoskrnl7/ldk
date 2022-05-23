@@ -71,6 +71,7 @@ typedef struct _LDK_PEB {
 
 	RTL_BITMAP FlsBitmap;
 	ULONG FlsBitmapBits[32];
+     PFLS_CALLBACK_FUNCTION FlsCallbacks[LDK_FLS_SLOTS_SIZE];
 
 	ERESOURCE ModuleListResource;
 	LIST_ENTRY ModuleListHead;

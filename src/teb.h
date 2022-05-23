@@ -2,26 +2,16 @@
 
 #include "ntdll/ntdll.h"
 
-#define LDK_TLS_SLOTS_SIZE		1024
-#define LDK_FLS_SLOTS_SIZE		1024
+#define STATIC_UNICODE_BUFFER_LENGTH 1024
 
-typedef struct _LDK_FLS_SLOT {
-	PVOID Data;
-	PFLS_CALLBACK_FUNCTION Callback;
-} LDK_FLS_SLOT, *PLDK_FLS_SLOT;
-
-
-
-#define STATIC_UNICODE_BUFFER_LENGTH 261
 typedef struct _LDK_TEB {
 
 	EX_RUNDOWN_REF RundownProtect;
 
 	LIST_ENTRY ActiveLinks;
 
-	PLDK_FLS_SLOT FlsSlots;
-
-	PVOID* TlsSlots;
+	PVOID TlsSlots[LDK_TLS_SLOTS_SIZE];
+	PVOID FlsSlots[LDK_FLS_SLOTS_SIZE];
 
 	DWORD LastErrorValue;
 

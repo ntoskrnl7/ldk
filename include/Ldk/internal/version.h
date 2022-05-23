@@ -25,7 +25,7 @@ Environment:
 #define _LDK_VERSION_H_
 
 #define LDK_VERSION_MAJOR 0
-#define LDK_VERSION_MINOR 6
-#define LDK_VERSION_PATCH 3
+#define LDK_VERSION_MINOR 7
+#define LDK_VERSION_PATCH 0
 
 #endif // _LDK_VERSION_H_

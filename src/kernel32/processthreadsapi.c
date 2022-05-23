@@ -45,6 +45,14 @@ typedef struct _LDK_THREAD_CONTEXT {
 PAGED_LOOKASIDE_LIST LdkpThreadContextLookaside;
 
 
+
+VOID
+LdkpInvokeFlsCallback (
+	_Inout_ PLDK_TEB Teb
+	);
+
+
+
 NTSTATUS
 LdkpInitializeThreadContexts (
 	VOID
@@ -82,10 +90,14 @@ LdkpThreadStartExpandStackAndCallout (
 {
 	PAGED_CODE();
 
-	Context->ThreadStartRoutine( Context->lpThreadParameter );
+	LPVOID lpThreadParameter = Context->lpThreadParameter;
 
 	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
 								Context );
+
+	Context->ThreadStartRoutine( lpThreadParameter );
+
+	LdkpInvokeFlsCallback( NtCurrentTeb() );
 }
 
 _IRQL_requires_same_
@@ -110,10 +122,14 @@ LdkpThreadStartRoutine (
 		}
 	}
 
-	Context->ThreadStartRoutine( Context->lpThreadParameter );
+	LPVOID lpThreadParameter = Context->lpThreadParameter;
 
 	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
 								Context );
+
+	Context->ThreadStartRoutine( lpThreadParameter );
+
+	LdkpInvokeFlsCallback( NtCurrentTeb() );
 }
 
 WINBASEAPI
@@ -343,6 +359,9 @@ ExitThread (
     )
 {
 	PAGED_CODE();
+
+	LdkpInvokeFlsCallback( NtCurrentTeb() );
+
 	PsTerminateSystemThread( (NTSTATUS)dwExitCode );
 }
 

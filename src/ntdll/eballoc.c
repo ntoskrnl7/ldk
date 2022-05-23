@@ -16,8 +16,11 @@ RtlAcquirePebLock (
     VOID
     )
 {
+    PAGED_CODE();
+
     KeEnterCriticalRegion();
-    ExAcquireResourceExclusiveLite(&LdkCurrentPeb()->ModuleListResource, TRUE);
+    ExAcquireResourceExclusiveLite( &LdkCurrentPeb()->ModuleListResource,
+                                    TRUE );
 }
 
 VOID
@@ -26,6 +29,8 @@ RtlReleasePebLock (
     VOID
     )
 {
-	ExReleaseResourceLite(&LdkCurrentPeb()->ModuleListResource);
+    PAGED_CODE();
+
+	ExReleaseResourceLite( &LdkCurrentPeb()->ModuleListResource );
 	KeLeaveCriticalRegion();
 }

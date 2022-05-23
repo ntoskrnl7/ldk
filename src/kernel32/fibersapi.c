@@ -17,30 +17,29 @@ FlsAlloc (
     _In_opt_ PFLS_CALLBACK_FUNCTION lpCallback
     )
 {
-	DWORD index = FLS_OUT_OF_INDEXES;
+	DWORD Index = FLS_OUT_OF_INDEXES;
 
 	PAGED_CODE();
 
 	RtlAcquirePebLock();
 	try {
-		index = RtlFindClearBitsAndSet( &NtCurrentPeb()->FlsBitmap,
+		Index = RtlFindClearBitsAndSet( &NtCurrentPeb()->FlsBitmap,
 										1,
 										0 );
-		if (index == 0xFFFFFFFF) {
+		if (Index == 0xFFFFFFFF) {
 			LdkSetLastNTError( STATUS_NO_MEMORY );
 		} else {
-			PLDK_FLS_SLOT slot = &NtCurrentTeb()->FlsSlots[index];
 #pragma warning(disable:4054 4055)
-			InterlockedExchangePointer( (PVOID *)&slot->Callback,
+			InterlockedExchangePointer( (PVOID *)&NtCurrentPeb()->FlsCallbacks[Index],
 										(PVOID)lpCallback );
 #pragma warning(default:4054 4055)
-			InterlockedExchangePointer( &slot->Data,
+			InterlockedExchangePointer( &NtCurrentTeb()->FlsSlots[Index],
 										NULL );
 		}
 	} finally {
 		RtlReleasePebLock();
 	}
-	return index;
+	return Index;
 }
 
 WINBASEAPI
@@ -51,7 +50,7 @@ FlsGetValue (
     )
 {
 	if (dwFlsIndex < LDK_FLS_SLOTS_SIZE) {
-		return NtCurrentTeb()->FlsSlots[dwFlsIndex].Data;
+		return NtCurrentTeb()->FlsSlots[dwFlsIndex];
 	}
 	LdkSetLastNTError( STATUS_INVALID_PARAMETER );
 	return NULL;
@@ -66,13 +65,18 @@ FlsSetValue (
     )
 {
 	if (dwFlsIndex < LDK_FLS_SLOTS_SIZE) {
-		InterlockedExchangePointer( &NtCurrentTeb()->FlsSlots[dwFlsIndex].Data,
+		InterlockedExchangePointer( &NtCurrentTeb()->FlsSlots[dwFlsIndex],
 									lpFlsData );
 		return TRUE;
 	}
-	LdkSetLastNTError(STATUS_INVALID_PARAMETER);
+	LdkSetLastNTError( STATUS_INVALID_PARAMETER );
 	return FALSE;
 }
+
+PTEB
+LdkGetNextTebRundownProtection (
+	_In_ PTEB Teb
+	);
 
 WINBASEAPI
 BOOL
@@ -81,8 +85,7 @@ FlsFree (
     _In_ DWORD dwFlsIndex
     )
 {
-	BOOLEAN index = FALSE;
-	PRTL_BITMAP bitmap;
+	BOOLEAN Found = FALSE;
 
 	PAGED_CODE();
 
@@ -91,33 +94,39 @@ FlsFree (
 		if (dwFlsIndex >= LDK_FLS_SLOTS_SIZE) {
 			leave;
 		}
-		bitmap = &NtCurrentPeb()->FlsBitmap;
-		index = RtlAreBitsSet( bitmap,
+		PRTL_BITMAP Bitmap = &NtCurrentPeb()->FlsBitmap;
+		Found = RtlAreBitsSet( Bitmap,
 							   dwFlsIndex,
 							   1 );
-		if (index) {
-			PLDK_TEB Teb = NtCurrentTeb();
-			if (ExAcquireRundownProtection( &Teb->RundownProtect )) {
-				PVOID data;
-				PFLS_CALLBACK_FUNCTION callback;
-				PLDK_FLS_SLOT slot = &Teb->FlsSlots[dwFlsIndex];
+		if (Found) {
+			PFLS_CALLBACK_FUNCTION Callback;
 #pragma warning(disable:4055)
-				callback = (PFLS_CALLBACK_FUNCTION)InterlockedExchangePointer( (PVOID *)&slot->Callback,
-																			   NULL );
+			Callback = (PFLS_CALLBACK_FUNCTION)InterlockedExchangePointer( (PVOID *)&NtCurrentPeb()->FlsCallbacks[dwFlsIndex],
+																		   NULL );
 #pragma warning(default:4055)
-				data = InterlockedExchangePointer( &slot->Data,
-												   NULL );
-				if (callback) {
-					callback( data );
+			if (Callback) {
+				PTEB InitialTeb = NtCurrentTeb();
+				if (! ExAcquireRundownProtection( &InitialTeb->RundownProtect )) {
+					return FALSE;
 				}
-				ExReleaseRundownProtection(&Teb->RundownProtect);
+				PTEB Teb = InitialTeb;
+				PVOID Data;
+				do {
+					Data = InterlockedExchangePointer( &Teb->FlsSlots[dwFlsIndex],
+													   NULL );
+					if (Data) {
+						Callback( Data );
+					}
+					Teb = LdkGetNextTebRundownProtection( Teb );
+				} while (Teb != InitialTeb);
+				ExReleaseRundownProtection( &Teb->RundownProtect );
 			}
-			RtlClearBits( bitmap,
+			RtlClearBits( Bitmap,
 						  dwFlsIndex,
 						  1 );
 		}
 	} finally {
 		RtlReleasePebLock();
 	}
-	return index;
+	return Found;
 }

@@ -21,6 +21,11 @@ ThreadPoolTest (
     );
 
 BOOLEAN
+FibersTest (
+    VOID
+    );
+
+BOOLEAN
 ConditionVariableTest (
     VOID
     );
@@ -92,6 +97,7 @@ DriverEntry (
         NtdllEnvironmentVariableTest,
         KeyedEventTest,
         LdrTest,
+        FibersTest,
         FileTest,
         CurrentDirectoryTest,
         EnvironmentVariableTest,

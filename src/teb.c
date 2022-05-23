@@ -5,9 +5,6 @@ LIST_ENTRY LdkpTebListHead;
 EX_SPIN_LOCK LdkpTebListLock;
 
 NPAGED_LOOKASIDE_LIST LdkpTebLookaside;
-NPAGED_LOOKASIDE_LIST LdkpTebTlsLookaside;
-NPAGED_LOOKASIDE_LIST LdkpTebFlsLookaside;
-
 
 SLIST_HEADER LdkpTemporaryTebListHead;
 
@@ -71,8 +68,9 @@ LdkDeleteTeb (
 	_In_ PLDK_TEB Teb
 	)
 {
-	LdkpTerminateTeb(Teb);
-	ExFreeToNPagedLookasideList(&LdkpTebLookaside, Teb);
+	LdkpTerminateTeb( Teb );
+	ExFreeToNPagedLookasideList( &LdkpTebLookaside,
+								 Teb );
 }
 
 PLDK_TEB
@@ -103,6 +101,29 @@ LdkLookTebByThread (
 	return NULL;
 }
 
+PTEB
+LdkGetNextTebRundownProtection (
+	_In_ PTEB Teb
+	)
+{
+	PTEB Next;
+	KIRQL OldIrql= ExAcquireSpinLockShared( &LdkpTebListLock );	
+	if (Teb->ActiveLinks.Flink == &LdkpTebListHead) {
+		Next = CONTAINING_RECORD(LdkpTebListHead.Flink, LDK_TEB, ActiveLinks);
+	} else {
+		Next = CONTAINING_RECORD(Teb->ActiveLinks.Flink, LDK_TEB, ActiveLinks);
+	}
+	ExReleaseSpinLockShared( &LdkpTebListLock,
+							 OldIrql );
+
+	ExReleaseRundownProtection( &Teb->RundownProtect );
+
+	if (ExAcquireRundownProtection( &Next->RundownProtect )) {
+		return Next;
+	}
+	return NULL;
+}
+
 PLDK_TEB
 LDKAPI
 LdkCurrentTeb (
@@ -114,7 +135,8 @@ LdkCurrentTeb (
 	// 동기화 후 목록을 순회하는 행동은 너무 느리므로 이러한 방법을 적용하였습니다.
 	//
 	ULONG_PTR LowLimit, HighLimit;
-	IoGetStackLimits(&LowLimit, &HighLimit);
+	IoGetStackLimits( &LowLimit,
+					  &HighLimit );
 	
 	PLDK_TEB Teb = *(PLDK_TEB *)LowLimit;
 	if (Teb && MmIsAddressValid( Teb ) && Teb->Thread == PsGetCurrentThread()) {
@@ -172,23 +194,7 @@ LdkpInitializeTebMap (
 									 NULL,
 									 0,
 									 sizeof(LDK_TEB),
-									 'beTA',
-									 0 );
-
-	ExInitializeNPagedLookasideList( &LdkpTebTlsLookaside,
-									 NULL,
-									 NULL,
-									 0,
-									 LDK_TLS_SLOTS_SIZE * sizeof(PVOID),
-									 'slTT',
-									 0 );
-
-	ExInitializeNPagedLookasideList( &LdkpTebFlsLookaside,
-									 NULL,
-									 NULL,
-									 0,
-									 LDK_FLS_SLOTS_SIZE * sizeof(LDK_FLS_SLOT),
-									 'slFT',
+									 'beTK',
 									 0 );
 
 	return STATUS_SUCCESS;
@@ -205,12 +211,10 @@ LdkpInvokeFlsCallback (
 		for (DWORD i = 0; i < LDK_FLS_SLOTS_SIZE; i++) {
 			PVOID Data;
 			PFLS_CALLBACK_FUNCTION Callback;
-			PLDK_FLS_SLOT Slot = &Teb->FlsSlots[i];
 #pragma warning(disable:4055)
-			Callback = (PFLS_CALLBACK_FUNCTION)InterlockedExchangePointer( (PVOID *)&Slot->Callback,
-																		   NULL );
+			Callback = NtCurrentPeb()->FlsCallbacks[i];
 #pragma warning(default:4055)
-			Data = InterlockedExchangePointer( &Slot->Data,
+			Data = InterlockedExchangePointer( &Teb->FlsSlots[i],
 											   NULL );
 			if (Callback) {
 				Callback(Data);
@@ -268,8 +272,6 @@ LdkpTerminateTebMap (
 	};
 
 	ExDeleteNPagedLookasideList( &LdkpTebLookaside );
-	ExDeleteNPagedLookasideList( &LdkpTebTlsLookaside );
-	ExDeleteNPagedLookasideList( &LdkpTebFlsLookaside );
 }
 
 NTSTATUS
@@ -285,22 +287,11 @@ LdkpInitializeTeb (
 
 	Teb->Thread = Thread;
 
-	Teb->TlsSlots = ExAllocateFromNPagedLookasideList( &LdkpTebTlsLookaside );
-	if (!Teb->TlsSlots) {
-		KdBreakPoint();
-		LdkpTerminateTeb( Teb );
-		return STATUS_INSUFFICIENT_RESOURCES;
-	}
 	RtlZeroMemory( Teb->TlsSlots,
-				   LDK_TLS_SLOTS_SIZE * sizeof(PVOID) );
+				   sizeof(Teb->TlsSlots) );
 
-	Teb->FlsSlots = ExAllocateFromNPagedLookasideList( &LdkpTebFlsLookaside );
-	if (!Teb->FlsSlots) {
-		KdBreakPoint();
-		LdkpTerminateTeb( Teb );
-		return STATUS_INSUFFICIENT_RESOURCES;
-	}
-	RtlZeroMemory(Teb->FlsSlots, LDK_FLS_SLOTS_SIZE * sizeof(LDK_FLS_SLOT));
+	RtlZeroMemory( Teb->FlsSlots,
+				   sizeof(Teb->FlsSlots) );
 
 	KeInitializeSemaphore( &Teb->KeyedWaitSemaphore,
 						   0L,
@@ -327,18 +318,10 @@ LdkpTerminateTeb (
 {
 	ExWaitForRundownProtectionRelease( &Teb->RundownProtect );
 	ExRundownCompleted( &Teb->RundownProtect );
+	RtlZeroMemory( Teb->TlsSlots,
+				   sizeof(Teb->TlsSlots) );
 
-	if (Teb->TlsSlots) {
-		ExFreeToNPagedLookasideList( &LdkpTebTlsLookaside,
-									 Teb->TlsSlots );
-		Teb->TlsSlots = NULL;
-	}
-
-	if (Teb->FlsSlots) {
-		ExFreeToNPagedLookasideList( &LdkpTebFlsLookaside,
-									 Teb->FlsSlots );
-		Teb->FlsSlots = NULL;
-	}
-
+	RtlZeroMemory( Teb->FlsSlots,
+				   sizeof(Teb->FlsSlots) );
 	Teb->Thread = NULL;
 }
