@@ -24,6 +24,9 @@ LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
 LDK_INITIALIZE_COMPONENT LdkpNtdllInitialize;
 LDK_TERMINATE_COMPONENT LdkpNtdllTerminate;
 
+LDK_INITIALIZE_COMPONENT LdkpInitializeHeapList;
+LDK_TERMINATE_COMPONENT LdkpTerminateHeapList;
+
 
 
 #ifdef ALLOC_PRAGMA
@@ -99,15 +102,23 @@ LdkInitialize (
 
 	LdrpInLdrInit = TRUE;
 
-	NTSTATUS Status = LdkpInitializePeb( DriverObject,
-										 RegistryPath );
+
+    NTSTATUS Status = LdkpInitializeHeapList();
+    if (! NT_SUCCESS(Status)) {
+        goto Cleanup;
+    }
+
+	Status = LdkpInitializePeb( DriverObject,
+								RegistryPath );
 	if (! NT_SUCCESS(Status)) {
+		LdkpTerminateHeapList();
 		goto Cleanup;
 	}
 
 	Status = LdkpInitializeTebMap();
 	if (! NT_SUCCESS(Status)) {
 		LdkpTerminatePeb();
+		LdkpTerminateHeapList();
 		goto Cleanup;
 	}
 
@@ -115,6 +126,7 @@ LdkInitialize (
 	if (! NT_SUCCESS(Status)) {
 		LdkpTerminateTebMap();
 		LdkpTerminatePeb();
+		LdkpTerminateHeapList();
 		goto Cleanup;
 	}
 
@@ -123,6 +135,7 @@ LdkInitialize (
 		LdkpNtdllTerminate();
 		LdkpTerminateTebMap();
 		LdkpTerminatePeb();
+		LdkpTerminateHeapList();
 		goto Cleanup;
 	}
 
@@ -171,6 +184,8 @@ LdkTerminate (
 
 	LdkpTerminateTebMap();
 	LdkpTerminatePeb();
+	LdkpTerminateHeapList();
+
 	ClearFlag(LdkGlobalFlags, LDK_FLAG_INITIALIZED);
 
 	LdkUnlockGlobalFlags();

@@ -1,6 +1,25 @@
 ﻿#include "ntdll.h"
 
+
+NTSTATUS
+LdkpInitializeHeapList (
+	VOID
+	);
+
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(INIT, LdkpInitializeHeapList)
+#endif
+
+
+
+#ifndef LDK_ENABLE_HEAP_STACK_TRACE
+#define LDK_ENABLE_HEAP_STACK_TRACE	0
+#endif
+
 ULONG NtdllBaseTag;
+
+
 
 //
 // 커널에서도 힙을 사용할 수 있으나 NtAllocateVirtualMemory루틴이 사용되었기때문에
@@ -8,20 +27,68 @@ ULONG NtdllBaseTag;
 // (힙 관련 루틴 : RtlCreateHeap, RtlDestroyHeap, RtlAllocateHeap, RtlFreeHeap 등)
 // 
 
-typedef struct _LDK_HEAP_IMP_HEADER {
+typedef struct _LDK_HEAP_HEADER {
 	HANDLE HeapHandle;
 	ULONG Tag;
 	SIZE_T Size;
-} LDK_HEAP_IMP_HEADER, *PLDK_HEAP_IMP_HEADER;
+	LIST_ENTRY Links;
+#if LDK_ENABLE_HEAP_STACK_TRACE
+	CONTEXT ContextRecord;
+	PVOID StackData[1024];
+#endif
+} LDK_HEAP_HEADER, *PLDK_HEAP_HEADER;
 
-#define LDK_HEAP_IMP_HEADER_SIZE		    sizeof(LDK_HEAP_IMP_HEADER)
+#define LDK_HEAP_HEADER_SIZE		    sizeof(LDK_HEAP_HEADER)
 
-#define LDK_HEAP_IMP_GET_HEADER(H)		    ((PLDK_HEAP_IMP_HEADER)(((ULONG_PTR)(H)) - LDK_HEAP_IMP_HEADER_SIZE))
-#define LDK_HEAP_IMP_GET_BUFFER(H)		    Add2Ptr((H), LDK_HEAP_IMP_HEADER_SIZE)
+#define LDK_HEAP_IMP_GET_HEADER(H)		    ((PLDK_HEAP_HEADER)(((ULONG_PTR)(H)) - LDK_HEAP_HEADER_SIZE))
+#define LDK_HEAP_IMP_GET_BUFFER(H)		    Add2Ptr((H), LDK_HEAP_HEADER_SIZE)
 #define LDK_HEAP_IMP_GET_BUFFER_SIZE(H)	
 
 
+
+EX_SPIN_LOCK LdkpHeapListLock;
+LIST_ENTRY LdkpHeapListHead;
+
+NTSTATUS
+LdkpInitializeHeapList (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+	LdkpHeapListLock = 0;
+	InitializeListHead( &LdkpHeapListHead );
+	return STATUS_SUCCESS;
+}
+
+
+VOID
+LdkpTerminateHeapList (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+	KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpHeapListLock );
+
+	PLIST_ENTRY Entry = RemoveTailList( &LdkpHeapListHead );
+	PLDK_HEAP_HEADER Header;
+	while (Entry != &LdkpHeapListHead) {
+		Header = CONTAINING_RECORD(Entry, LDK_HEAP_HEADER, Links);
+		Entry = RemoveHeadList( &LdkpHeapListHead );
+		ExFreePoolWithTag( Header,
+						   Header->Tag );
+	}
+
+	ExReleaseSpinLockExclusive( &LdkpHeapListLock,
+								OldIrql );
+
+}
+
+
+
 LONG LdkpHeapHandle = 0;
+
 
 
 _Must_inspect_result_
@@ -70,8 +137,6 @@ LdkAllocateHeap (
     _In_ SIZE_T Size
     )
 {
-	PLDK_HEAP_IMP_HEADER Buffer;
-	
 	union {
 		struct {
 #pragma warning(disable:4214)
@@ -107,22 +172,52 @@ LdkAllocateHeap (
 	Tag.Part.Value1 += 'A';
 	Tag.Part.Value2 += 'A';
 	Tag.Part.Value3 += 'A';
-	Buffer = ExAllocatePoolWithTag( LdkpDefaultPoolType,
-									Size + LDK_HEAP_IMP_HEADER_SIZE,
-									Tag.Value );
-	if (! Buffer) {
+
+	PLDK_HEAP_HEADER Header = ExAllocatePoolWithTag( LdkpDefaultPoolType,
+														 Size + LDK_HEAP_HEADER_SIZE,
+														 Tag.Value );
+	if (! Header) {
 		return NULL;
 	}
+	Header->HeapHandle = HeapHandle;
+	Header->Tag = Tag.Value;
+	Header->Size = Size;
 
-	Buffer->HeapHandle = HeapHandle;
-	Buffer->Tag = Tag.Value;
-	Buffer->Size = Size;
-	
+#if LDK_ENABLE_HEAP_STACK_TRACE
+	RtlCaptureContext( &Header->ContextRecord );
+
+    ULONG_PTR Top;
+    ULONG_PTR Bottom;
+    IoGetStackLimits( &Bottom,
+					  &Top );
+	ULONG_PTR Sp
+#if defined(_AMD64__)
+		= (ULONG_PTR)Header->ContextRecord.Rsp;
+#elif defined(_X86_)
+		= (ULONG_PTR)Header->ContextRecord.Esp;
+#elif defined(_ARM_) || defined(_ARM64_)
+		= (ULONG_PTR)Header->ContextRecord.Sp;
+#else
+#error "Not Supported Target Architecture"
+#endif
+	SIZE_T Length = min((SIZE_T)(Top - Sp), sizeof(Header->StackData));
+	RtlCopyMemory( Header->StackData,
+				   (PVOID)Sp,
+				   Length );
+#endif // LDK_ENABLE_HEAP_STACK_TRACE
+
 	if (FlagOn(Flags, HEAP_ZERO_MEMORY)) {
-		RtlZeroMemory(LDK_HEAP_IMP_GET_BUFFER(Buffer), Size);
+		RtlZeroMemory( LDK_HEAP_IMP_GET_BUFFER(Header),
+					   Size );
 	}
 
-	return LDK_HEAP_IMP_GET_BUFFER(Buffer);
+	KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpHeapListLock );
+	InsertTailList( &LdkpHeapListHead,
+					&Header->Links );
+	ExReleaseSpinLockExclusive( &LdkpHeapListLock,
+								OldIrql );
+
+	return LDK_HEAP_IMP_GET_BUFFER(Header);
 }
 
 _Must_inspect_result_
@@ -142,7 +237,7 @@ LdkReAllocateHeap (
 	}
 
 	PVOID NewBuffer;
-	PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
+	PLDK_HEAP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
 	SIZE_T OldSize;
 
 	if (Header->HeapHandle != HeapHandle) {
@@ -189,7 +284,11 @@ LdkFreeHeap (
 	UNREFERENCED_PARAMETER(HeapHandle);
 	UNREFERENCED_PARAMETER(Flags);
 	if (BaseAddress) {
-		PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
+		PLDK_HEAP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
+		KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpHeapListLock );
+		RemoveEntryList( &Header->Links );
+		ExReleaseSpinLockExclusive( &LdkpHeapListLock,
+									OldIrql );
 		ExFreePoolWithTag( Header,
 						   Header->Tag );
 	}
@@ -206,7 +305,7 @@ LdkSizeHeap (
 {
 	UNREFERENCED_PARAMETER(Flags);
 	if (ARGUMENT_PRESENT(BaseAddress)) {
-		PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
+		PLDK_HEAP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
 		if (Header->HeapHandle != HeapHandle) {
 			return (SIZE_T)-1;
 		}
@@ -231,7 +330,7 @@ LdkValidateHeap (
 	}
 
 	if (MmIsAddressValid( (PVOID)BaseAddress) ) {
-		PLDK_HEAP_IMP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
+		PLDK_HEAP_HEADER Header = LDK_HEAP_IMP_GET_HEADER(BaseAddress);
 		return (Header->HeapHandle == HeapHandle);
 	}
 
