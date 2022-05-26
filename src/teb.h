@@ -35,7 +35,9 @@ typedef struct _LDK_TEB {
 	PVOID TlsSlots[LDK_TLS_SLOTS_SIZE];
 	PVOID FlsSlots[LDK_FLS_SLOTS_SIZE];
 
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
 	struct _LDK_DISPATCH_EXCEPTION_STACK_VARIABLES* OldDispatchExceptionStackVariables;
+#endif
 
 	SLIST_ENTRY TempLinks;
 

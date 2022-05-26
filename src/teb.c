@@ -351,8 +351,11 @@ LdkpTerminateTeb (
 	RtlZeroMemory( Teb->FlsSlots,
 				   sizeof(Teb->FlsSlots) );
 	Teb->Thread = NULL;
+
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
 	if (Teb->OldDispatchExceptionStackVariables) {
 		LdkFreeDispatchExceptionStackVariables( Teb->OldDispatchExceptionStackVariables );
 		Teb->OldDispatchExceptionStackVariables = NULL;
 	}
+#endif
 }
