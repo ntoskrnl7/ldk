@@ -2,6 +2,8 @@
 
 **L**oad **D**ll into **K**ernel space
 
+![GitHub](https://img.shields.io/github/license/ntoskrnl7/ldk) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/ntoskrnl7/ldk) ![Windows 7+](https://img.shields.io/badge/Windows-7+-red.svg) ![Visual Studio 2017+](https://img.shields.io/badge/Visual%20Studio-2017+-orange.svg) ![CMake 3.14+](https://img.shields.io/badge/CMake-3.14+-yellow.svg)
+
 ## Overview
 
 - 이 프로젝트는 사용자 모드 Dll을 Kernel 영역에 로드하여 커널 드라이버에서 Dll의 코드를 직접 호출할 수 있도록 도와줍니다.
