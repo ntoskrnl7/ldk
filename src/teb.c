@@ -139,7 +139,12 @@ LdkCurrentTeb (
 					  &HighLimit );
 	
 	PLDK_TEB Teb = *(PLDK_TEB *)LowLimit;
-	if (Teb && MmIsAddressValid( Teb ) && Teb->Thread == PsGetCurrentThread()) {
+
+	if (Teb &&
+		MmIsAddressValid( Teb ) &&
+		MmIsAddressValid(Add2Ptr(Teb, FIELD_OFFSET(LDK_TEB, Thread))) &&
+		Teb->Thread == PsGetCurrentThread()
+		) {
 		return Teb;
 	}
 
@@ -178,12 +183,25 @@ LdkCurrentTeb (
 	return Teb;
 }
 
+
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+LDK_INITIALIZE_COMPONENT LdkpInitializeDispatchExceptionStackVariables;
+LDK_TERMINATE_COMPONENT LdkpTerminateDispatchExceptionStackVariables;
+#endif
+
 NTSTATUS
 LdkpInitializeTebMap (
 	VOID
 	) 
 {
 	PAGED_CODE();
+
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+	NTSTATUS Status = LdkpInitializeDispatchExceptionStackVariables();
+	if (!NT_SUCCESS(Status)) {
+		return Status;
+	}
+#endif
 
 	LdkpTebListLock = 0;
 	InitializeListHead( &LdkpTebListHead );
@@ -272,6 +290,8 @@ LdkpTerminateTebMap (
 	};
 
 	ExDeleteNPagedLookasideList( &LdkpTebLookaside );
+
+	LdkpTerminateDispatchExceptionStackVariables();
 }
 
 NTSTATUS
@@ -312,6 +332,11 @@ LdkpInitializeTeb (
 }
 
 VOID
+LdkFreeDispatchExceptionStackVariables (
+    _In_ PVOID OldVariables
+    );
+
+VOID
 LdkpTerminateTeb (
 	_Inout_ PLDK_TEB Teb
 	)
@@ -324,4 +349,8 @@ LdkpTerminateTeb (
 	RtlZeroMemory( Teb->FlsSlots,
 				   sizeof(Teb->FlsSlots) );
 	Teb->Thread = NULL;
+	if (Teb->OldDispatchExceptionStackVariables) {
+		LdkFreeDispatchExceptionStackVariables( Teb->OldDispatchExceptionStackVariables );
+		Teb->OldDispatchExceptionStackVariables = NULL;
+	}
 }

@@ -91,11 +91,12 @@ LdkpThreadStartExpandStackAndCallout (
 	PAGED_CODE();
 
 	LPVOID lpThreadParameter = Context->lpThreadParameter;
+	PTHREAD_START_ROUTINE ThreadStartRoutine = Context->ThreadStartRoutine;
 
 	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
 								Context );
 
-	Context->ThreadStartRoutine( lpThreadParameter );
+	ThreadStartRoutine( lpThreadParameter );
 
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
 }
@@ -123,11 +124,12 @@ LdkpThreadStartRoutine (
 	}
 
 	LPVOID lpThreadParameter = Context->lpThreadParameter;
+	PTHREAD_START_ROUTINE ThreadStartRoutine = Context->ThreadStartRoutine;
 
 	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
 								Context );
 
-	Context->ThreadStartRoutine( lpThreadParameter );
+	ThreadStartRoutine( lpThreadParameter );
 
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
 }
@@ -153,17 +155,6 @@ CreateThread (
 		return NULL;
 	}
 
-	PLDK_THREAD_CONTEXT Context = ExAllocateFromPagedLookasideList( &LdkpThreadContextLookaside );
-	if (! Context) {
-		LdkSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
-		return NULL;
-	}
-
-	Context->dwCreationFlags = dwCreationFlags;
-	Context->dwStackSize = dwStackSize;
-	Context->ThreadStartRoutine = lpStartAddress;
-	Context->lpThreadParameter = lpParameter;
-
 	OBJECT_ATTRIBUTES ObjectAttributes;
 	InitializeObjectAttributes( &ObjectAttributes,
 								NULL,
@@ -178,17 +169,25 @@ CreateThread (
 		}
 	}
 
-	NTSTATUS Status;
+	PLDK_THREAD_CONTEXT Context = ExAllocateFromPagedLookasideList( &LdkpThreadContextLookaside );
+	if (! Context) {
+		LdkSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
+		return NULL;
+	}
+	Context->dwCreationFlags = dwCreationFlags;
+	Context->dwStackSize = dwStackSize;
+	Context->ThreadStartRoutine = lpStartAddress;
+	Context->lpThreadParameter = lpParameter;
+
 	HANDLE ThreadHandle;
 	CLIENT_ID ClientId;
-
-	Status = PsCreateSystemThread( &ThreadHandle,
-								   THREAD_ALL_ACCESS,
-								   &ObjectAttributes,
-								   NULL,
-								   &ClientId,
-								   LdkpThreadStartRoutine,
-								   Context );
+	NTSTATUS Status = PsCreateSystemThread( &ThreadHandle,
+											THREAD_ALL_ACCESS,
+											&ObjectAttributes,
+											NULL,
+											&ClientId,
+											LdkpThreadStartRoutine,
+											Context );
 	if (! NT_SUCCESS(Status)) {
 		ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
 									Context );
@@ -213,27 +212,25 @@ OpenThread (
     _In_ DWORD dwThreadId
     )
 {
-    NTSTATUS Status;
+	PAGED_CODE();
+
     OBJECT_ATTRIBUTES ObjectAttributes;
-    HANDLE Handle;
-    CLIENT_ID ClientId;
-
-    ClientId.UniqueThread = (HANDLE)LongToHandle(dwThreadId);
-    ClientId.UniqueProcess = (HANDLE)NULL;
-
     InitializeObjectAttributes( &ObjectAttributes,
 								NULL,
         						(bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE,
         						NULL,
 								NULL );
-    Status = ZwOpenThread( &Handle,
-						   (ACCESS_MASK)dwDesiredAccess,
-						   &ObjectAttributes,
-						   &ClientId );
+    CLIENT_ID ClientId;
+    ClientId.UniqueThread = LongToHandle(dwThreadId);
+    ClientId.UniqueProcess = NULL;
+    HANDLE Handle;
+    NTSTATUS Status = ZwOpenThread( &Handle,
+						   			(ACCESS_MASK)dwDesiredAccess,
+						   			&ObjectAttributes,
+						   			&ClientId );
     if (NT_SUCCESS(Status)) {
 		return Handle;
     }
-    
 	LdkSetLastNTError( Status );
 	return NULL;
 }
@@ -245,23 +242,19 @@ GetThreadPriority (
     _In_ HANDLE hThread
     )
 {
-	NTSTATUS Status;
-	THREAD_BASIC_INFORMATION BasicInformation;
-	int BasePriority;
-
 	PAGED_CODE();
 
-	Status = ZwQueryInformationThread( hThread,
-									   ThreadBasicInformation,
-									   &BasicInformation,
-									   sizeof(BasicInformation),
-									   NULL );
+	THREAD_BASIC_INFORMATION BasicInformation;
+	NTSTATUS Status = ZwQueryInformationThread( hThread,
+									   			ThreadBasicInformation,
+									   			&BasicInformation,
+									   			sizeof(BasicInformation),
+									   			NULL );
 	if (! NT_SUCCESS(Status)) {
 		LdkSetLastNTError( Status );
 		return (int)THREAD_PRIORITY_ERROR_RETURN;
 	}
-
-	BasePriority = (int)BasicInformation.BasePriority;
+	int BasePriority = (int)BasicInformation.BasePriority;
 	if (BasePriority == ((HIGH_PRIORITY + 1) / 2)) {
 		BasePriority = THREAD_PRIORITY_TIME_CRITICAL;
 	} else if ( BasePriority == -((HIGH_PRIORITY + 1) / 2) ) {
@@ -278,21 +271,20 @@ SetThreadPriority (
     _In_ int nPriority
     )
 {
-    NTSTATUS Status;
-    LONG BasePriority= (LONG)nPriority;
-
 	PAGED_CODE();
 
+    LONG BasePriority= (LONG)nPriority;
     if (BasePriority == THREAD_PRIORITY_TIME_CRITICAL) {
         BasePriority = ((HIGH_PRIORITY + 1) / 2);
     }
     else if (BasePriority == THREAD_PRIORITY_IDLE ) {
         BasePriority = -((HIGH_PRIORITY + 1) / 2);
     }
-    Status = ZwSetInformationThread( hThread,
-									 ThreadBasePriority,
-									 &BasePriority,
-									 sizeof(BasePriority) );
+    
+    NTSTATUS Status = ZwSetInformationThread( hThread,
+									 		  ThreadBasePriority,
+									 		  &BasePriority,
+									 		  sizeof(BasePriority) );
     if (NT_SUCCESS(Status)) {
 		return TRUE;
 	}
@@ -308,16 +300,14 @@ GetThreadPriorityBoost (
     _Out_ PBOOL pDisablePriorityBoost
     )
 {
-    NTSTATUS Status;
-    ULONG DisableBoost;
-
 	PAGED_CODE();
-
-	Status = ZwQueryInformationThread( hThread,
-									   ThreadPriorityBoost,
-									   &DisableBoost,
-									   sizeof(DisableBoost),
-									   NULL );
+    
+    ULONG DisableBoost;
+	NTSTATUS Status = ZwQueryInformationThread( hThread,
+									  		    ThreadPriorityBoost,
+									   			&DisableBoost,
+									   			sizeof(DisableBoost),
+									   			NULL );
 	if (NT_SUCCESS(Status)) {
 		*pDisablePriorityBoost = DisableBoost;
     	return TRUE;
@@ -334,15 +324,14 @@ SetThreadPriorityBoost (
     _In_ BOOL bDisablePriorityBoost
     )
 {
-    NTSTATUS Status;
-    ULONG DisableBoost = bDisablePriorityBoost ? TRUE : FALSE;
-
 	PAGED_CODE();
 
-    Status = ZwSetInformationThread( hThread,
-									 ThreadPriorityBoost,
-									 &DisableBoost,
-									 sizeof(DisableBoost) );
+    ULONG DisableBoost = bDisablePriorityBoost ? TRUE : FALSE;
+
+    NTSTATUS Status = ZwSetInformationThread( hThread,
+											  ThreadPriorityBoost,
+									 		  &DisableBoost,
+									 		  sizeof(DisableBoost) );
     if (NT_SUCCESS(Status)) {
 		return TRUE;
 	}
@@ -394,21 +383,18 @@ GetExitCodeThread (
     _Out_ LPDWORD lpExitCode
     )
 {
-	NTSTATUS Status;
-	THREAD_BASIC_INFORMATION BasicInformation;
-
 	PAGED_CODE();
 
-	Status = ZwQueryInformationThread( hThread,
-									   ThreadBasicInformation,
-									   &BasicInformation,
-									   sizeof(BasicInformation),
-									   NULL );
+	THREAD_BASIC_INFORMATION BasicInformation;
+	NTSTATUS Status = ZwQueryInformationThread( hThread,
+									   			ThreadBasicInformation,
+									   			&BasicInformation,
+									   			sizeof(BasicInformation),
+									   			NULL );
 	if (NT_SUCCESS(Status)) {
 		*lpExitCode = BasicInformation.ExitStatus;
 		return TRUE;
 	}
-
 	LdkSetLastNTError( Status );
 	return FALSE;
 }
@@ -424,21 +410,17 @@ GetThreadTimes (
     _Out_ LPFILETIME lpUserTime
     )
 {
-	NTSTATUS Status;
-	KERNEL_USER_TIMES TimeInfo;
-
 	PAGED_CODE();
-
-	Status = ZwQueryInformationThread( hThread,
-									  ThreadTimes,
-									  (PVOID)&TimeInfo,
-									  sizeof(TimeInfo),
-									  NULL );
+	KERNEL_USER_TIMES TimeInfo;
+	NTSTATUS Status = ZwQueryInformationThread( hThread,
+												ThreadTimes,
+									  			(PVOID)&TimeInfo,
+									  			sizeof(TimeInfo),
+									  			NULL );
 	if (! NT_SUCCESS(Status)) {
 		LdkSetLastNTError( Status );
 		return FALSE;
 	}
-
 	*lpCreationTime = *(LPFILETIME)&TimeInfo.CreateTime;
 	*lpExitTime = *(LPFILETIME)&TimeInfo.ExitTime;
 	*lpKernelTime = *(LPFILETIME)&TimeInfo.KernelTime;
@@ -456,7 +438,8 @@ GetCurrentThreadStackLimits (
 {
 	PAGED_CODE();
 
-	IoGetStackLimits(LowLimit, HighLimit);
+	IoGetStackLimits( LowLimit,
+					  HighLimit );
 }
 
 WINBASEAPI
@@ -502,27 +485,23 @@ OpenProcess (
     _In_ DWORD dwProcessId
     )
 {
-    NTSTATUS Status;
     OBJECT_ATTRIBUTES ObjectAttributes;
-    HANDLE Handle;
-    CLIENT_ID ClientId;
-
-    ClientId.UniqueThread = (HANDLE)NULL;
-    ClientId.UniqueProcess = (HANDLE)LongToHandle(dwProcessId);
-
     InitializeObjectAttributes( &ObjectAttributes,
 								NULL,
         						(bInheritHandle ? OBJ_INHERIT : 0) | OBJ_KERNEL_HANDLE,
         						NULL,
 								NULL );
-    Status = ZwOpenProcess( &Handle,
-							(ACCESS_MASK)dwDesiredAccess,
-							&ObjectAttributes,
-							&ClientId );
+    CLIENT_ID ClientId;
+    ClientId.UniqueThread = (HANDLE)NULL;
+    ClientId.UniqueProcess = (HANDLE)LongToHandle(dwProcessId);
+    HANDLE Handle;
+    NTSTATUS Status = ZwOpenProcess( &Handle,
+									 (ACCESS_MASK)dwDesiredAccess,
+									 &ObjectAttributes,
+									 &ClientId );
     if (NT_SUCCESS(Status)) {
 		return Handle;
     }
-    
 	LdkSetLastNTError( Status );
 	return NULL;
 }
@@ -577,21 +556,18 @@ GetExitCodeProcess (
     _Out_ LPDWORD lpExitCode
     )
 {
-	NTSTATUS Status;
-	PROCESS_BASIC_INFORMATION BasicInformation;
-
 	PAGED_CODE();
 
-	Status = ZwQueryInformationProcess( hProcess,
-										ProcessBasicInformation,
-										&BasicInformation,
-										sizeof(BasicInformation),
-										NULL );
+	PROCESS_BASIC_INFORMATION BasicInformation;
+	NTSTATUS Status = ZwQueryInformationProcess( hProcess,
+												 ProcessBasicInformation,
+												 &BasicInformation,
+												 sizeof(BasicInformation),
+												 NULL );
 	if (NT_SUCCESS(Status)) {
 		*lpExitCode = BasicInformation.ExitStatus;
 		return TRUE;
 	}
-
 	LdkSetLastNTError( Status );
 	return FALSE;
 }
