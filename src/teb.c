@@ -291,7 +291,9 @@ LdkpTerminateTebMap (
 
 	ExDeleteNPagedLookasideList( &LdkpTebLookaside );
 
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
 	LdkpTerminateDispatchExceptionStackVariables();
+#endif
 }
 
 NTSTATUS
