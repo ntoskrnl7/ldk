@@ -8,18 +8,15 @@ typedef struct _LDK_TEB {
 
 	EX_RUNDOWN_REF RundownProtect;
 
-	LIST_ENTRY ActiveLinks;
+	PETHREAD Thread;
 
-	PVOID TlsSlots[LDK_TLS_SLOTS_SIZE];
-	PVOID FlsSlots[LDK_FLS_SLOTS_SIZE];
+	LIST_ENTRY ActiveLinks;
 
 	DWORD LastErrorValue;
 
 	CLIENT_ID ClientId;
 
 	CLIENT_ID RealClientId;
-
-	PETHREAD Thread;
 
 	KSEMAPHORE KeyedWaitSemaphore;
 
@@ -34,6 +31,11 @@ typedef struct _LDK_TEB {
 	WCHAR StaticUnicodeBuffer[STATIC_UNICODE_BUFFER_LENGTH];
 
 	ULONG HardErrorMode;
+
+	PVOID TlsSlots[LDK_TLS_SLOTS_SIZE];
+	PVOID FlsSlots[LDK_FLS_SLOTS_SIZE];
+
+	struct _LDK_DISPATCH_EXCEPTION_STACK_VARIABLES* OldDispatchExceptionStackVariables;
 
 	SLIST_ENTRY TempLinks;
 

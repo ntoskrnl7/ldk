@@ -124,13 +124,6 @@ LDK_TERMINATE_COMPONENT LdkpTerminateKeyedEventList;
 LDK_INITIALIZE_COMPONENT LdkpInitializeRtlWorkItem;
 LDK_TERMINATE_COMPONENT LdkpTerminateRtlWorkItem;
 
-#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
-LDK_INITIALIZE_COMPONENT LdkpInitializeDispatchExceptionStackVariables;
-LDK_TERMINATE_COMPONENT LdkpTerminateDispatchExceptionStackVariables;
-#endif
-
-
-
 LDK_INITIALIZE_COMPONENT LdkpNtdllInitialize;
 LDK_TERMINATE_COMPONENT LdkpNtdllTerminate;
 
@@ -163,15 +156,6 @@ LdkpNtdllInitialize (
         return Status;
     }
 
-#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
-	Status = LdkpInitializeDispatchExceptionStackVariables();
-	if (! NT_SUCCESS(Status)) {
-		LdkpTerminateRtlWorkItem();
-		LdkpTerminateKeyedEventList();
-		return Status;
-	}
-#endif
-
     RtlpInitDeferedCriticalSection();
     RtlpTimeout = NtCurrentPeb()->CriticalSectionTimeout;
 
@@ -189,10 +173,6 @@ LdkpNtdllTerminate(
     RtlpCloseKeyedEvent();
 
     RtlpDeleteDeferedCriticalSection();
-
-#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
-	LdkpTerminateDispatchExceptionStackVariables();
-#endif
 
     LdkpTerminateRtlWorkItem();
 
