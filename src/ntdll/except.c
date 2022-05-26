@@ -309,10 +309,18 @@ RtlDispatchException (
     _In_ PCONTEXT ContextRecord
     )
 {
+    PTEB Teb = NtCurrentTeb();
+    PLDK_DISPATCH_EXCEPTION_STACK_VARIABLES OldVariables = Teb->OldDispatchExceptionStackVariables;
+    if (OldVariables) {
+        LdkFreeDispatchExceptionStackVariables( OldVariables );
+        Teb->OldDispatchExceptionStackVariables = NULL;
+    }
+
 	PLDK_DISPATCH_EXCEPTION_STACK_VARIABLES Variables = ExAllocateFromNPagedLookasideList( &LdkpDispatchExceptionStackVariablesLookaside );
 	if (! Variables) {
 		ExRaiseStatus( STATUS_INSUFFICIENT_RESOURCES );
 	}
+    Teb->OldDispatchExceptionStackVariables = Variables;
 
     ExInterlockedInsertHeadList( &LdkpDispatchExceptionStackVariablesListHead,
                                  &Variables->Links,
@@ -396,10 +404,10 @@ RtlDispatchException (
 
 DispatchExit:
     if (Variables) {
-        BOOLEAN Completion = Variables->Completion;
+		BOOLEAN Completion = Variables->Completion;
+        Teb->OldDispatchExceptionStackVariables = NULL;
         LdkFreeDispatchExceptionStackVariables( Variables );
-        Variables = NULL;
-        return Completion;
+		return Completion;
     }
     return FALSE;
 }
