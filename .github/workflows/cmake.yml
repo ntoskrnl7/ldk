@@ -31,3 +31,8 @@ jobs:
       shell: cmd
       run: ..\build.bat . x64
       working-directory: test
+
+    - name: test x86
+      shell: cmd
+      run: sc create crtsys_test binpath= "${GITHUB_WORKSPACE}\build_x64\Debug\LdkTest.sys" displayname= "LdkTest" start= demand type= kernel && sc start LdkTest
+      working-directory: test
