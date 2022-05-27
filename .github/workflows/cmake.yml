@@ -34,5 +34,20 @@ jobs:
 
     - name: test x86
       shell: cmd
-      run: sc create crtsys_test binpath= "${GITHUB_WORKSPACE}\build_x64\Debug\LdkTest.sys" displayname= "LdkTest" start= demand type= kernel && sc start LdkTest
+      run: sc create crtsys_test binpath= "${GITHUB_WORKSPACE}\build_x64\Debug\LdkTest.sys" displayname= "LdkTest" start= demand type= kernel
+      working-directory: test
+      
+    - name: test x86
+      shell: cmd
+      run: sc query LdkTest
+      working-directory: test
+  
+    - name: test x86
+      shell: cmd
+      run: sc start LdkTest
+      working-directory: test
+      
+    - name: test x86
+      shell: cmd
+      run: sc stop LdkTest
       working-directory: test
