@@ -2,7 +2,11 @@
 
 **L**oad **D**ll into **K**ernel space
 
-![GitHub](https://img.shields.io/github/license/ntoskrnl7/ldk) ![GitHub release (latest by date)](https://img.shields.io/github/v/release/ntoskrnl7/ldk) ![Windows 7+](https://img.shields.io/badge/Windows-7+-red.svg) ![Visual Studio 2017+](https://img.shields.io/badge/Visual%20Studio-2017+-orange.svg) ![CMake 3.14+](https://img.shields.io/badge/CMake-3.14+-yellow.svg)
+![GitHub](https://img.shields.io/github/license/ntoskrnl7/ldk)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ntoskrnl7/ldk)
+![Windows 7+](https://img.shields.io/badge/Windows-7+-blue?logo=windows&logoColor=white)
+![Visual Studio 2017+](https://img.shields.io/badge/Visual%20Studio-2017+-682270?logo=visualstudio&logoColor=682270)
+![CMake 3.14+](https://img.shields.io/badge/CMake-3.14+-yellow.svg?logo=cmake&logoColor=white)
 
 ## Overview
 
@@ -11,7 +15,7 @@
 
 ## Requirements
 
-- Windows 8 이상
+- Windows 7 이상
 - Visual Studio 2017
 
 ## Test Environments
