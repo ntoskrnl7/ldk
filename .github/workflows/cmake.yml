@@ -34,7 +34,7 @@ jobs:
 
     - name: test x64
       shell: cmd
-      run: sc create LdkTest binpath= "${{ env.GITHUB_WORKSPACE }}\build_x64\Debug\LdkTest.sys" displayname= "Ldk Test" start= demand type= kernel
+      run: sc create LdkTest binpath= "${{ github.workspace }}\build_x64\Debug\LdkTest.sys" displayname= "Ldk Test" start= demand type= kernel
       working-directory: test
       
     - name: test x64
