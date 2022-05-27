@@ -2,6 +2,7 @@
 
 **L**oad **D**ll into **K**ernel space
 
+[![CMake](https://github.com/ntoskrnl7/ldk/actions/workflows/cmake.yml/badge.svg)](https://github.com/ntoskrnl7/ldk/actions/workflows/cmake.yml)
 ![GitHub](https://img.shields.io/github/license/ntoskrnl7/ldk)
 ![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ntoskrnl7/ldk)
 ![Windows 7+](https://img.shields.io/badge/Windows-7+-blue?logo=windows&logoColor=white)
