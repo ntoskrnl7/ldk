@@ -34,20 +34,5 @@ jobs:
 
     - name: test x64
       shell: cmd
-      run: sc create LdkTest binpath= "${{ github.workspace }}\test\build_x64\Debug\LdkTest.sys" displayname= "Ldk Test" start= demand type= kernel
-      working-directory: test
-      
-    - name: test x64
-      shell: cmd
-      run: sc query LdkTest
-      working-directory: test
-  
-    - name: test x64
-      shell: cmd
-      run: sc start LdkTest
-      working-directory: test
-      
-    - name: test x64
-      shell: cmd
-      run: sc stop LdkTest
+      run: sc create LdkTest binpath= "${{ github.workspace }}\test\build_x64\Debug\LdkTest.sys" displayname= "Ldk Test" start= demand type= kernel && sc start LdkTest && sc stop LdkTest && sc delete LdkTest
       working-directory: test
