@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _APISETDEBUG_
+#define _APISETDEBUG_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -31,3 +44,5 @@ OutputDebugStringW(
     );
 
 EXTERN_C_END
+
+#endif // _APISETDEBUG_

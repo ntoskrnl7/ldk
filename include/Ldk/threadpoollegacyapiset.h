@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _THREADPOOLLEGACYAPISET_H_
+#define _THREADPOOLLEGACYAPISET_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -12,3 +25,5 @@ QueueUserWorkItem(
     );
 
 EXTERN_C_END
+
+#endif // _THREADPOOLLEGACYAPISET_H_

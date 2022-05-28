@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _SYNCHAPI_H_
+#define _SYNCHAPI_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -375,3 +388,5 @@ Sleep(
     );
 
 EXTERN_C_END
+
+#endif // _SYNCHAPI_H_

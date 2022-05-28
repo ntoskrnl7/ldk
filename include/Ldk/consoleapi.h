@@ -1,6 +1,20 @@
 ﻿#pragma once
 
+#ifndef _APISETCONSOLE_
+#define _APISETCONSOLE_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
+
 
 WINBASEAPI
 UINT
@@ -146,3 +160,5 @@ SetConsoleCtrlHandler(
     );
 
 EXTERN_C_END
+
+#endif // _APISETCONSOLE_

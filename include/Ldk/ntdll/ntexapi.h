@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef _LDK_NTEXAPI_
+#define _LDK_NTEXAPI_
+
 EXTERN_C_START
 
 #define KEYEDEVENT_WAIT 0x0001
@@ -316,3 +319,5 @@ ExRaiseHardError (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTEXAPI_

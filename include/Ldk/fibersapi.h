@@ -1,5 +1,17 @@
 ﻿#pragma once
 
+#ifndef _FIBERS_H_
+#define _FIBERS_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+
 EXTERN_C_START
 
 #if (_WIN32_WINNT >= 0x0600)
@@ -43,3 +55,5 @@ FlsFree(
 #endif // (_WIN32_WINNT >= 0x0600)
 
 EXTERN_C_END
+
+#endif // _FIBERS_H_

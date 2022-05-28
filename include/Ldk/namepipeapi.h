@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _NAMEDPIPE_H_
+#define _NAMEDPIPE_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -25,3 +38,5 @@ PeekNamedPipe(
     );
 
 EXTERN_C_END
+
+#endif // _NAMEDPIPE_H_

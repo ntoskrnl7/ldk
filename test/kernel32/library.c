@@ -1,5 +1,5 @@
 ﻿#if _KERNEL_MODE
-#include <Ldk/Windows.h>
+#include <Ldk/libloaderapi.h>
 
 BOOLEAN
 LibraryTest (
@@ -10,7 +10,7 @@ LibraryTest (
 #pragma alloc_text(PAGE, LibraryTest)
 #endif
 #else
-#include <windows.h>
+#include <libloaderapi.h>
 #include <stdio.h>
 #define PAGED_CODE()
 #endif

@@ -1,8 +1,9 @@
 ﻿#pragma once
 
+#ifndef _LDK_NTRTL_
+#define _LDK_NTRTL_
+
 EXTERN_C_START
-
-
 
 #define DOS_MAX_COMPONENT_LENGTH    255
 #define DOS_MAX_PATH_LENGTH         (DOS_MAX_COMPONENT_LENGTH + 5)
@@ -130,3 +131,5 @@ RtlImageDirectoryEntryToData32 (
 #define RTL_ERRORMODE_FAILCRITICALERRORS (0x0010)
 
 EXTERN_C_END
+
+#endif // _LDK_NTRTL_

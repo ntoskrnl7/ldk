@@ -1,5 +1,17 @@
 ﻿#pragma once
 
+#ifndef _PROCESSENV_
+#define _PROCESSENV_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -145,3 +157,5 @@ SetEnvironmentVariableW(
     );
 
 EXTERN_C_END
+
+#endif // _PROCESSENV_

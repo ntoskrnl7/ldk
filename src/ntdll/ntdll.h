@@ -86,3 +86,9 @@ LdkSizeHeap (
 #define RtlSizeHeap                 LdkSizeHeap
 #define RtlDestroyHeap              LdkDestroyHeap
 #define ZwCreateNamedPipeFile       NtCreateNamedPipeFile
+
+#if _LDK_DEFINE_RTL_RAISE_EXCEPTION
+#if !defined(_AMD64_) && !defined(_X86_)
+#undef _LDK_DEFINE_RTL_RAISE_EXCEPTION
+#endif
+#endif

@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#ifndef _LDK_NTURTL_
+#define _LDK_NTURTL_
+
 EXTERN_C_START
 
 VOID
@@ -139,7 +142,7 @@ RtlSleepConditionVariableSRW(
 #define RtlProcessHeap() (NtCurrentPeb()->ProcessHeap)
 
 
-
+#if !defined(_WINNT_)
 #define WT_EXECUTEDEFAULT       0x00000000                           // winnt
 #define WT_EXECUTEINIOTHREAD    0x00000001                           // winnt
 #define WT_EXECUTEINUITHREAD    0x00000002                           // winnt
@@ -153,6 +156,7 @@ RtlSleepConditionVariableSRW(
 #define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16) // winnt
 
 typedef VOID (NTAPI * WORKERCALLBACKFUNC) (PVOID );                 // winnt
+#endif // !defined(_WINNT_)
 
 NTSTATUS
 NTAPI
@@ -282,3 +286,5 @@ RtlSetThreadErrorMode (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTURTL_

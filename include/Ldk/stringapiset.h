@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _APISETSTRING_
+#define _APISETSTRING_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "winnls.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -33,3 +46,5 @@ WideCharToMultiByte(
     );
 
 EXTERN_C_END
+
+#endif // _APISETSTRING_

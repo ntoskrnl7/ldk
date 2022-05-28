@@ -1,5 +1,11 @@
 #pragma once
 
+#ifndef _WINNT_
+#define _WINNT_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
 #include <ntimage.h>
 
 EXTERN_C_START
@@ -175,9 +181,11 @@ typedef enum _HEAP_INFORMATION_CLASS {
 #define WT_EXECUTELONGFUNCTION  0x00000010                           
 #define WT_EXECUTEINPERSISTENTIOTHREAD  0x00000040                   
 #define WT_EXECUTEINPERSISTENTTHREAD 0x00000080                      
-#define WT_TRANSFER_IMPERSONATION 0x00000100                         
-#define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16) 
-
+#define WT_TRANSFER_IMPERSONATION 0x00000100
+#if !defined(_LDK_NTURTL_)
+#define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16)
+typedef VOID (NTAPI * WORKERCALLBACKFUNC) (PVOID );        
+#endif // !defined(_LDK_NTURTL_)
 
 
 typedef DWORD TP_VERSION, *PTP_VERSION; 
@@ -441,21 +449,51 @@ typedef VOID (NTAPI *PTP_WAIT_CALLBACK)(
 typedef struct _TP_IO TP_IO, *PTP_IO;
 
 
+#if !defined(_WDMDDK_)
 
+//
+// Define 128-bit 16-byte aligned xmm register type.
+//
 
+typedef struct DECLSPEC_ALIGN(16) _M128A {
+    ULONGLONG Low;
+    LONGLONG High;
+} M128A, *PM128A;
 
+//
+// Format of data for (F)XSAVE/(F)XRSTOR instruction
+//
 
+typedef struct DECLSPEC_ALIGN(16) _XSAVE_FORMAT {
+    WORD   ControlWord;
+    WORD   StatusWord;
+    BYTE  TagWord;
+    BYTE  Reserved1;
+    WORD   ErrorOpcode;
+    DWORD ErrorOffset;
+    WORD   ErrorSelector;
+    WORD   Reserved2;
+    DWORD DataOffset;
+    WORD   DataSelector;
+    WORD   Reserved3;
+    DWORD MxCsr;
+    DWORD MxCsr_Mask;
+    M128A FloatRegisters[8];
 
+#if defined(_WIN64)
 
+    M128A XmmRegisters[16];
+    BYTE  Reserved4[96];
 
+#else
 
+    M128A XmmRegisters[8];
+    BYTE  Reserved4[224];
 
+#endif
 
-
-
-
-
-
+} XSAVE_FORMAT, *PXSAVE_FORMAT;
+#endif //!defined(_WDMDDK_)
 
 
 
@@ -1147,11 +1185,13 @@ _m_prefetchw (
 #pragma intrinsic(_mm_sfence)
 #pragma intrinsic(_m_prefetchw)
 
+#if !defined(_WDMDDK_)
 #define YieldProcessor _mm_pause
 #define MemoryBarrier __faststorefence
 #define PreFetchCacheLine(l, a)  _mm_prefetch((CHAR CONST *) a, l)
 #define PrefetchForWrite(p) _m_prefetchw(p)
 #define ReadForWriteAccess(p) (_m_prefetchw(p), *(p))
+#endif // !defined(_WDMDDK_)
 
 //
 // PreFetchCacheLine level defines.
@@ -1649,156 +1689,157 @@ typedef XSAVE_FORMAT XMM_SAVE_AREA32, *PXMM_SAVE_AREA32;
 // end_wdm end_ntosp
 // begin_ntddk
 
-////
-//// Context Frame
-////
-////  This frame has a several purposes: 1) it is used as an argument to
-////  NtContinue, 2) it is used to constuct a call frame for APC delivery,
-////  and 3) it is used in the user level thread creation routines.
-////
-////
-//// The flags field within this record controls the contents of a CONTEXT
-//// record.
-////
-//// If the context record is used as an input parameter, then for each
-//// portion of the context record controlled by a flag whose value is
-//// set, it is assumed that that portion of the context record contains
-//// valid context. If the context record is being used to modify a threads
-//// context, then only that portion of the threads context is modified.
-////
-//// If the context record is used as an output parameter to capture the
-//// context of a thread, then only those portions of the thread's context
-//// corresponding to set flags will be returned.
-////
-//// CONTEXT_CONTROL specifies SegSs, Rsp, SegCs, Rip, and EFlags.
-////
-//// CONTEXT_INTEGER specifies Rax, Rcx, Rdx, Rbx, Rbp, Rsi, Rdi, and R8-R15.
-////
-//// CONTEXT_SEGMENTS specifies SegDs, SegEs, SegFs, and SegGs.
-////
-//// CONTEXT_FLOATING_POINT specifies Xmm0-Xmm15.
-////
-//// CONTEXT_DEBUG_REGISTERS specifies Dr0-Dr3 and Dr6-Dr7.
-////
 //
-//typedef struct DECLSPEC_ALIGN(16) DECLSPEC_NOINITALL _CONTEXT {
+// Context Frame
 //
-//    //
-//    // Register parameter home addresses.
-//    //
-//    // N.B. These fields are for convience - they could be used to extend the
-//    //      context record in the future.
-//    //
+//  This frame has a several purposes: 1) it is used as an argument to
+//  NtContinue, 2) it is used to constuct a call frame for APC delivery,
+//  and 3) it is used in the user level thread creation routines.
 //
-//    DWORD64 P1Home;
-//    DWORD64 P2Home;
-//    DWORD64 P3Home;
-//    DWORD64 P4Home;
-//    DWORD64 P5Home;
-//    DWORD64 P6Home;
 //
-//    //
-//    // Control flags.
-//    //
+// The flags field within this record controls the contents of a CONTEXT
+// record.
 //
-//    DWORD ContextFlags;
-//    DWORD MxCsr;
+// If the context record is used as an input parameter, then for each
+// portion of the context record controlled by a flag whose value is
+// set, it is assumed that that portion of the context record contains
+// valid context. If the context record is being used to modify a threads
+// context, then only that portion of the threads context is modified.
 //
-//    //
-//    // Segment Registers and processor flags.
-//    //
+// If the context record is used as an output parameter to capture the
+// context of a thread, then only those portions of the thread's context
+// corresponding to set flags will be returned.
 //
-//    WORD   SegCs;
-//    WORD   SegDs;
-//    WORD   SegEs;
-//    WORD   SegFs;
-//    WORD   SegGs;
-//    WORD   SegSs;
-//    DWORD EFlags;
+// CONTEXT_CONTROL specifies SegSs, Rsp, SegCs, Rip, and EFlags.
 //
-//    //
-//    // Debug registers
-//    //
+// CONTEXT_INTEGER specifies Rax, Rcx, Rdx, Rbx, Rbp, Rsi, Rdi, and R8-R15.
 //
-//    DWORD64 Dr0;
-//    DWORD64 Dr1;
-//    DWORD64 Dr2;
-//    DWORD64 Dr3;
-//    DWORD64 Dr6;
-//    DWORD64 Dr7;
+// CONTEXT_SEGMENTS specifies SegDs, SegEs, SegFs, and SegGs.
 //
-//    //
-//    // Integer registers.
-//    //
+// CONTEXT_FLOATING_POINT specifies Xmm0-Xmm15.
 //
-//    DWORD64 Rax;
-//    DWORD64 Rcx;
-//    DWORD64 Rdx;
-//    DWORD64 Rbx;
-//    DWORD64 Rsp;
-//    DWORD64 Rbp;
-//    DWORD64 Rsi;
-//    DWORD64 Rdi;
-//    DWORD64 R8;
-//    DWORD64 R9;
-//    DWORD64 R10;
-//    DWORD64 R11;
-//    DWORD64 R12;
-//    DWORD64 R13;
-//    DWORD64 R14;
-//    DWORD64 R15;
+// CONTEXT_DEBUG_REGISTERS specifies Dr0-Dr3 and Dr6-Dr7.
 //
-//    //
-//    // Program counter.
-//    //
-//
-//    DWORD64 Rip;
-//
-//    //
-//    // Floating point state.
-//    //
-//
-//    union {
-//        XMM_SAVE_AREA32 FltSave;
-//        struct {
-//            M128A Header[2];
-//            M128A Legacy[8];
-//            M128A Xmm0;
-//            M128A Xmm1;
-//            M128A Xmm2;
-//            M128A Xmm3;
-//            M128A Xmm4;
-//            M128A Xmm5;
-//            M128A Xmm6;
-//            M128A Xmm7;
-//            M128A Xmm8;
-//            M128A Xmm9;
-//            M128A Xmm10;
-//            M128A Xmm11;
-//            M128A Xmm12;
-//            M128A Xmm13;
-//            M128A Xmm14;
-//            M128A Xmm15;
-//        } DUMMYSTRUCTNAME;
-//    } DUMMYUNIONNAME;
-//
-//    //
-//    // Vector registers.
-//    //
-//
-//    M128A VectorRegister[26];
-//    DWORD64 VectorControl;
-//
-//    //
-//    // Special debug control registers.
-//    //
-//
-//    DWORD64 DebugControl;
-//    DWORD64 LastBranchToRip;
-//    DWORD64 LastBranchFromRip;
-//    DWORD64 LastExceptionToRip;
-//    DWORD64 LastExceptionFromRip;
-//} CONTEXT, *PCONTEXT;
+#if !defined(_NTDDK_)
+typedef struct DECLSPEC_ALIGN(16) DECLSPEC_NOINITALL _CONTEXT {
+
+   //
+   // Register parameter home addresses.
+   //
+   // N.B. These fields are for convience - they could be used to extend the
+   //      context record in the future.
+   //
+
+   DWORD64 P1Home;
+   DWORD64 P2Home;
+   DWORD64 P3Home;
+   DWORD64 P4Home;
+   DWORD64 P5Home;
+   DWORD64 P6Home;
+
+   //
+   // Control flags.
+   //
+
+   DWORD ContextFlags;
+   DWORD MxCsr;
+
+   //
+   // Segment Registers and processor flags.
+   //
+
+   WORD   SegCs;
+   WORD   SegDs;
+   WORD   SegEs;
+   WORD   SegFs;
+   WORD   SegGs;
+   WORD   SegSs;
+   DWORD EFlags;
+
+   //
+   // Debug registers
+   //
+
+   DWORD64 Dr0;
+   DWORD64 Dr1;
+   DWORD64 Dr2;
+   DWORD64 Dr3;
+   DWORD64 Dr6;
+   DWORD64 Dr7;
+
+   //
+   // Integer registers.
+   //
+
+   DWORD64 Rax;
+   DWORD64 Rcx;
+   DWORD64 Rdx;
+   DWORD64 Rbx;
+   DWORD64 Rsp;
+   DWORD64 Rbp;
+   DWORD64 Rsi;
+   DWORD64 Rdi;
+   DWORD64 R8;
+   DWORD64 R9;
+   DWORD64 R10;
+   DWORD64 R11;
+   DWORD64 R12;
+   DWORD64 R13;
+   DWORD64 R14;
+   DWORD64 R15;
+
+   //
+   // Program counter.
+   //
+
+   DWORD64 Rip;
+
+   //
+   // Floating point state.
+   //
+
+   union {
+       XMM_SAVE_AREA32 FltSave;
+       struct {
+           M128A Header[2];
+           M128A Legacy[8];
+           M128A Xmm0;
+           M128A Xmm1;
+           M128A Xmm2;
+           M128A Xmm3;
+           M128A Xmm4;
+           M128A Xmm5;
+           M128A Xmm6;
+           M128A Xmm7;
+           M128A Xmm8;
+           M128A Xmm9;
+           M128A Xmm10;
+           M128A Xmm11;
+           M128A Xmm12;
+           M128A Xmm13;
+           M128A Xmm14;
+           M128A Xmm15;
+       } DUMMYSTRUCTNAME;
+   } DUMMYUNIONNAME;
+
+   //
+   // Vector registers.
+   //
+
+   M128A VectorRegister[26];
+   DWORD64 VectorControl;
+
+   //
+   // Special debug control registers.
+   //
+
+   DWORD64 DebugControl;
+   DWORD64 LastBranchToRip;
+   DWORD64 LastBranchFromRip;
+   DWORD64 LastExceptionToRip;
+   DWORD64 LastExceptionFromRip;
+} CONTEXT, *PCONTEXT;
+#endif // !defined(_NTDDK_)
 
 // end_ntoshvp
 //
@@ -2636,4 +2677,7 @@ typedef enum _JOBOBJECTINFOCLASS {
 #define THREAD_BASE_PRIORITY_IDLE   (-15) // value that gets a thread to idle
 
 #pragma warning(default:4201 4214)
+
 EXTERN_C_END
+
+#endif // _WINNT_

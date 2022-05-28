@@ -23,11 +23,11 @@
 #include "consoleapi.h"
 #include "consoleapi2.h"
 #include "timezoneapi.h"
-#include "namepipe.h"
+#include "namepipeapi.h"
+
+#include <winerror.h>
 
 EXTERN_C_START
-
-
 
 #define DRIVE_UNKNOWN     0
 #define DRIVE_NO_ROOT_DIR 1

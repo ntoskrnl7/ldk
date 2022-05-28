@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _TIMEZONEAPI_H_
+#define _TIMEZONEAPI_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 #define TIME_ZONE_ID_INVALID ((DWORD)0xFFFFFFFF)
@@ -65,3 +78,5 @@ GetTimeZoneInformation(
     );
 
 EXTERN_C_END
+
+#endif // _TIMEZONEAPI_H_

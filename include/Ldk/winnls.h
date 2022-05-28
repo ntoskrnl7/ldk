@@ -1,8 +1,15 @@
+#pragma once
+
 #ifndef _WINNLS_
 #define _WINNLS_
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#ifndef NOAPISET
+#include <datetimeapi.h>  // Datetime APISET dependencies
+#include <libloaderapi.h> // LibLoader Apiset dependencies
 #endif
 
 //

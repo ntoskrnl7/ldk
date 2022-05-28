@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _SYSINFOAPI_H_
+#define _SYSINFOAPI_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 #pragma warning(disable:4201)
@@ -139,3 +152,5 @@ GetVersionExW(
     );
 
 EXTERN_C_END
+
+#endif _SYSINFOAPI_H_

@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _APISETLIBLOADER_
+#define _APISETLIBLOADER_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -166,3 +179,5 @@ FreeLibraryAndExitThread(
     );
 
 EXTERN_C_END
+
+#endif // _APISETLIBLOADER_

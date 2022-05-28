@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#ifndef _LDK_
+#define _LDK_
+
 EXTERN_C_START
 
 #define LDKAPI		__stdcall
@@ -87,3 +90,5 @@ VOID
     );
 
 EXTERN_C_END
+
+#endif // _LDK_

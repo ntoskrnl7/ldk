@@ -2,7 +2,7 @@
 #include "../ldk.h"
 #include <limits.h>
 #include <Ldk/ntdll/nturtl.h>
-#include <Ldk/ntdll/nrtlstringandbuffer.h>
+#include <Ldk/ntdll/ntrtlstringandbuffer.h>
 #include <Ldk/ntdll/ntrtlpath.h>
 #include <Ldk/ntdll/nturtl.h>
 
