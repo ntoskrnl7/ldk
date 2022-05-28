@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#ifndef _LDK_NTIOAPI_
+#define _LDK_NTIOAPI_
+
 EXTERN_C_START
 
 NTSTATUS
@@ -21,3 +24,5 @@ NtCreateNamedPipeFile (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTIOAPI_

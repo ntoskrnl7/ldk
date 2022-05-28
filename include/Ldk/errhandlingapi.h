@@ -1,5 +1,19 @@
 ﻿#pragma once
 
+#ifndef _ERRHANDLING_H_
+#define _ERRHANDLING_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+
+EXTERN_C_START
+
 EXTERN_C_START
 
 //
@@ -72,3 +86,5 @@ SetErrorMode(
     );
 
 EXTERN_C_END
+
+#endif // _ERRHANDLING_H_

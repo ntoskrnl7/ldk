@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#ifndef _LDK_NTLDR_
+#define _LDK_NTLDR_
+
 EXTERN_C_START
 
 typedef struct _RTL_PROCESS_MODULE_INFORMATION {
@@ -63,3 +66,5 @@ LdrGetDllHandle (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTLDR_

@@ -1,5 +1,7 @@
-
 #pragma once
+
+#ifndef _LDK_NTRTLSTRINGANDBUFFER_
+#define _LDK_NTRTLSTRINGANDBUFFER_
 
 EXTERN_C_START
 
@@ -400,3 +402,5 @@ RtlMultiAppendUnicodeStringBuffer (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTRTLSTRINGANDBUFFER_

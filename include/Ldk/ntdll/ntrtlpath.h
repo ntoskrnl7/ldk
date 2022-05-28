@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef _LDK_NTRTLPATH_
+#define _LDK_NTRTLPATH_
+
 EXTERN_C_START
 
 //
@@ -79,3 +82,5 @@ __declspec(selectany) extern const UNICODE_STRING RtlAlternateDosPathSeperatorSt
 #define RTL_IS_NT_PATH_SEPERATOR(ch_) RTL_IS_NT_PATH_SEPARATOR(ch_)
 
 EXTERN_C_END
+
+#endif // _LDK_NTRTLPATH_

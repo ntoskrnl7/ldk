@@ -1,9 +1,19 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#ifndef _APISETFILE_
+#define _APISETFILE_
 
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
+EXTERN_C_START
 
 //
 // Constants
@@ -18,6 +28,7 @@ extern "C" {
 #define INVALID_FILE_SIZE ((DWORD)0xFFFFFFFF)
 #define INVALID_SET_FILE_POINTER ((DWORD)-1)
 #define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
+
 
 
 WINBASEAPI
@@ -385,7 +396,6 @@ SetFileApisToANSI(
     VOID
     );
 
+EXTERN_C_END
 
-#ifdef __cplusplus
-}
-#endif
+#endif // _APISETFILE_

@@ -1,5 +1,17 @@
 ﻿#pragma once
 
+#ifndef _APISETHANDLE_
+#define _APISETHANDLE_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+
 EXTERN_C_START
 
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
@@ -25,3 +37,5 @@ DuplicateHandle(
     );
 
 EXTERN_C_END
+
+#endif // _APISETHANDLE_

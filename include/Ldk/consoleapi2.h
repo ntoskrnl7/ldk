@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _APISETCONSOLEL2_
+#define _APISETCONSOLEL2_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -17,3 +30,5 @@ SetConsoleOutputCP(
     );
 
 EXTERN_C_END
+
+#endif // _APISETCONSOLEL2_

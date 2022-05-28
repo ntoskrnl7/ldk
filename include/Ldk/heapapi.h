@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _HEAPAPI_H_
+#define _HEAPAPI_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 #if _MSC_VER < 1900
 #define DECLSPEC_ALLOCATOR
 #else
@@ -111,3 +124,5 @@ HeapQueryInformation(
     );
 
 EXTERN_C_END
+
+#endif // _HEAPAPI_H_

@@ -1,5 +1,7 @@
-
 #pragma once
+
+#ifndef _LDK_NTXCAPI_
+#define _LDK_NTXCAPI_
 
 EXTERN_C_START
 
@@ -14,3 +16,5 @@ RtlUnwind (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTXCAPI_

@@ -1,5 +1,18 @@
 ﻿#pragma once
 
+#ifndef _THREADPOOLAPISET_H_
+#define _THREADPOOLAPISET_H_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+#include "minwinbase.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -43,3 +56,5 @@ FreeLibraryWhenCallbackReturns(
     );
 
 EXTERN_C_END
+
+#endif _THREADPOOLAPISET_H_

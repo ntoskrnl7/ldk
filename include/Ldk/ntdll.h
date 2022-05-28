@@ -1,9 +1,13 @@
 ﻿#pragma once
 
+#ifndef _LDK_NTDLL_
+#define _LDK_NTDLL_
+
 #include <ntifs.h>
+#define _DEVIOCTL_
+
 #include <wdm.h>
 #include <minwindef.h>
-
 #include "winnt.h"
 
 #include "ldk.h"
@@ -50,3 +54,5 @@ RtlRaiseException(
 #define NtWaitForMultipleObjects    ZwWaitForMultipleObjects
 
 EXTERN_C_END
+
+#endif // _LDK_NTDLL_

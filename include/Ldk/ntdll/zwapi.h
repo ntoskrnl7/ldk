@@ -1,5 +1,8 @@
 ﻿#pragma once
 
+#ifndef _LDK_ZWAPI_
+#define _LDK_ZWAPI_
+
 EXTERN_C_START
 
 NTSYSAPI
@@ -92,3 +95,5 @@ ZwSetSystemTime (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_ZWAPI_

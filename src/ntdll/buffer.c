@@ -2,7 +2,7 @@
 #include "../ldk.h"
 
 #include <limits.h>
-#include <Ldk/ntdll/nrtlstringandbuffer.h>
+#include <Ldk/ntdll/ntrtlstringandbuffer.h>
 
 NTSTATUS
 NTAPI

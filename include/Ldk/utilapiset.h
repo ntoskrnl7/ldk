@@ -1,5 +1,17 @@
 ﻿#pragma once
 
+#ifndef _APISETUTIL_
+#define _APISETUTIL_
+
+#include <ntifs.h>
+#define _DEVIOCTL_
+
+#include <wdm.h>
+
+#define WINBASEAPI
+#include <minwindef.h>
+#include "winnt.h"
+
 EXTERN_C_START
 
 WINBASEAPI
@@ -20,3 +32,5 @@ DecodePointer(
     );
 
 EXTERN_C_END
+
+#endif // _APISETUTIL_

@@ -1,5 +1,8 @@
 #pragma once
 
+#ifndef _LDK_NTPSAPI_
+#define _LDK_NTPSAPI_
+
 EXTERN_C_START
 
 #define PROCESS_HARDERROR_ALIGNMENT_BIT 0x0004
@@ -62,3 +65,5 @@ ZwSetInformationProcess (
     );
 
 EXTERN_C_END
+
+#endif // _LDK_NTPSAPI_
