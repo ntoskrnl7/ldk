@@ -40,6 +40,10 @@ LdkFreeDispatchExceptionStackVariables (
 
 
 #if _AMD64_
+#define UNWIND_HISTORY_TABLE_NONE 0
+#define UNWIND_HISTORY_TABLE_GLOBAL 1
+#define UNWIND_HISTORY_TABLE_LOCAL 2
+
 FORCEINLINE
 BOOLEAN
 RtlpIsFrameInBounds (
