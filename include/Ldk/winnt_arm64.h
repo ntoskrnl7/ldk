@@ -108,6 +108,7 @@ _BitTestAndSet64(__int64 *Base, __int64 Index)
 //      are now generated as calls to glue code which already contain
 //      fixes for this oversight.
 //
+#if !defined(_WDMDDK_)
 #define InterlockedBitTestAndSet64 _interlockedbittestandset64
 #define InterlockedBitTestAndSet64Acquire _interlockedbittestandset64_acq
 #define InterlockedBitTestAndSet64Release _interlockedbittestandset64_rel
@@ -116,6 +117,7 @@ _BitTestAndSet64(__int64 *Base, __int64 Index)
 #define InterlockedBitTestAndReset64Acquire _interlockedbittestandreset64_acq
 #define InterlockedBitTestAndReset64Release _interlockedbittestandreset64_rel
 #define InterlockedBitTestAndReset64NoFence _interlockedbittestandreset64_nf
+#endif // !defined(_WDMDDK_)
 
 #pragma intrinsic(_bittest)
 #pragma intrinsic(_bittestandcomplement)
@@ -489,9 +491,11 @@ _BitTestAndSet64(__int64 *Base, __int64 Index)
 #pragma intrinsic(_WriteBarrier)
 
 #define MemoryBarrier()             __dmb(_ARM64_BARRIER_SY)
+#if !defined(_WDMDDK_)
 #define PreFetchCacheLine(l,a)      __prefetch2((const void *) (a), ARM64_PREFETCH(PLD, L1, KEEP))
 #define PrefetchForWrite(p)         __prefetch2((const void *) (p), ARM64_PREFETCH(PST, L1, KEEP))
 #define ReadForWriteAccess(p)       (__prefetch2((const void *) (p), ARM64_PREFETCH(PST, L1, KEEP)), *(p))
+#endif // !defined(_WDMDDK_)
 
 #define _DataSynchronizationBarrier()        __dsb(_ARM64_BARRIER_SY)
 #define _InstructionSynchronizationBarrier() __isb(_ARM64_BARRIER_SY)
