@@ -31,3 +31,8 @@ jobs:
       shell: cmd
       run: ..\build.bat . x64
       working-directory: test
+
+    - name: test x64
+      shell: cmd
+      run: sc create LdkTest binpath= "${{ github.workspace }}\test\build_x64\Debug\LdkTest.sys" displayname= "Ldk Test" start= demand type= kernel && sc start LdkTest && sc stop LdkTest && sc delete LdkTest
+      working-directory: test
