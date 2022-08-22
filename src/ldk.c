@@ -681,10 +681,11 @@ LdkpLoadDll (
 		if (! NT_SUCCESS(Status)) {
 			leave;
 		}
-
+#pragma warning(disable:4996)
 		Buffer = ExAllocatePoolWithTag( PagedPool,
 										StandardInfo.EndOfFile.LowPart,
 										TAG_DLL_POOL );
+#pragma warning(default:4996)
 		if (!Buffer) {
 			Status = STATUS_INSUFFICIENT_RESOURCES;
 			leave;
@@ -763,10 +764,11 @@ LdkpLoadDll (
 			Status = STATUS_INVALID_IMAGE_FORMAT;
 			leave;
 		}
-
+#pragma warning(disable:4996)
 		Base = ExAllocatePoolWithTag( NonPagedPool,
 									  NtHeader->OptionalHeader.SizeOfImage,
 									  TAG_DLL_POOL );
+#pragma warning(default:4996)
 		if (! Base) {
 			Status = STATUS_INSUFFICIENT_RESOURCES;
 			leave;

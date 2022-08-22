@@ -172,10 +172,11 @@ LdkAllocateHeap (
 	Tag.Part.Value1 += 'A';
 	Tag.Part.Value2 += 'A';
 	Tag.Part.Value3 += 'A';
-
+#pragma warning(disable:4996)
 	PLDK_HEAP_HEADER Header = ExAllocatePoolWithTag( LdkpDefaultPoolType,
 														 Size + LDK_HEAP_HEADER_SIZE,
 														 Tag.Value );
+#pragma warning(default:4996)
 	if (! Header) {
 		return NULL;
 	}
