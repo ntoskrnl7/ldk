@@ -57,7 +57,7 @@ Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시�
 1. 아래 명령을 수행하여 라이브러리를 빌드하시기 바랍니다.
 
     - Visual Studio 사용
-      - {이 저장소}/msvc/ldk.sn 혹은 {이 저장소}/msvc/ldk.vcxproj를 열어서 빌드를 하시기 바랍니다.
+      - {이 저장소}/msvc/ldk.sln 혹은 {이 저장소}/msvc/ldk.vcxproj를 열어서 빌드를 하시기 바랍니다.
 
     - CMake 사용
 
@@ -109,7 +109,7 @@ project(MyProject)
 
 # add dependencies
 include(cmake/CPM.cmake)
-CPMAddPackage("gh:ntoskrnl7/ldk@0.7.4")
+CPMAddPackage("gh:ntoskrnl7/ldk@0.7.5")
 
 # add dependencies
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")

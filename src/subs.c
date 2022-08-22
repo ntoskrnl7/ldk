@@ -27,10 +27,11 @@ Return Value:
 
 --*/
 {	
+#pragma warning(disable:4996)
     String->Buffer = ExAllocatePoolWithTag( LdkpDefaultPoolType,
                                             String->MaximumLength,
 											TAG_UNICODE_POOL );
-
+#pragma warning(default:4996)
     if (String->Buffer == NULL) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -311,8 +312,9 @@ LdkQueryModuleInformationFromAddress (
     ULONG i;
 
 retry:
+#pragma warning(disable:4996)
     Buffer = ExAllocatePoolWithTag(LdkpDefaultPoolType, BufferSize, TAG_TMP_POOL);
-
+#pragma warning(default:4996)
     if (!Buffer) {
         return STATUS_NO_MEMORY;
     }

@@ -728,9 +728,11 @@ WaitForMultipleObjectsEx (
     HANDLE HandlesTmp[8];
     PHANDLE Handles;
     if (nCount > 8) {
+#pragma warning(disable:4996)
         Handles = ExAllocatePoolWithTag( PagedPool,
                                          sizeof(HANDLE) * nCount,
                                          TAG_TMP_POOL );
+#pragma warning(default:4996)
         if (!Handles) {
             LdkSetLastNTError(STATUS_NO_MEMORY);
             return WAIT_FAILED;
