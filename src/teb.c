@@ -46,6 +46,7 @@ LdkpCreateTeb (
 		ExFreeToNPagedLookasideList(&LdkpTebLookaside, Teb);
 		return NULL;
 	}
+	Teb->ProcessEnvironmentBlock = LdkCurrentPeb();
 	return Teb;
 }
 

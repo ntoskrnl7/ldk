@@ -49,10 +49,11 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS {
 typedef struct _LDK_PEB {
 
 	ULONG NtGlobalFlag;
+	PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
 
 	PVOID ImageBaseAddress;
 	SIZE_T ImageBaseSize;
-     
+
      // \??\X:\~~~
 	ANSI_STRING FullPathName;
 
@@ -60,8 +61,6 @@ typedef struct _LDK_PEB {
 	ULONG NumberOfProcessors;
 
 	LARGE_INTEGER CriticalSectionTimeout;
-
-	PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
 
 	PDRIVER_OBJECT DriverObject;
 	UNICODE_STRING RegistryPath;
