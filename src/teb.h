@@ -6,6 +6,8 @@
 
 typedef struct _LDK_TEB {
 
+	PLDK_PEB ProcessEnvironmentBlock;
+
 	EX_RUNDOWN_REF RundownProtect;
 
 	PETHREAD Thread;
