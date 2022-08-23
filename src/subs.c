@@ -141,10 +141,11 @@ Return Value:
 
 --*/
 {	
+#pragma warning(disable:4996)
     String->Buffer = ExAllocatePoolWithTag( LdkpDefaultPoolType,
                                             String->MaximumLength,
 											TAG_ANSI_POOL );
-
+#pragma warning(default:4996)
     if (String->Buffer == NULL) {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
