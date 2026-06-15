@@ -1,33 +1,55 @@
-name: CMake
+name: Build
 
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.arch }} ${{ matrix.config }}
+    runs-on: windows-2022
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-2019]
-
-    defaults:
-      run:
-        working-directory: test
+        arch: [x86, x64]
+        config: [Debug, Release]
 
     steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: true
+      - name: Checkout
+        uses: actions/checkout@v6
 
-    - name: build x86
-      shell: cmd
-      run: ..\build.bat . x86
-      working-directory: test
+      - name: Build library
+        shell: cmd
+        run: build.bat . ${{ matrix.arch }} ${{ matrix.config }}
 
-    - name: build x64
-      shell: cmd
-      run: ..\build.bat . x64
-      working-directory: test
+      - name: Build test driver
+        if: ${{ matrix.arch == 'x64' }}
+        shell: cmd
+        working-directory: test
+        run: ..\build.bat . ${{ matrix.arch }} ${{ matrix.config }}
+
+      - name: Stage release artifact
+        if: ${{ matrix.config == 'Release' }}
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP "ldk-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse -Path "include" -Destination (Join-Path $stage "include")
+          New-Item -ItemType Directory -Force -Path (Join-Path $stage "lib") | Out-Null
+          Copy-Item -Recurse -Path "lib\${{ matrix.arch }}" -Destination (Join-Path $stage "lib")
+          Copy-Item -Path "README.md", "LICENSE" -Destination $stage
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath "dist\ldk-${{ matrix.arch }}.zip" -Force
+
+      - name: Upload release artifact
+        if: ${{ matrix.config == 'Release' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ldk-${{ matrix.arch }}
+          path: dist/ldk-${{ matrix.arch }}.zip

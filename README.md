@@ -1,249 +1,214 @@
-# ldk
+# LDK
 
-**L**oad **D**ll into **K**ernel space
+**LDK** stands for **Load DLL into Kernel space**.
 
-[![CMake](https://github.com/ntoskrnl7/ldk/actions/workflows/cmake.yml/badge.svg)](https://github.com/ntoskrnl7/ldk/actions/workflows/cmake.yml)
-![GitHub](https://img.shields.io/github/license/ntoskrnl7/ldk)
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/ntoskrnl7/ldk)
-![Windows 7+](https://img.shields.io/badge/Windows-7+-blue?logo=windows&logoColor=white)
-![Visual Studio 2017+](https://img.shields.io/badge/Visual%20Studio-2017+-682270?logo=visualstudio&logoColor=682270)
-![CMake 3.14+](https://img.shields.io/badge/CMake-3.14+-yellow.svg?logo=cmake&logoColor=white)
-![Architecture](https://img.shields.io/badge/CPU-x86%20%2F%20x64%20%2F%20ARM%20%2F%20ARM64-blue.svg?logo=data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIj8+CjxzdmcgZW5hYmxlLWJhY2tncm91bmQ9Im5ldyAwIDAgNTIgNTIiIGlkPSJMYXllcl8xIiB2ZXJzaW9uPSIxLjEiIHZpZXdCb3g9IjAgMCA1MiA1MiIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxuczp4bGluaz0iaHR0cDovL3d3dy53My5vcmcvMTk5OS94bGluayI+CiAgICA8Zz4KICAgICAgICA8cGF0aCBmaWxsPSJ3aGl0ZSIgZD0iTTQ5LDE5LjV2LTJoLTYuOTk4NDEzMXYtNy40OTU3ODg2SDE0LjQwMTYxMTNsLTQuNDAwMDI0NCw0LjUzMDAyOTN2MjcuNDY5OTcwN0gxNy41VjQ5aDJ2LTYuOTk1Nzg4NmgzVjQ5aDJ2LTYuOTk1Nzg4NmgzICAgVjQ5aDJ2LTYuOTk1Nzg4NmgzVjQ5aDJ2LTYuOTk1Nzg4NmgyLjgxMTU4NDVsNC42OTAwMDI0LTUuNjQwMDE0NlYzNC41SDQ5di0yaC02Ljk5ODQxMzF2LTNINDl2LTJoLTYuOTk4NDEzMXYtM0g0OXYtMmgtNi45OTg0MTMxICAgdi0zSDQ5eiBNMzYuMDAxNTg2OSwzMy41MDQyMTE0YzAsMS42NTAwMjQ0LTEuMzQ5OTc1NiwzLTMsM2gtMTRjLTEuNjU5OTczMSwwLTMtMS4zNDk5NzU2LTMtM3YtMTRjMC0xLjY1OTk3MzEsMS4zNDAwMjY5LTMsMy0zaDE0ICAgYzEuNjUwMDI0NCwwLDMsMS4zNDAwMjY5LDMsM1YzMy41MDQyMTE0eiIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSIyIiB3aWR0aD0iNyIgeD0iMyIgeT0iMTcuNSIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSIyIiB3aWR0aD0iNyIgeD0iMyIgeT0iMjIuNSIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSIyIiB3aWR0aD0iNyIgeD0iMyIgeT0iMjcuNSIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSIyIiB3aWR0aD0iNyIgeD0iMyIgeT0iMzIuNSIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSI3IiB3aWR0aD0iMiIgeD0iMzIuNSIgeT0iMyIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSI3IiB3aWR0aD0iMiIgeD0iMjcuNSIgeT0iMyIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSI3IiB3aWR0aD0iMiIgeD0iMjIuNSIgeT0iMyIgLz4KICAgICAgICA8cmVjdCBzdHlsZT0iZmlsbDp3aGl0ZSIgaGVpZ2h0PSI3IiB3aWR0aD0iMiIgeD0iMTcuNSIgeT0iMyIgLz4KICAgIDwvZz4KPC9zdmc+)
+[![Build](https://github.com/ntoskrnl7/ldk/actions/workflows/cmake.yml/badge.svg)](https://github.com/ntoskrnl7/ldk/actions/workflows/cmake.yml)
+[![Release](https://github.com/ntoskrnl7/ldk/actions/workflows/release.yml/badge.svg)](https://github.com/ntoskrnl7/ldk/actions/workflows/release.yml)
+![GitHub License](https://img.shields.io/github/license/ntoskrnl7/ldk)
+![GitHub Release](https://img.shields.io/github/v/release/ntoskrnl7/ldk)
+![Windows](https://img.shields.io/badge/Windows-7%2B-blue?logo=windows&logoColor=white)
+![Visual Studio](https://img.shields.io/badge/Visual%20Studio-2017%2B-68217a?logo=visualstudio&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-3.14%2B-064f8c?logo=cmake&logoColor=white)
 
-## Overview
+LDK is an experimental Windows kernel-mode support library for drivers that
+need a familiar Win32/NTDLL-like surface inside kernel space. It provides a
+static WDK library, public headers under `include/Ldk`, and partial
+implementations of APIs normally provided by `kernel32.dll` and `ntdll.dll`.
 
-- 이 프로젝트는 사용자 모드 Dll을 Kernel 영역에 로드하여 커널 드라이버에서 Dll의 코드를 직접 호출할 수 있도록 도와줍니다.
-- Kernel32.dll과 Ntdll.dll는 커널에서 절대 사용할 수 없기 때문에 해당 모듈의 기능이 일부 구현되어있습니다.
+The project is useful when a driver needs to reuse carefully controlled DLL
+code or when kernel-mode code benefits from familiar primitives such as
+critical sections, condition variables, fibers, heap helpers, loader helpers,
+environment handling, and path/string utilities.
+
+## Status
+
+LDK is not a general-purpose Windows compatibility layer. It implements only a
+small subset of APIs, and the DLL-loading path is intentionally experimental.
+Every DLL or driver integration should be audited and tested in an isolated
+driver test environment before use.
+
+Avoid loading modules that rely on user-mode TEB/PEB assumptions, unsupported
+Win32 subsystems, GUI APIs, COM, CRT startup behavior, or other user-mode-only
+runtime features.
 
 ## Requirements
 
-- Windows 7 이상
-- Visual Studio 2017
+- Windows 7 or later
+- Visual Studio 2017 or later
+- Windows Driver Kit compatible with your Visual Studio toolset
+- CMake 3.14 or later
 
-## Test Environments
+The CMake build uses [`FindWDK`](https://github.com/ntoskrnl7/FindWDK) through
+CPM, so the WDK must be installed and discoverable on the build machine.
 
-- Windows 10
-- Visual Studio 2017
+## Quick Start
 
-## Contents
+The recommended integration path is CMake.
 
-- [ldk](#ldk)
-  - [Overview](#overview)
-  - [Requirements](#requirements)
-  - [Test Environments](#test-environments)
-  - [Contents](#contents)
-  - [Caution](#caution)
-  - [Build](#build)
-  - [Test](#test)
-  - [Usage](#usage)
-    - [CMake](#cmake)
-      - [CMakeLists.txt](#cmakeliststxt)
-    - [main.c](#mainc)
-  - [TODO](#todo)
-
-## Caution
-
-이 프로젝트는 **매우 실험적인** 기능입니다.
-
-1. ***TEB나 PEB에 접근하는 코드가 있는 모듈은 사용하지 마십시오***
-2. ***Dll Load를 직접 사용하는것은 많은 시험을 거친 후 적용하시기 바랍니다.***
-
-## Build
-
-Visual Studio 프로젝트에 이 라이브러리를 적용할때 참고하시기 바랍니다.
-
-***CMake 프로젝트에 이 라이브러리를 적용하시려면 [CMake](#cmake) 섹션을 참고하시기 바랍니다.***
-
-1. 아래 명령을 수행하여 라이브러리를 빌드하시기 바랍니다.
-
-    - Visual Studio 사용
-      - {이 저장소}/msvc/ldk.sln 혹은 {이 저장소}/msvc/ldk.vcxproj를 열어서 빌드를 하시기 바랍니다.
-
-    - CMake 사용
-
-        ```Batch
-        git clone https://github.com/ntoskrnl7/ldk
-        cd ldk
-        mkdir build && cd build
-        cmake .. -DWDK_WINVER=0x0602
-        cmake --build . --config Release
-        ```
-
-2. 빌드가 완료되었다면 아래 내용을 참고하여 드라이버 프로젝트에 적용하시기 바랍니다.
-
-    1. **{이 저장소}/include**를 '**[추가 포함 디렉토리](https://docs.microsoft.com/cpp/build/reference/i-additional-include-directories#to-set-this-compiler-option-in-the-visual-studio-development-environment
-    )** 속성'에 추가.
-    2. **Ldk.lib**를 '**[추가 종속성](https://docs.microsoft.com/cpp/build/reference/dot-lib-files-as-linker-input?view=msvc-170#to-add-lib-files-as-linker-input-in-the-development-environment)** 속성'에 추가.
-    3. **{이 저장소}/lib/\$(PlatformShortName)/\$(Configuration)**를 '**[추가 라이브러리 디렉토리](https://docs.microsoft.com/cpp/build/reference/libpath-additional-libpath?view=msvc-170#to-set-this-linker-option-in-the-visual-studio-development-environment)** 속성'에 추가
-
-## Test
-
-1. 아래 명령을 수행하여 라이브러리 및 테스트 코드를 빌드하시기 바랍니다.
-
-    ```Batch
-    git clone https://github.com/ntoskrnl7/ldk
-    cd ldk/test
-    mkdir build && cd build
-    cmake .. -DWDK_WINVER=0x0602
-    cmake --build .
-    ```
-
-2. build/Debug/LdkTest.sys를 설치 및 로드하시기 바랍니다.
-3. 정상적으로 로드 및 언로드가 되는지 확인하시기 바랍니다.
-
-## Usage
-
-CMake를 사용하는것을 권장합니다.
-
-### CMake
-
-CMake를 사용하신다면 아래와 같이 CMakeLists.txt를 만드시기 바랍니다.
-
-#### CMakeLists.txt
-
-```CMake
+```cmake
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
-# create project
-project(MyProject)
+project(MyDriver C)
 
-# add dependencies
 include(cmake/CPM.cmake)
+
 CPMAddPackage("gh:ntoskrnl7/ldk@0.7.5")
-
-# add dependencies
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
 
-# use FindWDK
-CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
-# add driver
-wdk_add_driver(TestDrv CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
-
-# link dependencies
-target_link_libraries(TestDrv Ldk)
+wdk_add_driver(MyDriver CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
+target_link_libraries(MyDriver Ldk)
 ```
 
-### main.c
+Using `LdkDriverEntry` as the custom entry point lets LDK run its initialization
+and termination hooks automatically. If you use your own driver entry point,
+call `LdkInitialize` during driver startup and `LdkTerminate` before unload.
 
-Condition Variable을 사용하는 간단한 샘플 코드입니다.
+## Driver Example
 
-- 아래와 같이 진입점을 LdkDriverEntry로 설정한다면 LdkInitialize와 LdkTerminate를 호출할 필요가 없습니다. **(권장)**
-
-    ```CMake
-    wdk_add_driver(TestDrv CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
-    ```
-
-- 만약 아래와 같이 진입점을 설정하지 않았다면 드라이버가 시작될 때는 LdkInitialize 함수를 반드시 호출해야하며, 드라이버 언로드 전에는 LdkTerminate 함수를 반드시 호출해야합니다.
-
-    ```CMake
-    wdk_add_driver(TestDrv main.c)
-    ```
-
-아래는 LdkDriverEntry를 진입점으로 설정한 프로젝트의 예제 코드입니다.
-
-```C
+```c
 #include <Ldk/Windows.h>
 
 DRIVER_INITIALIZE DriverEntry;
 DRIVER_UNLOAD DriverUnload;
 
-typedef struct _COND_TEST_THREAD_PARAM {
-    PCSTR name;
+typedef struct _WORKER_STATE {
     BOOL ready;
     LONG processed;
     CONDITION_VARIABLE cv;
     CRITICAL_SECTION cs;
-} COND_TEST_THREAD_PARAM, *PCOND_TEST_THREAD_PARAM;
+} WORKER_STATE, *PWORKER_STATE;
 
 DWORD
 WINAPI
-CondTestThreadProc (
-    LPVOID lpThreadParameter
+WorkerThread(
+    LPVOID Context
     )
 {
-    PCOND_TEST_THREAD_PARAM param = (PCOND_TEST_THREAD_PARAM)lpThreadParameter;
+    PWORKER_STATE state = (PWORKER_STATE)Context;
 
-    PAGED_CODE();
-
-    DbgPrint("%s - %d - start\n", param->name, GetCurrentThreadId());
-
-    EnterCriticalSection(&param->cs);
-    while (!param->ready) {
-        SleepConditionVariableCS(&param->cv, &param->cs, INFINITE);
+    EnterCriticalSection(&state->cs);
+    while (!state->ready) {
+        SleepConditionVariableCS(&state->cv, &state->cs, INFINITE);
     }
 
-    DbgPrint("%s - %d - processed (%d)\n", param->name, GetCurrentThreadId(), InterlockedIncrement(&param->processed));
+    InterlockedIncrement(&state->processed);
+    WakeConditionVariable(&state->cv);
+    LeaveCriticalSection(&state->cs);
 
-    LeaveCriticalSection(&param->cs);
-
-    DbgPrint("%s - %d - end\n", param->name, GetCurrentThreadId());
-
-    WakeConditionVariable(&param->cv);
     return 0;
 }
 
 NTSTATUS
-DriverEntry (
+DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
     )
 {
-    PAGED_CODE();
     UNREFERENCED_PARAMETER(RegistryPath);
 
-    COND_TEST_THREAD_PARAM param;
-    param.name = "Test";
-    param.ready = FALSE;
-    param.processed = 0;
-    InitializeCriticalSection(&param.cs);
-    InitializeConditionVariable(&param.cv);
-    HANDLE threads[5];
-    for (int i = 0; i < 5; ++i) {
-        threads[i] = CreateThread(NULL, 0, CondTestThreadProc, &param, 0, NULL);
-    }
+    WORKER_STATE state = {0};
+    InitializeCriticalSection(&state.cs);
+    InitializeConditionVariable(&state.cv);
 
-    EnterCriticalSection(&param.cs);
-    param.ready = TRUE;
-    LeaveCriticalSection(&param.cs);
-    WakeAllConditionVariable(&param.cv);
+    HANDLE thread = CreateThread(NULL, 0, WorkerThread, &state, 0, NULL);
 
-    EnterCriticalSection(&param.cs);
-    while (param.processed < 5) {
-        SleepConditionVariableCS(&param.cv, &param.cs, INFINITE);
-    }
-    WakeAllConditionVariable(&param.cv);
-    LeaveCriticalSection(&param.cs);
+    EnterCriticalSection(&state.cs);
+    state.ready = TRUE;
+    WakeAllConditionVariable(&state.cv);
+    LeaveCriticalSection(&state.cs);
 
-    WaitForMultipleObjects(5, threads, TRUE, INFINITE);
-    DeleteCriticalSection(&param.cs);
-
-    for (int i = 0; i < 5; ++i) {
-        if (threads[i]) {
-            CloseHandle(threads[i]);
-        }
-    }
+    WaitForSingleObject(thread, INFINITE);
+    CloseHandle(thread);
+    DeleteCriticalSection(&state.cs);
 
     DriverObject->DriverUnload = DriverUnload;
     return STATUS_SUCCESS;
 }
 
 VOID
-DriverUnload (
-    _In_ PDRIVER_OBJECT driverObject
+DriverUnload(
+    _In_ PDRIVER_OBJECT DriverObject
     )
 {
-    PAGED_CODE();
-    UNREFERENCED_PARAMETER(driverObject);
+    UNREFERENCED_PARAMETER(DriverObject);
 }
 ```
 
-## TODO
+## Build
 
- 아직 Dll을 로드하여 사용하기에는 API가 조금밖에 구현되지 않아서 간단한 Dll 밖에는 사용할 수 없습니다.
+Clone the repository and build with CMake:
 
-- [ ] 빠른 구현을 위해서 ReactOS 코드를 일부 사용하였으며, 추후 자체 구현해야합니다.
-- [ ] 문서화
-- [ ] 기타
+```bat
+git clone https://github.com/ntoskrnl7/ldk
+cd ldk
+cmake -S . -B build_x64 -A x64 -DWDK_WINVER=0x0602
+cmake --build build_x64 --config Release
+```
+
+The helper script wraps the same flow:
+
+```bat
+build.bat . x64 Release
+build.bat . x86 Release
+```
+
+Release libraries are written under:
+
+```text
+lib/<architecture>/Ldk.lib
+```
+
+## Test Driver
+
+The `test` directory builds a sample kernel driver that links against LDK.
+
+```bat
+cd test
+..\build.bat . x64 Release
+```
+
+The build output includes `LdkTest.sys`. Loading and unloading the driver must
+be done manually in an appropriate Windows driver test environment. GitHub
+Actions verifies the x64 test driver build, but it does not load kernel
+drivers.
+
+## Releases
+
+Tagged releases are built by GitHub Actions. Pushing a tag such as `v0.7.6`
+builds x86 and x64 Release artifacts and attaches ZIP packages to the GitHub
+Release.
+
+You can also run the release workflow manually from GitHub Actions. For manual
+runs, either provide an explicit tag input or update
+`include/Ldk/internal/version.h` first; otherwise the workflow derives the tag
+from the version header.
+
+Each release package contains:
+
+- `include/`
+- `lib/<architecture>/`
+- `README.md`
+- `LICENSE`
+
+## Repository Layout
+
+```text
+include/Ldk/       Public headers
+src/               LDK runtime implementation
+src/kernel32/      Kernel-mode implementations of selected Kernel32 APIs
+src/ntdll/         Kernel-mode implementations of selected NTDLL APIs
+test/              Sample/test driver project
+cmake/             CMake helper modules
+msvc/              Visual Studio solution and project files
+```
+
+## Notes
+
+- The API surface is intentionally incomplete.
+- Some implementation code is derived from ReactOS and should eventually be
+  replaced or audited case by case.
+- Treat DLL loading in kernel space as a last-resort technique, not as a normal
+  driver architecture.
