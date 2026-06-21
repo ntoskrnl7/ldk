@@ -1,4 +1,5 @@
 ﻿#include "winbase.h"
+#include "../ntdll/ntdll.h"
 #include "../peb.h"
 
 
@@ -13,6 +14,11 @@ LdkpGetLocaleName (
     _In_ LCID Locale
     );
 
+VOID
+LdkpTerminateNls (
+    VOID
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeNls)
 #endif
@@ -24,6 +30,367 @@ LCID LdkpSystemLocale;
 extern USHORT *NlsAnsiCodePage;
 extern USHORT *NlsOemCodePage;
 extern PUSHORT *NlsLeadByteInfo;
+
+#define NLS_CP_ALGORITHM_RANGE    60000
+
+typedef struct _LDK_CODE_PAGE_ENTRY {
+    LIST_ENTRY Links;
+    UINT CodePage;
+    PVOID Data;
+    ULONG DataSize;
+    CPTABLEINFO TableInfo;
+} LDK_CODE_PAGE_ENTRY, *PLDK_CODE_PAGE_ENTRY;
+
+LIST_ENTRY LdkpCodePageListHead;
+ERESOURCE LdkpCodePageListResource;
+BOOLEAN LdkpCodePageListInitialized;
+
+static
+VOID
+LdkpAcquireCodePageListExclusive (
+    VOID
+    )
+{
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite( &LdkpCodePageListResource,
+                                    TRUE );
+}
+
+static
+VOID
+LdkpAcquireCodePageListShared (
+    VOID
+    )
+{
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite( &LdkpCodePageListResource,
+                                 TRUE );
+}
+
+static
+VOID
+LdkpReleaseCodePageList (
+    VOID
+    )
+{
+    ExReleaseResourceLite( &LdkpCodePageListResource );
+    KeLeaveCriticalRegion();
+}
+
+static
+PLDK_CODE_PAGE_ENTRY
+LdkpFindCodePageEntryLocked (
+    _In_ UINT CodePage
+    )
+{
+    for (PLIST_ENTRY Link = LdkpCodePageListHead.Flink;
+         Link != &LdkpCodePageListHead;
+         Link = Link->Flink) {
+        PLDK_CODE_PAGE_ENTRY Entry = CONTAINING_RECORD( Link,
+                                                        LDK_CODE_PAGE_ENTRY,
+                                                        Links );
+        if (Entry->CodePage == CodePage) {
+            return Entry;
+        }
+    }
+
+    return NULL;
+}
+
+static
+BOOLEAN
+LdkpAppendString (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ PCWSTR String
+    )
+{
+    while (*String) {
+        if (*Remaining <= 1) {
+            return FALSE;
+        }
+
+        **Cursor = *String;
+        (*Cursor)++;
+        (*Remaining)--;
+        String++;
+    }
+
+    **Cursor = UNICODE_NULL;
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpAppendNumber (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ UINT Number
+    )
+{
+    WCHAR Digits[10];
+    ULONG Count = 0;
+
+    do {
+        Digits[Count++] = (WCHAR)(L'0' + (Number % 10));
+        Number /= 10;
+    } while (Number != 0);
+
+    if (*Remaining <= Count) {
+        return FALSE;
+    }
+
+    while (Count != 0) {
+        **Cursor = Digits[--Count];
+        (*Cursor)++;
+        (*Remaining)--;
+    }
+
+    **Cursor = UNICODE_NULL;
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpBuildCodePageFileName (
+    _In_ UINT CodePage,
+    _Out_writes_(PathCch) PWSTR Path,
+    _In_ SIZE_T PathCch
+    )
+{
+    PWSTR Cursor = Path;
+    SIZE_T Remaining = PathCch;
+
+    *Path = UNICODE_NULL;
+
+    return LdkpAppendString( &Cursor,
+                             &Remaining,
+                             L"\\SystemRoot\\System32\\C_" ) &&
+           LdkpAppendNumber( &Cursor,
+                             &Remaining,
+                             CodePage ) &&
+           LdkpAppendString( &Cursor,
+                             &Remaining,
+                             L".NLS" );
+}
+
+static
+BOOLEAN
+LdkpIsMissingCodePageFileStatus (
+    _In_ NTSTATUS Status
+    )
+{
+    return Status == STATUS_OBJECT_NAME_NOT_FOUND ||
+           Status == STATUS_OBJECT_PATH_NOT_FOUND ||
+           Status == STATUS_NO_SUCH_FILE;
+}
+
+static
+NTSTATUS
+LdkpReadCodePageFile (
+    _In_ UINT CodePage,
+    _Outptr_result_bytebuffer_(*DataSize) PVOID *Data,
+    _Out_ PULONG DataSize
+    )
+{
+    WCHAR PathBuffer[64];
+    UNICODE_STRING FileName;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    IO_STATUS_BLOCK IoStatus;
+    FILE_STANDARD_INFORMATION StandardInfo;
+    LARGE_INTEGER ByteOffset;
+    HANDLE FileHandle = NULL;
+    PVOID Buffer = NULL;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *Data = NULL;
+    *DataSize = 0;
+
+    if (! LdkpBuildCodePageFileName( CodePage,
+                                     PathBuffer,
+                                     RTL_NUMBER_OF(PathBuffer) )) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlInitUnicodeString( &FileName,
+                          PathBuffer );
+    InitializeObjectAttributes( &ObjectAttributes,
+                                &FileName,
+                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                NULL,
+                                NULL );
+
+    Status = ZwOpenFile( &FileHandle,
+                         FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                         &ObjectAttributes,
+                         &IoStatus,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+
+    try {
+        Status = ZwQueryInformationFile( FileHandle,
+                                         &IoStatus,
+                                         &StandardInfo,
+                                         sizeof(StandardInfo),
+                                         FileStandardInformation );
+        if (! NT_SUCCESS(Status)) {
+            leave;
+        }
+
+        if (StandardInfo.EndOfFile.HighPart != 0 ||
+            StandardInfo.EndOfFile.LowPart < sizeof(USHORT)) {
+            Status = STATUS_INVALID_PARAMETER;
+            leave;
+        }
+
+        Buffer = RtlAllocateHeap( RtlProcessHeap(),
+                                  0,
+                                  StandardInfo.EndOfFile.LowPart );
+        if (Buffer == NULL) {
+            Status = STATUS_NO_MEMORY;
+            leave;
+        }
+
+        ByteOffset.QuadPart = 0;
+        Status = ZwReadFile( FileHandle,
+                             NULL,
+                             NULL,
+                             NULL,
+                             &IoStatus,
+                             Buffer,
+                             StandardInfo.EndOfFile.LowPart,
+                             &ByteOffset,
+                             NULL );
+        if (! NT_SUCCESS(Status)) {
+            leave;
+        }
+
+        *Data = Buffer;
+        *DataSize = StandardInfo.EndOfFile.LowPart;
+        Buffer = NULL;
+    } finally {
+        if (Buffer != NULL) {
+            RtlFreeHeap( RtlProcessHeap(),
+                         0,
+                         Buffer );
+        }
+
+        ZwClose( FileHandle );
+    }
+
+    return Status;
+}
+
+static
+VOID
+LdkpFreeCodePageEntry (
+    _In_ PLDK_CODE_PAGE_ENTRY Entry
+    )
+{
+    if (Entry->Data != NULL) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Entry->Data );
+    }
+
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 Entry );
+}
+
+static
+NTSTATUS
+LdkpLoadCodePageEntry (
+    _In_ UINT CodePage,
+    _Outptr_ PLDK_CODE_PAGE_ENTRY *CodePageEntry
+    )
+{
+    PLDK_CODE_PAGE_ENTRY Entry;
+    PVOID Data;
+    ULONG DataSize;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *CodePageEntry = NULL;
+
+    Status = LdkpReadCodePageFile( CodePage,
+                                   &Data,
+                                   &DataSize );
+    if (! NT_SUCCESS(Status)) {
+        if (LdkpIsMissingCodePageFileStatus( Status )) {
+            return STATUS_INVALID_PARAMETER;
+        }
+        return Status;
+    }
+
+    Entry = RtlAllocateHeap( RtlProcessHeap(),
+                             HEAP_ZERO_MEMORY,
+                             sizeof(*Entry) );
+    if (Entry == NULL) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Data );
+        return STATUS_NO_MEMORY;
+    }
+
+    Entry->CodePage = CodePage;
+    Entry->Data = Data;
+    Entry->DataSize = DataSize;
+
+    RtlInitCodePageTable( (PUSHORT)Data,
+                          &Entry->TableInfo );
+    if (Entry->TableInfo.CodePage != CodePage) {
+        LdkpFreeCodePageEntry( Entry );
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *CodePageEntry = Entry;
+    return STATUS_SUCCESS;
+}
+
+static
+UINT
+LdkpGetMacCodePage (
+    VOID
+    )
+{
+    LANGID LangId = LANGIDFROMLCID( LdkpSystemLocale );
+
+    switch (PRIMARYLANGID(LangId)) {
+    case LANG_ARABIC:
+        return 10004;
+
+    case LANG_CHINESE:
+        return SUBLANGID(LangId) == SUBLANG_CHINESE_SIMPLIFIED ? 10008 : 10002;
+
+    case LANG_GREEK:
+        return 10006;
+
+    case LANG_HEBREW:
+        return 10005;
+
+    case LANG_JAPANESE:
+        return 10001;
+
+    case LANG_KOREAN:
+        return 10003;
+
+    case LANG_RUSSIAN:
+        return 10007;
+
+    case LANG_THAI:
+        return 10021;
+
+    default:
+        return 10000;
+    }
+}
 
 UINT
 LdkpResolveCodePage (
@@ -38,9 +405,128 @@ LdkpResolveCodePage (
     case CP_OEMCP:
         return *NlsOemCodePage;
 
+    case CP_MACCP:
+        return LdkpGetMacCodePage();
+
     default:
         return CodePage;
     }
+}
+
+NTSTATUS
+LdkpGetCodePageTable (
+    _In_ UINT CodePage,
+    _Outptr_ PCPTABLEINFO *CodePageTable
+    )
+{
+    PLDK_CODE_PAGE_ENTRY Entry;
+    PLDK_CODE_PAGE_ENTRY ExistingEntry;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *CodePageTable = NULL;
+
+    if (! LdkpCodePageListInitialized || CodePage >= NLS_CP_ALGORITHM_RANGE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    CodePage = LdkpResolveCodePage( CodePage );
+    if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    LdkpAcquireCodePageListShared();
+    Entry = LdkpFindCodePageEntryLocked( CodePage );
+    if (Entry != NULL) {
+        *CodePageTable = &Entry->TableInfo;
+        LdkpReleaseCodePageList();
+        return STATUS_SUCCESS;
+    }
+    LdkpReleaseCodePageList();
+
+    Status = LdkpLoadCodePageEntry( CodePage,
+                                    &Entry );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+
+    LdkpAcquireCodePageListExclusive();
+    ExistingEntry = LdkpFindCodePageEntryLocked( CodePage );
+    if (ExistingEntry != NULL) {
+        *CodePageTable = &ExistingEntry->TableInfo;
+        LdkpReleaseCodePageList();
+        LdkpFreeCodePageEntry( Entry );
+        return STATUS_SUCCESS;
+    }
+
+    InsertTailList( &LdkpCodePageListHead,
+                    &Entry->Links );
+    *CodePageTable = &Entry->TableInfo;
+    LdkpReleaseCodePageList();
+    return STATUS_SUCCESS;
+}
+
+VOID
+LdkpFillCodePageInfo (
+    _In_ PCPTABLEINFO CodePageTable,
+    _Out_ LPCPINFO lpCPInfo,
+    _In_ BOOL fExVer
+    )
+{
+    lpCPInfo->MaxCharSize = CodePageTable->MaximumCharacterSize;
+    lpCPInfo->DefaultChar[0] = (BYTE)(CodePageTable->DefaultChar & 0xff);
+    lpCPInfo->DefaultChar[1] = (BYTE)(CodePageTable->DefaultChar >> 8);
+
+    RtlCopyMemory( lpCPInfo->LeadByte,
+                   CodePageTable->LeadByte,
+                   RTL_NUMBER_OF(lpCPInfo->LeadByte) );
+
+    if (fExVer) {
+        LPCPINFOEXW lpCPInfoEx = (LPCPINFOEXW)lpCPInfo;
+        lpCPInfoEx->UnicodeDefaultChar = CodePageTable->UniDefaultChar;
+        lpCPInfoEx->CodePage = CodePageTable->CodePage;
+    }
+}
+
+VOID
+LdkpFormatCodePageName (
+    _In_ UINT CodePage,
+    _Out_writes_(cchBuffer) LPWSTR Buffer,
+    _In_ int cchBuffer
+    )
+{
+    PWSTR Cursor = Buffer;
+    SIZE_T Remaining = (SIZE_T)cchBuffer;
+
+    *Buffer = UNICODE_NULL;
+
+    if (CodePage == CP_UTF7) {
+        LdkpAppendString( &Cursor,
+                          &Remaining,
+                          L"65000 (UTF-7)" );
+        return;
+    }
+
+    if (CodePage == CP_UTF8) {
+        LdkpAppendString( &Cursor,
+                          &Remaining,
+                          L"65001 (UTF-8)" );
+        return;
+    }
+
+    LdkpAppendNumber( &Cursor,
+                      &Remaining,
+                      CodePage );
+    LdkpAppendString( &Cursor,
+                      &Remaining,
+                      L"   (Code Page " );
+    LdkpAppendNumber( &Cursor,
+                      &Remaining,
+                      CodePage );
+    LdkpAppendString( &Cursor,
+                      &Remaining,
+                      L")" );
 }
 
 NTSTATUS
@@ -52,9 +538,44 @@ LdkpInitializeNls (
 
     PAGED_CODE();
 
+    InitializeListHead( &LdkpCodePageListHead );
+    Status = ExInitializeResourceLite( &LdkpCodePageListResource );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+    LdkpCodePageListInitialized = TRUE;
+
 	Status = ZwQueryDefaultLocale( FALSE,
                                    &LdkpSystemLocale );
+    if (! NT_SUCCESS(Status)) {
+        LdkpTerminateNls();
+    }
 	return Status;
+}
+
+VOID
+LdkpTerminateNls (
+    VOID
+    )
+{
+    PAGED_CODE();
+
+    if (! LdkpCodePageListInitialized) {
+        return;
+    }
+
+    LdkpAcquireCodePageListExclusive();
+    while (! IsListEmpty( &LdkpCodePageListHead )) {
+        PLIST_ENTRY Link = RemoveHeadList( &LdkpCodePageListHead );
+        PLDK_CODE_PAGE_ENTRY Entry = CONTAINING_RECORD( Link,
+                                                        LDK_CODE_PAGE_ENTRY,
+                                                        Links );
+        LdkpFreeCodePageEntry( Entry );
+    }
+    LdkpReleaseCodePageList();
+
+    ExDeleteResourceLite( &LdkpCodePageListResource );
+    LdkpCodePageListInitialized = FALSE;
 }
 
 WINBASEAPI
@@ -64,13 +585,21 @@ IsValidCodePage (
     _In_ UINT CodePage
     )
 {
-    CodePage = LdkpResolveCodePage( CodePage );
+    PCPTABLEINFO CodePageTable;
 
-    if ((CodePage == *NlsAnsiCodePage) || (CodePage == *NlsOemCodePage) || (CodePage == CP_UTF7) || (CodePage == CP_UTF8)) {
+    if (CodePage == CP_ACP ||
+        CodePage == CP_OEMCP ||
+        CodePage == CP_MACCP ||
+        CodePage == CP_THREAD_ACP) {
+        return FALSE;
+    }
+
+    if (CodePage == CP_UTF7 || CodePage == CP_UTF8) {
         return TRUE;
     }
 
-    return FALSE;
+    return NT_SUCCESS(LdkpGetCodePageTable( CodePage,
+                                            &CodePageTable ));
 }
 
 WINBASEAPI
@@ -131,8 +660,6 @@ UTFCPInfo (
     return TRUE;
 }
 
-#define NLS_CP_ALGORITHM_RANGE    60000
-
 WINBASEAPI
 BOOL
 WINAPI
@@ -141,6 +668,14 @@ GetCPInfo (
     _Out_ LPCPINFO lpCPInfo
     )
 {
+    PCPTABLEINFO CodePageTable;
+    NTSTATUS Status;
+
+    if (lpCPInfo == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
     CodePage = LdkpResolveCodePage( CodePage );
 
     if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
@@ -149,8 +684,17 @@ GetCPInfo (
                           FALSE );
     }
 
-    SetLastError( ERROR_INVALID_PARAMETER );
-    return FALSE;
+    Status = LdkpGetCodePageTable( CodePage,
+                                   &CodePageTable );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    LdkpFillCodePageInfo( CodePageTable,
+                          lpCPInfo,
+                          FALSE );
+    return TRUE;
 }
 
 WINBASEAPI
@@ -218,21 +762,11 @@ GetStringTableEntry (
     UNREFERENCED_PARAMETER( UILangId );
     UNREFERENCED_PARAMETER( WhichString );
 
-    PCWSTR Name;
+    WCHAR Name[MAX_PATH];
 
-    switch (ResourceID) {
-    case CP_UTF7:
-        Name = L"Unicode (UTF-7)";
-        break;
-
-    case CP_UTF8:
-        Name = L"Unicode (UTF-8)";
-        break;
-
-    default:
-        SetLastError( ERROR_RESOURCE_DATA_NOT_FOUND );
-        return 0;
-    }
+    LdkpFormatCodePageName( ResourceID,
+                            Name,
+                            RTL_NUMBER_OF(Name) );
 
     int Length = (int)wcslen( Name ) + 1;
     if (cchBuffer < Length) {
@@ -256,6 +790,8 @@ GetCPInfoExW (
     )
 {
     UNREFERENCED_PARAMETER( dwFlags );
+    PCPTABLEINFO CodePageTable;
+    NTSTATUS Status;
 
     if (lpCPInfoEx == NULL) {
         SetLastError( ERROR_INVALID_PARAMETER );
@@ -277,8 +813,21 @@ GetCPInfoExW (
         return FALSE;
     }
 
-    SetLastError( ERROR_INVALID_PARAMETER );
-    return FALSE;
+    Status = LdkpGetCodePageTable( CodePage,
+                                   &CodePageTable );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    LdkpFillCodePageInfo( CodePageTable,
+                          (LPCPINFO)lpCPInfoEx,
+                          TRUE );
+    return GetStringTableEntry( CodePageTable->CodePage,
+                                0,
+                                lpCPInfoEx->CodePageName,
+                                MAX_PATH,
+                                RC_CODE_PAGE_NAME );
 }
 
 #define NLS_VALID_LOCALE_MASK          0x000fffff

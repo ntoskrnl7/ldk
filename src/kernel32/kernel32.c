@@ -11,6 +11,7 @@ LDK_INITIALIZE_COMPONENT LdkpInitializeThreadContexts;
 LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
 
 LDK_INITIALIZE_COMPONENT LdkpInitializeNls;
+LDK_TERMINATE_COMPONENT LdkpTerminateNls;
 
 LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
 LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
@@ -763,6 +764,7 @@ LdkpKernel32Terminate (
 {
 	PAGED_CODE();
 
+	LdkpTerminateNls();
 	LdkpTerminateThreadContexts();
 	LdkpTerminateThreadpoolApiset();
 }

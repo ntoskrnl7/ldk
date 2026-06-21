@@ -20,9 +20,29 @@ LdkpUnicodeToOemSize (
 	_In_ ULONG BytesInUnicodeString
 	);
 
+static
+NTSTATUS
+LdkpCustomCPToUnicodeSize (
+	_In_ PCPTABLEINFO CodePageTable,
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInCustomCPString) PCCH CustomCPString,
+	_In_ ULONG BytesInCustomCPString
+	);
+
+static
+NTSTATUS
+LdkpUnicodeToCustomCPSize (
+	_In_ PCPTABLEINFO CodePageTable,
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInUnicodeString) PCWCH UnicodeString,
+	_In_ ULONG BytesInUnicodeString
+	);
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LdkpOemToUnicodeSize)
 #pragma alloc_text(PAGE, LdkpUnicodeToOemSize)
+#pragma alloc_text(PAGE, LdkpCustomCPToUnicodeSize)
+#pragma alloc_text(PAGE, LdkpUnicodeToCustomCPSize)
 #pragma alloc_text(PAGE, MultiByteToWideChar)
 #pragma alloc_text(PAGE, WideCharToMultiByte)
 #endif
@@ -93,6 +113,94 @@ LdkpUnicodeToOemSize (
 							   BytesNeeded,
 							   UnicodeString,
 							   BytesInUnicodeString );
+
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 Buffer );
+
+	return Status;
+}
+
+static
+NTSTATUS
+LdkpCustomCPToUnicodeSize (
+	_In_ PCPTABLEINFO CodePageTable,
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInCustomCPString) PCCH CustomCPString,
+	_In_ ULONG BytesInCustomCPString
+	)
+{
+	PWCH Buffer;
+	ULONG MaximumBytesInUnicodeString;
+	NTSTATUS Status;
+
+	PAGED_CODE();
+
+	if (BytesInCustomCPString > (ULONG_MAX / sizeof(WCHAR))) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	MaximumBytesInUnicodeString = BytesInCustomCPString * sizeof(WCHAR);
+	Buffer = RtlAllocateHeap( RtlProcessHeap(),
+							  0,
+							  MaximumBytesInUnicodeString );
+	if (Buffer == NULL) {
+		return STATUS_NO_MEMORY;
+	}
+
+	Status = RtlCustomCPToUnicodeN( CodePageTable,
+									Buffer,
+									MaximumBytesInUnicodeString,
+									BytesNeeded,
+									(PCH)CustomCPString,
+									BytesInCustomCPString );
+
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 Buffer );
+
+	return Status;
+}
+
+static
+NTSTATUS
+LdkpUnicodeToCustomCPSize (
+	_In_ PCPTABLEINFO CodePageTable,
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInUnicodeString) PCWCH UnicodeString,
+	_In_ ULONG BytesInUnicodeString
+	)
+{
+	PCHAR Buffer;
+	ULONG Characters;
+	ULONG MaximumBytesInCustomCPString;
+	NTSTATUS Status;
+
+	PAGED_CODE();
+
+	if (CodePageTable->MaximumCharacterSize == 0) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	Characters = BytesInUnicodeString / sizeof(WCHAR);
+	if (Characters > (ULONG_MAX / CodePageTable->MaximumCharacterSize)) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	MaximumBytesInCustomCPString = Characters * CodePageTable->MaximumCharacterSize;
+	Buffer = RtlAllocateHeap( RtlProcessHeap(),
+							  0,
+							  MaximumBytesInCustomCPString );
+	if (Buffer == NULL) {
+		return STATUS_NO_MEMORY;
+	}
+
+	Status = RtlUnicodeToCustomCPN( CodePageTable,
+									Buffer,
+									MaximumBytesInCustomCPString,
+									BytesNeeded,
+									(PWCH)UnicodeString,
+									BytesInUnicodeString );
 
 	RtlFreeHeap( RtlProcessHeap(),
 				 0,
@@ -219,9 +327,41 @@ MultiByteToWideChar (
 		}
 		break;
 
-	default:
-		SetLastError( ERROR_INVALID_PARAMETER );
-		return 0;
+	default: {
+		PCPTABLEINFO CodePageTable;
+
+		Status = LdkpGetCodePageTable( CodePage,
+										&CodePageTable );
+		if (! NT_SUCCESS(Status)) {
+			LdkSetLastNTError( Status );
+			return 0;
+		}
+
+		Status = LdkpCustomCPToUnicodeSize( CodePageTable,
+											&BytesNeeded,
+											lpMultiByteStr,
+											(ULONG)cbMultiByte );
+		if (! NT_SUCCESS(Status)) {
+			break;
+		}
+		if (lpWideCharStr == NULL || cchWideChar == 0) {
+			return (int)(BytesNeeded / sizeof(WCHAR));
+		}
+		if (DestinationBytes < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlCustomCPToUnicodeN( CodePageTable,
+										lpWideCharStr,
+										DestinationBytes,
+										&BytesWritten,
+										(PCH)lpMultiByteStr,
+										(ULONG)cbMultiByte );
+		if (NT_SUCCESS(Status)) {
+			return (int)(BytesWritten / sizeof(WCHAR));
+		}
+		break;
+	}
 	}
 	
 	LdkSetLastNTError( Status );
@@ -355,9 +495,41 @@ WideCharToMultiByte (
 		}
 		break;
 
-	default:
-		SetLastError( ERROR_INVALID_PARAMETER );
-		return 0;
+	default: {
+		PCPTABLEINFO CodePageTable;
+
+		Status = LdkpGetCodePageTable( CodePage,
+										&CodePageTable );
+		if (! NT_SUCCESS(Status)) {
+			LdkSetLastNTError( Status );
+			return 0;
+		}
+
+		Status = LdkpUnicodeToCustomCPSize( CodePageTable,
+											&BytesNeeded,
+											lpWideCharStr,
+											SourceBytes );
+		if (! NT_SUCCESS(Status)) {
+			break;
+		}
+		if (lpMultiByteStr == NULL || cbMultiByte == 0) {
+			return (int)BytesNeeded;
+		}
+		if ((ULONG)cbMultiByte < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlUnicodeToCustomCPN( CodePageTable,
+										lpMultiByteStr,
+										(ULONG)cbMultiByte,
+										&BytesWritten,
+										(PWCH)lpWideCharStr,
+										SourceBytes );
+		if (NT_SUCCESS(Status)) {
+			return (int)BytesWritten;
+		}
+		break;
+	}
 	}
 	
 	LdkSetLastNTError( Status );
