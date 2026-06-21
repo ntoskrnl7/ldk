@@ -153,4 +153,4 @@ GetVersionExW(
 
 EXTERN_C_END
 
-#endif _SYSINFOAPI_H_
+#endif // _SYSINFOAPI_H_

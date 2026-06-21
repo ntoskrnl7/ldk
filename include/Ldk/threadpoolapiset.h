@@ -57,4 +57,4 @@ FreeLibraryWhenCallbackReturns(
 
 EXTERN_C_END
 
-#endif _THREADPOOLAPISET_H_
+#endif // _THREADPOOLAPISET_H_

@@ -1,12 +1,105 @@
 ﻿#include "winbase.h"
+#include "../ntdll/ntdll.h"
 #include <stdlib.h>
 
 
 
+static
+NTSTATUS
+LdkpOemToUnicodeSize (
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInOemString) PCCH OemString,
+	_In_ ULONG BytesInOemString
+	);
+
+static
+NTSTATUS
+LdkpUnicodeToOemSize (
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInUnicodeString) PCWCH UnicodeString,
+	_In_ ULONG BytesInUnicodeString
+	);
+
 #ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, LdkpOemToUnicodeSize)
+#pragma alloc_text(PAGE, LdkpUnicodeToOemSize)
 #pragma alloc_text(PAGE, MultiByteToWideChar)
 #pragma alloc_text(PAGE, WideCharToMultiByte)
 #endif
+
+
+
+static
+NTSTATUS
+LdkpOemToUnicodeSize (
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInOemString) PCCH OemString,
+	_In_ ULONG BytesInOemString
+	)
+{
+	PWCH Buffer;
+	ULONG MaximumBytesInUnicodeString;
+	NTSTATUS Status;
+
+	PAGED_CODE();
+
+	if (BytesInOemString > (ULONG_MAX / sizeof(WCHAR))) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	MaximumBytesInUnicodeString = BytesInOemString * sizeof(WCHAR);
+	Buffer = RtlAllocateHeap( RtlProcessHeap(),
+							  0,
+							  MaximumBytesInUnicodeString );
+	if (Buffer == NULL) {
+		return STATUS_NO_MEMORY;
+	}
+
+	Status = RtlOemToUnicodeN( Buffer,
+							   MaximumBytesInUnicodeString,
+							   BytesNeeded,
+							   OemString,
+							   BytesInOemString );
+
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 Buffer );
+
+	return Status;
+}
+
+static
+NTSTATUS
+LdkpUnicodeToOemSize (
+	_Out_ PULONG BytesNeeded,
+	_In_reads_bytes_(BytesInUnicodeString) PCWCH UnicodeString,
+	_In_ ULONG BytesInUnicodeString
+	)
+{
+	PCHAR Buffer;
+	NTSTATUS Status;
+
+	PAGED_CODE();
+
+	Buffer = RtlAllocateHeap( RtlProcessHeap(),
+							  0,
+							  BytesInUnicodeString );
+	if (Buffer == NULL) {
+		return STATUS_NO_MEMORY;
+	}
+
+	Status = RtlUnicodeToOemN( Buffer,
+							   BytesInUnicodeString,
+							   BytesNeeded,
+							   UnicodeString,
+							   BytesInUnicodeString );
+
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 Buffer );
+
+	return Status;
+}
 
 
 
@@ -28,71 +121,104 @@ MultiByteToWideChar (
 
 	PAGED_CODE();
 
-	UNICODE_STRING Dst;
-	Dst.Buffer = cchWideChar == 0 ? NULL : lpWideCharStr;
-	Dst.Length = 0;
-	Dst.MaximumLength = lpWideCharStr ? (USHORT)(cchWideChar * sizeof(WCHAR)) : 0;
-
 	if (lpMultiByteStr == NULL) {
 		SetLastError(ERROR_INVALID_PARAMETER);
 		return 0;
 	}
 
 	if (cbMultiByte == -1) {
-		cbMultiByte = (int)strlen(lpMultiByteStr);
+		cbMultiByte = (int)strlen(lpMultiByteStr) + 1;
+	} else if (cbMultiByte <= 0) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
+
+	if (cchWideChar < 0 || (! lpWideCharStr && cchWideChar != 0)) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
 	}
 
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+	ULONG BytesNeeded = 0;
+	ULONG BytesWritten = 0;
+	ULONG DestinationBytes = (ULONG)cchWideChar * sizeof(WCHAR);
+
 	switch (CodePage) {
 	case CP_THREAD_ACP:
-	case CP_ACP: {
-		CANSI_STRING Src;
-		Src.Buffer = (PCHAR)lpMultiByteStr;
-		Src.MaximumLength = Src.Length = (USHORT)cbMultiByte;
-		if (Dst.Buffer == NULL || Dst.MaximumLength == 0) {
-			return (int)RtlAnsiStringToUnicodeSize( &Src ) / sizeof(WCHAR);
+	case CP_ACP:
+		Status = RtlMultiByteToUnicodeSize( &BytesNeeded,
+											lpMultiByteStr,
+											(ULONG)cbMultiByte );
+		if (! NT_SUCCESS(Status)) {
+			break;
 		}
-		Status = RtlAnsiStringToUnicodeString( &Dst,
-											   &Src,
-											   FALSE );
+		if (lpWideCharStr == NULL || cchWideChar == 0) {
+			return (int)(BytesNeeded / sizeof(WCHAR));
+		}
+		if (DestinationBytes < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlMultiByteToUnicodeN( lpWideCharStr,
+										 DestinationBytes,
+										 &BytesWritten,
+										 lpMultiByteStr,
+										 (ULONG)cbMultiByte );
 		if (NT_SUCCESS(Status)) {
-			return (int)RtlAnsiStringToUnicodeSize( &Src ) / sizeof(WCHAR);
+			return (int)(BytesWritten / sizeof(WCHAR));
 		}
 		break;
-	}
-	case CP_OEMCP: {
-		OEM_STRING Src;
-		Src.Buffer = (PCHAR)lpMultiByteStr;
-		Src.MaximumLength = Src.Length = (USHORT)cbMultiByte;
-		if (Dst.Buffer == NULL || Dst.MaximumLength == 0) {
-			return (int)RtlOemStringToUnicodeSize( &Src ) / sizeof(WCHAR);
-		}
-		Status = RtlOemStringToUnicodeString( &Dst,
-											  &Src,
-											  FALSE );
-		if (NT_SUCCESS(Status)) {
-			return (int)RtlOemStringToUnicodeSize(&Src) / sizeof(WCHAR);
-		}
-		break;
-	}
-	case CP_UTF8: {
-		ULONG ActualByteCount = 0;
-		if (Dst.Buffer == NULL || Dst.MaximumLength == 0) {
-			Status = RtlUTF8ToUnicodeN( NULL,
-										0,
-										&ActualByteCount,
+
+	case CP_OEMCP:
+		Status = LdkpOemToUnicodeSize( &BytesNeeded,
 										lpMultiByteStr,
-										cbMultiByte );
-		
-			return (int)ActualByteCount / sizeof(WCHAR);
+										(ULONG)cbMultiByte );
+		if (! NT_SUCCESS(Status)) {
+			break;
 		}
-		Status = RtlUTF8ToUnicodeN( Dst.Buffer,
-									Dst.MaximumLength,
-									&ActualByteCount,
+		if (lpWideCharStr == NULL || cchWideChar == 0) {
+			return (int)(BytesNeeded / sizeof(WCHAR));
+		}
+		if (DestinationBytes < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlOemToUnicodeN( lpWideCharStr,
+								   DestinationBytes,
+								   &BytesWritten,
+								   lpMultiByteStr,
+								   (ULONG)cbMultiByte );
+		if (NT_SUCCESS(Status)) {
+			return (int)(BytesWritten / sizeof(WCHAR));
+		}
+		break;
+
+	case CP_UTF8:
+		Status = RtlUTF8ToUnicodeN( NULL,
+									0,
+									&BytesNeeded,
 									lpMultiByteStr,
-									cbMultiByte );
-		return (int)ActualByteCount / sizeof(WCHAR);
-	}
+									(ULONG)cbMultiByte );
+		if (! NT_SUCCESS(Status)) {
+			break;
+		}
+		if (lpWideCharStr == NULL || cchWideChar == 0) {
+			return (int)(BytesNeeded / sizeof(WCHAR));
+		}
+		if (DestinationBytes < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlUTF8ToUnicodeN( lpWideCharStr,
+									DestinationBytes,
+									&BytesWritten,
+									lpMultiByteStr,
+									(ULONG)cbMultiByte );
+		if (NT_SUCCESS(Status)) {
+			return (int)(BytesWritten / sizeof(WCHAR));
+		}
+		break;
+
 	default:
 		SetLastError( ERROR_INVALID_PARAMETER );
 		return 0;
@@ -120,7 +246,6 @@ WideCharToMultiByte (
 {
 	UNREFERENCED_PARAMETER( dwFlags );
 	UNREFERENCED_PARAMETER( lpDefaultChar );
-	UNREFERENCED_PARAMETER( lpUsedDefaultChar );
 
 	PAGED_CODE();
 
@@ -130,66 +255,106 @@ WideCharToMultiByte (
 	}
 
 	if (cchWideChar == -1) {
-		cchWideChar = (int)wcslen(lpWideCharStr);
+		cchWideChar = (int)wcslen(lpWideCharStr) + 1;
+	} else if (cchWideChar <= 0) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
 	}
 
-	UNICODE_STRING Src;
-	Src.Buffer = (PWCH)lpWideCharStr;
-	Src.MaximumLength = Src.Length = (USHORT)cchWideChar;
+	if (cbMultiByte < 0 || (! lpMultiByteStr && cbMultiByte != 0)) {
+		SetLastError(ERROR_INVALID_PARAMETER);
+		return 0;
+	}
+
+	if (lpUsedDefaultChar) {
+		*lpUsedDefaultChar = FALSE;
+	}
 
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+	ULONG BytesNeeded = 0;
+	ULONG BytesWritten = 0;
+	ULONG SourceBytes = (ULONG)cchWideChar * sizeof(WCHAR);
+
 	switch (CodePage) {
 	case CP_THREAD_ACP:
-	case CP_ACP: {
-		ANSI_STRING Dst;
-		Dst.Buffer = cbMultiByte == 0 ? NULL : lpMultiByteStr;
-		Dst.Length = 0;
-		Dst.MaximumLength = lpMultiByteStr ? (USHORT)(cbMultiByte * sizeof(CHAR)) : 0;
-		if (Dst.Buffer == NULL || Dst.MaximumLength == 0) {
-			return (int)RtlUnicodeStringToAnsiSize( &Src ) / sizeof(CHAR);
+	case CP_ACP:
+		Status = RtlUnicodeToMultiByteSize( &BytesNeeded,
+											lpWideCharStr,
+											SourceBytes );
+		if (! NT_SUCCESS(Status)) {
+			break;
 		}
-		Status = RtlUnicodeStringToAnsiString( &Dst,
-											   &Src,
-											   FALSE );
-		if (NT_SUCCESS(Status)) {
-			return (int)RtlUnicodeStringToAnsiSize( &Src ) / sizeof(CHAR);
-		}
-		break;
-	}
-	case CP_OEMCP: {
-		OEM_STRING Dst;
-		Dst.Buffer = cbMultiByte == 0 ? NULL : lpMultiByteStr;
-		Dst.Length = 0;
-		Dst.MaximumLength = lpMultiByteStr ? (USHORT)(cbMultiByte * sizeof(CHAR)) : 0;
-		if (Dst.Buffer == NULL || Dst.MaximumLength == 0) {
-			return (int)RtlUnicodeStringToOemSize( &Src ) / sizeof(CHAR);
-		}
-		Status = RtlUnicodeStringToOemString( &Dst,
-											  &Src,
-											  FALSE );
-		if (NT_SUCCESS(Status)) {
-			return (int)RtlUnicodeStringToOemSize( &Src ) / sizeof(CHAR);
-		}
-		break;
-	}
-	case CP_UTF8: {
-		ULONG ActualByteCount = 0;
 		if (lpMultiByteStr == NULL || cbMultiByte == 0) {
-			Status = RtlUnicodeToUTF8N( NULL,
-										0,
-										&ActualByteCount,
+			return (int)BytesNeeded;
+		}
+		if ((ULONG)cbMultiByte < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlUnicodeToMultiByteN( lpMultiByteStr,
+										 (ULONG)cbMultiByte,
+										 &BytesWritten,
+										 lpWideCharStr,
+										 SourceBytes );
+		if (NT_SUCCESS(Status)) {
+			return (int)BytesWritten;
+		}
+		break;
+
+	case CP_OEMCP:
+		Status = LdkpUnicodeToOemSize( &BytesNeeded,
 										lpWideCharStr,
-										cchWideChar * sizeof(WCHAR) );
-		
-			return (int)ActualByteCount / sizeof(WCHAR);
+										SourceBytes );
+		if (! NT_SUCCESS(Status)) {
+			break;
+		}
+		if (lpMultiByteStr == NULL || cbMultiByte == 0) {
+			return (int)BytesNeeded;
+		}
+		if ((ULONG)cbMultiByte < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
+		}
+		Status = RtlUnicodeToOemN( lpMultiByteStr,
+								   (ULONG)cbMultiByte,
+								   &BytesWritten,
+								   lpWideCharStr,
+								   SourceBytes );
+		if (NT_SUCCESS(Status)) {
+			return (int)BytesWritten;
+		}
+		break;
+
+	case CP_UTF8:
+		if (lpDefaultChar || lpUsedDefaultChar) {
+			SetLastError( ERROR_INVALID_PARAMETER );
+			return 0;
+		}
+		Status = RtlUnicodeToUTF8N( NULL,
+									0,
+									&BytesNeeded,
+									lpWideCharStr,
+									SourceBytes );
+		if (! NT_SUCCESS(Status)) {
+			break;
+		}
+		if (lpMultiByteStr == NULL || cbMultiByte == 0) {
+			return (int)BytesNeeded;
+		}
+		if ((ULONG)cbMultiByte < BytesNeeded) {
+			SetLastError( ERROR_INSUFFICIENT_BUFFER );
+			return 0;
 		}
 		Status = RtlUnicodeToUTF8N( lpMultiByteStr,
-									cbMultiByte,
-									&ActualByteCount,
+									(ULONG)cbMultiByte,
+									&BytesWritten,
 									lpWideCharStr,
-									cchWideChar * sizeof(WCHAR) );
-		return (int)ActualByteCount / sizeof(WCHAR);
-	}
+									SourceBytes );
+		if (NT_SUCCESS(Status)) {
+			return (int)BytesWritten;
+		}
+		break;
+
 	default:
 		SetLastError( ERROR_INVALID_PARAMETER );
 		return 0;

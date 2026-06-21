@@ -8,6 +8,11 @@ LdkpInitializeNls (
 	VOID
 	);
 
+PCWSTR
+LdkpGetLocaleName (
+    _In_ LCID Locale
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeNls)
 #endif
@@ -19,6 +24,24 @@ LCID LdkpSystemLocale;
 extern USHORT *NlsAnsiCodePage;
 extern USHORT *NlsOemCodePage;
 extern PUSHORT *NlsLeadByteInfo;
+
+UINT
+LdkpResolveCodePage (
+    _In_ UINT CodePage
+    )
+{
+    switch (CodePage) {
+    case CP_ACP:
+    case CP_THREAD_ACP:
+        return *NlsAnsiCodePage;
+
+    case CP_OEMCP:
+        return *NlsOemCodePage;
+
+    default:
+        return CodePage;
+    }
+}
 
 NTSTATUS
 LdkpInitializeNls (
@@ -41,11 +64,12 @@ IsValidCodePage (
     _In_ UINT CodePage
     )
 {
+    CodePage = LdkpResolveCodePage( CodePage );
+
     if ((CodePage == *NlsAnsiCodePage) || (CodePage == *NlsOemCodePage) || (CodePage == CP_UTF7) || (CodePage == CP_UTF8)) {
         return TRUE;
     }
 
-    KdBreakPoint();
     return FALSE;
 }
 
@@ -117,13 +141,15 @@ GetCPInfo (
     _Out_ LPCPINFO lpCPInfo
     )
 {
+    CodePage = LdkpResolveCodePage( CodePage );
+
     if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
         return UTFCPInfo( CodePage,
                           lpCPInfo,
                           FALSE );
     }
 
-    KdBreakPoint();
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
@@ -141,32 +167,41 @@ GetCPInfoExA (
 
 	PAGED_CODE();
 
+    if (lpCPInfoEx == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
 	bSuccess = GetCPInfoExW( CodePage,
                              dwFlags,
                              &CPInfoExW );
+    if (! bSuccess) {
+        return FALSE;
+    }
 
     UNICODE_STRING Unicode;
 	ANSI_STRING Ansi;
-
-    RtlInitUnicodeString( &Unicode,
-                          CPInfoExW.CodePageName );
-    
-    Ansi.MaximumLength = MAX_PATH;
-    Ansi.Buffer = lpCPInfoEx->CodePageName;
-
-    NTSTATUS Status = LdkAnsiStringToUnicodeString( &Unicode,
-                                                    &Ansi,
-                                                    FALSE ) ;
-    if (! NT_SUCCESS(Status)) {
-        LdkSetLastNTError( Status );
-        return FALSE;
-    }
 
     RtlMoveMemory( lpCPInfoEx,
                    &CPInfoExW,
                    FIELD_OFFSET(CPINFOEXW, CodePageName) );
 
-	return bSuccess;
+    RtlInitUnicodeString( &Unicode,
+                          CPInfoExW.CodePageName );
+    
+    Ansi.Length = 0;
+    Ansi.MaximumLength = sizeof(lpCPInfoEx->CodePageName);
+    Ansi.Buffer = lpCPInfoEx->CodePageName;
+
+    NTSTATUS Status = LdkUnicodeStringToAnsiString( &Ansi,
+                                                    &Unicode,
+                                                    FALSE );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+	return TRUE;
 }
 
 #define RC_CODE_PAGE_NAME         3
@@ -180,14 +215,35 @@ GetStringTableEntry (
     _In_ int WhichString
     )
 {
-    KdBreakPoint();
-    UNREFERENCED_PARAMETER( ResourceID );
     UNREFERENCED_PARAMETER( UILangId );
-    UNREFERENCED_PARAMETER( pBuffer );
-    UNREFERENCED_PARAMETER( ResourceID );
-    UNREFERENCED_PARAMETER( cchBuffer );
     UNREFERENCED_PARAMETER( WhichString );
-    return 0;
+
+    PCWSTR Name;
+
+    switch (ResourceID) {
+    case CP_UTF7:
+        Name = L"Unicode (UTF-7)";
+        break;
+
+    case CP_UTF8:
+        Name = L"Unicode (UTF-8)";
+        break;
+
+    default:
+        SetLastError( ERROR_RESOURCE_DATA_NOT_FOUND );
+        return 0;
+    }
+
+    int Length = (int)wcslen( Name ) + 1;
+    if (cchBuffer < Length) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    wcscpy_s( pBuffer,
+              cchBuffer,
+              Name );
+    return Length;
 }
 
 WINBASEAPI
@@ -200,6 +256,13 @@ GetCPInfoExW (
     )
 {
     UNREFERENCED_PARAMETER( dwFlags );
+
+    if (lpCPInfoEx == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    CodePage = LdkpResolveCodePage( CodePage );
 
     if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
         if (UTFCPInfo( CodePage,
@@ -214,7 +277,7 @@ GetCPInfoExW (
         return FALSE;
     }
 
-    KdBreakPoint();
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }
 
@@ -230,7 +293,12 @@ IsValidLocale (
     )
 {
     UNREFERENCED_PARAMETER(dwFlags);
-    return IS_INVALID_LOCALE(Locale);
+
+    if (IS_INVALID_LOCALE(Locale)) {
+        return FALSE;
+    }
+
+    return LdkpGetLocaleName( Locale ) != NULL;
 }
 
 PCWSTR
@@ -1940,7 +2008,21 @@ LCIDToLocaleName (
     }
 
     PCWSTR name = LdkpGetLocaleName( Locale );
+    if (name == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
     int len = (int)wcslen(name) + 1;
+
+    if (cchName == 0) {
+        return len;
+    }
+
+    if (lpName == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
 
     if (cchName < len) {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
@@ -1976,7 +2058,11 @@ LocaleNameToLCID (
     } else if (wcslen(lpName) == 0) { // LOCALE_NAME_INVARIANT
         return 0x0409;
     } else {
-        return LdkpGetLCID(lpName);
+        LCID lcid = LdkpGetLCID(lpName);
+        if (lcid == 0) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+        }
+        return lcid;
     }
 }
 

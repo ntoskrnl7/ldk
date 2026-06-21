@@ -56,6 +56,9 @@ LdkCreateTeb (
 	)
 {
 	PLDK_TEB Teb = LdkpCreateTeb( Thread );
+	if (! Teb) {
+		return NULL;
+	}
 	KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpTebListLock );
 	InsertHeadList( &LdkpTebListHead,
 					&Teb->ActiveLinks );

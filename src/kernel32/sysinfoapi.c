@@ -170,22 +170,15 @@ GetLocalTime (
     _Out_ LPSYSTEMTIME lpSystemTime
     )
 {
-	LARGE_INTEGER SystemTime;
-	TIME_FIELDS TimeFields;
-	
-	KeQuerySystemTime( &SystemTime );
+    SYSTEMTIME SystemTime;
 
-	RtlTimeToTimeFields( &SystemTime,
-						 &TimeFields );
-	
-	lpSystemTime->wYear = TimeFields.Year;
-	lpSystemTime->wMonth = TimeFields.Month;
-	lpSystemTime->wDayOfWeek = TimeFields.Weekday;
-	lpSystemTime->wDay = TimeFields.Day;
-	lpSystemTime->wHour = TimeFields.Hour;
-	lpSystemTime->wMinute = TimeFields.Minute;
-	lpSystemTime->wSecond = TimeFields.Second;
-	lpSystemTime->wMilliseconds = TimeFields.Milliseconds;
+    GetSystemTime( &SystemTime );
+
+    if (! SystemTimeToTzSpecificLocalTime( NULL,
+                                           &SystemTime,
+                                           lpSystemTime )) {
+        *lpSystemTime = SystemTime;
+    }
 }
 
 WINBASEAPI
@@ -196,6 +189,10 @@ SetLocalTime (
     )
 {
 	TIME_FIELDS TimeFields;
+    TIME_ZONE_INFORMATION TimeZoneInformation;
+    DWORD TimeZoneId;
+    LONG Bias;
+
 	TimeFields.Year = lpSystemTime->wYear;
 	TimeFields.Month = lpSystemTime->wMonth;
 	TimeFields.Weekday = lpSystemTime->wDayOfWeek;
@@ -208,15 +205,32 @@ SetLocalTime (
 	LARGE_INTEGER SystemTime;
     if (! RtlTimeFieldsToTime( &TimeFields,
                                &SystemTime )) {
+        LdkSetLastNTError( STATUS_INVALID_PARAMETER );
         return FALSE;
     }
+
+    TimeZoneId = GetTimeZoneInformation( &TimeZoneInformation );
+    if (TimeZoneId == TIME_ZONE_ID_INVALID) {
+        return FALSE;
+    }
+
+    Bias = TimeZoneInformation.Bias;
+    if (TimeZoneId == TIME_ZONE_ID_DAYLIGHT) {
+        Bias += TimeZoneInformation.DaylightBias;
+    } else if (TimeZoneId == TIME_ZONE_ID_STANDARD) {
+        Bias += TimeZoneInformation.StandardBias;
+    }
+
+    SystemTime.QuadPart += Int32x32To64( Bias * 60,
+                                         10000000 );
+
     NTSTATUS Status = ZwSetSystemTime( &SystemTime,
                                        NULL );
     if (NT_SUCCESS(Status)) {
-        return Status;
+        return TRUE;
     }
     LdkSetLastNTError( Status );
-    return Status;
+    return FALSE;
 }
 
 WINBASEAPI

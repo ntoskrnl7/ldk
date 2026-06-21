@@ -262,12 +262,12 @@ LocalAlloc (
     _In_ SIZE_T uBytes
     )
 {
-	DWORD dwFlags;
+	DWORD dwFlags = 0;
 	if (FlagOn(uFlags, LMEM_ZEROINIT)) {
 		SetFlag(dwFlags, HEAP_ZERO_MEMORY);
 	}
 	return (HLOCAL)HeapAlloc( GetProcessHeap(),
-							  uFlags,
+							  dwFlags,
 							  (DWORD)uBytes );
 }
 
@@ -282,7 +282,7 @@ LocalReAlloc (
     _In_ UINT uFlags
     )
 {
-	DWORD dwFlags;
+	DWORD dwFlags = 0;
 	if (FlagOn(uFlags, LMEM_ZEROINIT)) {
 		SetFlag(dwFlags, HEAP_ZERO_MEMORY);
 	}
