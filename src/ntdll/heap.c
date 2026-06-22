@@ -22,9 +22,10 @@ ULONG NtdllBaseTag;
 
 
 //
-// 커널에서도 힙을 사용할 수 있으나 NtAllocateVirtualMemory루틴이 사용되었기때문에
-// 프로세스 컨텍스트(PDE)에 영향을 받으므로 비페이징풀로 할당되도록 직접 구현했습니다.
-// (힙 관련 루틴 : RtlCreateHeap, RtlDestroyHeap, RtlAllocateHeap, RtlFreeHeap 등)
+// The kernel can use heap-style routines, but NtAllocateVirtualMemory depends
+// on process context (PDE). Implement these routines directly on nonpaged pool.
+// Heap routines include RtlCreateHeap, RtlDestroyHeap, RtlAllocateHeap,
+// RtlFreeHeap, and related helpers.
 // 
 
 typedef struct _LDK_HEAP_HEADER {

@@ -145,7 +145,7 @@ LdrTest (
     PAGED_CODE();
 
     // //
-    // // TestFunction함수를 가진 Test.dll를 만들어주세요
+    // // Create Test.dll with an exported TestFunction before enabling this block.
     // //
 
     // typedef LONG(__stdcall* TEST_FN)(LONG);

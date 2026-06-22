@@ -1,11 +1,64 @@
 # LDK NuGet Package
 
-This package provides headers and prebuilt `Ldk.lib` libraries for Windows
-kernel-mode driver projects.
+LDK is an experimental Win32/NTDLL-like runtime support library for Windows
+kernel-mode drivers. It provides headers, native MSBuild imports, CMake helpers,
+documentation, and prebuilt `Ldk.lib` libraries for selected WDK driver
+configurations.
 
-The package is intentionally narrow. LDK is an experimental runtime support
-library, not a general Windows compatibility layer. Audit every DLL or driver
-integration and validate it in an isolated driver test environment.
+This NuGet package is for **Visual Studio/MSBuild WDK driver projects**
+(`ldk.<version>.nupkg`).
+
+## Quick start
+
+```powershell
+Install-Package ldk
+```
+
+Driver projects get:
+
+- public LDK headers under `include/`
+- automatic include path setup
+- automatic `Ldk.lib` linkage
+- `_KERNEL32_` preprocessor definition
+- `LdkDriverEntry` as the default driver entry point
+
+Minimal driver:
+
+```c
+#include <Ldk/Windows.h>
+
+DRIVER_INITIALIZE DriverEntry;
+DRIVER_UNLOAD DriverUnload;
+
+NTSTATUS
+DriverEntry(
+    _In_ PDRIVER_OBJECT DriverObject,
+    _In_ PUNICODE_STRING RegistryPath
+    )
+{
+    UNREFERENCED_PARAMETER(RegistryPath);
+
+    DriverObject->DriverUnload = DriverUnload;
+
+    Sleep(1);
+    return STATUS_SUCCESS;
+}
+
+VOID
+DriverUnload(
+    _In_ PDRIVER_OBJECT DriverObject
+    )
+{
+    UNREFERENCED_PARAMETER(DriverObject);
+}
+```
+
+When `LdkDriverEntry` is used as the PE entry point, LDK initializes its runtime,
+calls your normal `DriverEntry`, and runs termination hooks before unload.
+
+The package is intentionally narrow. LDK is not a general Windows compatibility
+layer. Audit every DLL or driver integration and validate it in an isolated
+driver test environment.
 
 ## Contents
 
@@ -22,8 +75,10 @@ Prebuilt libraries currently target:
 
 ## MSBuild usage
 
-Install the package into a WDK driver project and import the native props and
-targets if your package manager does not do it automatically:
+Visual Studio NuGet package restore imports `build/native/ldk.props` and
+`build/native/ldk.targets` automatically for native projects. If your package
+manager does not import native build files automatically, add the imports
+manually:
 
 ```xml
 <Import Project="$(LdkPackageRoot)build\native\ldk.props" />
@@ -41,8 +96,8 @@ its own entry point and calls `LdkInitialize` / `LdkTerminate` manually.
 
 ## CMake users
 
-For CMake-based integrations, using the repository through CPM is still the
-most direct source-based path:
+The NuGet package is primarily for MSBuild. For CMake-based integrations, using
+the repository through CPM is still the most direct source-based path:
 
 ```cmake
 CPMAddPackage("gh:ntoskrnl7/ldk@<version>")
@@ -52,3 +107,16 @@ target_link_libraries(MyDriver Ldk)
 
 GitHub Releases also include a prebuilt bundle with a CMake package config for
 offline or prebuilt-library consumers.
+
+## Release artifacts
+
+- `ldk-<version>-prebuilt.zip`
+  A prebuilt bundle containing headers, libraries, documentation, CMake helpers,
+  native MSBuild imports, and package config files for offline/manual
+  integration.
+- `ldk-<version>-SHA256SUMS.txt`
+  Checksum file for offline/manual verification.
+
+For full package usage, API status, and implementation notes, see:
+- <https://github.com/ntoskrnl7/ldk/blob/main/README.md>
+- <https://github.com/ntoskrnl7/ldk/tree/main/docs>
