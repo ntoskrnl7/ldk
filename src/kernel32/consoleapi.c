@@ -1,7 +1,16 @@
 ﻿#include "winbase.h"
 #include "../peb.h"
 
+BOOL
+LdkpReadConsole (
+    _In_ HANDLE hConsoleInput,
+    _Out_writes_bytes_(nNumberOfBytesToRead) LPVOID lpBuffer,
+    _In_ DWORD nNumberOfBytesToRead,
+    _Out_ LPDWORD lpNumberOfBytesRead
+    );
+
 #ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, LdkpReadConsole)
 #pragma alloc_text(PAGE, ReadConsoleA)
 #pragma alloc_text(PAGE, ReadConsoleW)
 #pragma alloc_text(PAGE, WriteConsoleA)
@@ -86,8 +95,13 @@ GetConsoleMode (
     _Out_ LPDWORD lpMode
     )
 {
-    if (LdkGetConsoleHandle( hConsoleHandle,
-                             &hConsoleHandle )) {
+    if (! ARGUMENT_PRESENT(lpMode)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (! LdkGetConsoleHandle( hConsoleHandle,
+                               &hConsoleHandle )) {
         SetLastError( ERROR_INVALID_HANDLE );
         return FALSE;
     }
@@ -113,8 +127,8 @@ SetConsoleMode (
     _In_ DWORD dwMode
     )
 {
-    if (LdkGetConsoleHandle( hConsoleHandle,
-                             &hConsoleHandle )) {
+    if (! LdkGetConsoleHandle( hConsoleHandle,
+                               &hConsoleHandle )) {
         SetLastError( ERROR_INVALID_HANDLE );
         return FALSE;
     }
@@ -133,41 +147,14 @@ SetConsoleMode (
 }
 
 
-WINBASEAPI
-_Success_(return != FALSE)
 BOOL
-WINAPI
-ReadConsoleA (
+LdkpReadConsole (
     _In_ HANDLE hConsoleInput,
-    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(TCHAR%),*lpNumberOfCharsRead * sizeof(TCHAR%)) LPVOID lpBuffer,
-    _In_ DWORD nNumberOfCharsToRead,
-    _Out_ _Deref_out_range_(<=,nNumberOfCharsToRead) LPDWORD lpNumberOfCharsRead,
-    _In_opt_ PCONSOLE_READCONSOLE_CONTROL pInputControl
+    _Out_writes_bytes_(nNumberOfBytesToRead) LPVOID lpBuffer,
+    _In_ DWORD nNumberOfBytesToRead,
+    _Out_ LPDWORD lpNumberOfBytesRead
     )
 {
-    PAGED_CODE();
-
-    return ReadConsoleW( hConsoleInput,
-                         lpBuffer,
-                         nNumberOfCharsToRead,
-                         lpNumberOfCharsRead,
-                         pInputControl );
-}
-
-WINBASEAPI
-_Success_(return != FALSE)
-BOOL
-WINAPI
-ReadConsoleW (
-    _In_ HANDLE hConsoleInput,
-    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(TCHAR%),*lpNumberOfCharsRead * sizeof(TCHAR%)) LPVOID lpBuffer,
-    _In_ DWORD nNumberOfCharsToRead,
-    _Out_ _Deref_out_range_(<=,nNumberOfCharsToRead) LPDWORD lpNumberOfCharsRead,
-    _In_opt_ PCONSOLE_READCONSOLE_CONTROL pInputControl
-    )
-{
-    UNREFERENCED_PARAMETER( pInputControl );
-
     PAGED_CODE();
 
     if (! LdkGetConsoleHandle( hConsoleInput,
@@ -179,8 +166,6 @@ ReadConsoleW (
         return FALSE;
     }
 
-    KdBreakPoint();
-
     NTSTATUS Status;
     IO_STATUS_BLOCK ioStatus;
 
@@ -190,7 +175,7 @@ ReadConsoleW (
                          NULL,
                          &ioStatus,
                          lpBuffer,
-                         nNumberOfCharsToRead * sizeof(WCHAR),
+                         nNumberOfBytesToRead,
                          NULL,
                          NULL );
 
@@ -202,19 +187,75 @@ ReadConsoleW (
             Status = ioStatus.Status;
         }
     }
-	if (NT_SUCCESS(Status)) {
-        *lpNumberOfCharsRead = (DWORD)ioStatus.Information / sizeof(WCHAR);
+    if (NT_SUCCESS(Status)) {
+        *lpNumberOfBytesRead = (DWORD)ioStatus.Information;
         return TRUE;
     } else if (Status == STATUS_END_OF_FILE) {
-        *lpNumberOfCharsRead = 0;
+        *lpNumberOfBytesRead = 0;
         return TRUE;
     } else {
         if (NT_WARNING(Status)) {
-            *lpNumberOfCharsRead = (DWORD)ioStatus.Information;
+            *lpNumberOfBytesRead = (DWORD)ioStatus.Information;
         }
     }
     LdkSetLastNTError( Status );
     return FALSE;
+}
+
+
+WINBASEAPI
+_Success_(return != FALSE)
+BOOL
+WINAPI
+ReadConsoleA (
+    _In_ HANDLE hConsoleInput,
+    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(CHAR),*lpNumberOfCharsRead * sizeof(CHAR)) LPVOID lpBuffer,
+    _In_ DWORD nNumberOfCharsToRead,
+    _Out_ _Deref_out_range_(<=,nNumberOfCharsToRead) LPDWORD lpNumberOfCharsRead,
+    _In_opt_ PCONSOLE_READCONSOLE_CONTROL pInputControl
+    )
+{
+    UNREFERENCED_PARAMETER( pInputControl );
+
+    PAGED_CODE();
+
+    DWORD NumberOfBytesRead = 0;
+    BOOL Result = LdkpReadConsole( hConsoleInput,
+                                   lpBuffer,
+                                   nNumberOfCharsToRead * sizeof(CHAR),
+                                   &NumberOfBytesRead );
+    *lpNumberOfCharsRead = NumberOfBytesRead / sizeof(CHAR);
+    return Result;
+}
+
+WINBASEAPI
+_Success_(return != FALSE)
+BOOL
+WINAPI
+ReadConsoleW (
+    _In_ HANDLE hConsoleInput,
+    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(WCHAR),*lpNumberOfCharsRead * sizeof(WCHAR)) LPVOID lpBuffer,
+    _In_ DWORD nNumberOfCharsToRead,
+    _Out_ _Deref_out_range_(<=,nNumberOfCharsToRead) LPDWORD lpNumberOfCharsRead,
+    _In_opt_ PCONSOLE_READCONSOLE_CONTROL pInputControl
+    )
+{
+    UNREFERENCED_PARAMETER( pInputControl );
+
+    PAGED_CODE();
+
+    if (nNumberOfCharsToRead > ((DWORD)-1) / sizeof(WCHAR)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    DWORD NumberOfBytesRead = 0;
+    BOOL Result = LdkpReadConsole( hConsoleInput,
+                                   lpBuffer,
+                                   nNumberOfCharsToRead * sizeof(WCHAR),
+                                   &NumberOfBytesRead );
+    *lpNumberOfCharsRead = NumberOfBytesRead / sizeof(WCHAR);
+    return Result;
 }
 
 WINBASEAPI

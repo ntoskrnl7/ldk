@@ -38,7 +38,11 @@ LdkpDriverDispatchCreateClose (
     )
 {
     UNREFERENCED_PARAMETER(DeviceObject);
-    UNREFERENCED_PARAMETER(Irp);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest( Irp,
+                       IO_NO_INCREMENT );
     return STATUS_SUCCESS;
 }
 
@@ -52,7 +56,11 @@ LdkpDriverDispatchReadWrite (
     )
 {
     UNREFERENCED_PARAMETER(DeviceObject);
-    UNREFERENCED_PARAMETER(Irp);
+
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest( Irp,
+                       IO_NO_INCREMENT );
     return STATUS_SUCCESS;
 }
 
@@ -66,7 +74,11 @@ LdkpDriverDispatchOther (
     )
 {
     UNREFERENCED_PARAMETER(DeviceObject);
-    UNREFERENCED_PARAMETER(Irp);
+
+    Irp->IoStatus.Status = STATUS_INVALID_DEVICE_REQUEST;
+    Irp->IoStatus.Information = 0;
+    IoCompleteRequest( Irp,
+                       IO_NO_INCREMENT );
     return STATUS_INVALID_DEVICE_REQUEST;
 }
 
@@ -79,23 +91,29 @@ LdkpUninitializeStdio (
 
     if (LdkpStdInHandle) {
         ZwClose(LdkpStdInHandle);
+        LdkpStdInHandle = NULL;
     }
     if (LdkpStdInDeviceObject) {
         IoDeleteDevice( LdkpStdInDeviceObject );
+        LdkpStdInDeviceObject = NULL;
     }
 
     if (LdkpStdOutHandle) {
         ZwClose(LdkpStdOutHandle);
+        LdkpStdOutHandle = NULL;
     }
     if (LdkpStdOutDeviceObject) {
         IoDeleteDevice( LdkpStdOutDeviceObject );
+        LdkpStdOutDeviceObject = NULL;
     }
 
     if (LdkpStdErrHandle) {
         ZwClose(LdkpStdErrHandle);
+        LdkpStdErrHandle = NULL;
     }
     if (LdkpStdErrorDeviceObject) {
         IoDeleteDevice( LdkpStdErrorDeviceObject );
+        LdkpStdErrorDeviceObject = NULL;
     }
 }
 
@@ -226,7 +244,7 @@ LdkpInitializeProcessParameters (
                                                          LdkpProcessParameters.EnvironmentSize );
 	if (! LdkpProcessParameters.Environment) {
         LdkpUninitializeStdio();
-		return Status;
+		return STATUS_INSUFFICIENT_RESOURCES;
 	}
 
     UNICODE_STRING Name;
@@ -326,6 +344,7 @@ LdkpInitializeProcessParameters (
                                    Path.MaximumLength );
     if (! Path.Buffer) {
         LdkpUninitializeProcessParameters();
+        return STATUS_INSUFFICIENT_RESOURCES;
     }
     RtlCopyUnicodeString( &Path,
                           &LdkpProcessParameters.DllPath );
@@ -355,13 +374,16 @@ LdkpUninitializeProcessParameters (
     VOID
     )
 {
-    if (! LdkIsConsoleHandle( LdkpProcessParameters.StandardInput )) {
+    if (LdkpProcessParameters.StandardInput &&
+        ! LdkIsConsoleHandle( LdkpProcessParameters.StandardInput )) {
         ZwClose( LdkpProcessParameters.StandardInput );
     }
-    if (! LdkIsConsoleHandle( LdkpProcessParameters.StandardOutput )) {
+    if (LdkpProcessParameters.StandardOutput &&
+        ! LdkIsConsoleHandle( LdkpProcessParameters.StandardOutput )) {
         ZwClose( LdkpProcessParameters.StandardOutput );
     }
-    if (! LdkIsConsoleHandle( LdkpProcessParameters.StandardError )) {
+    if (LdkpProcessParameters.StandardError &&
+        ! LdkIsConsoleHandle( LdkpProcessParameters.StandardError )) {
         ZwClose( LdkpProcessParameters.StandardError );
     }
 
@@ -540,5 +562,8 @@ LdkIsConsoleHandle (
 	_In_ HANDLE Handle
 	)
 {
-	return (LdkpStdInHandle == Handle) || (LdkpStdOutHandle == Handle) || (LdkpStdErrHandle == Handle);
+	return Handle != NULL &&
+           ((LdkpStdInHandle == Handle) ||
+            (LdkpStdOutHandle == Handle) ||
+            (LdkpStdErrHandle == Handle));
 }
