@@ -3,4 +3,9 @@
 
 test/build*/
 build*/
+!nuget/build/
+!nuget/build/native/
+!nuget/build/native/*.props
+!nuget/build/native/*.targets
 lib/
+artifacts/
