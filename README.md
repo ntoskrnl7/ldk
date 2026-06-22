@@ -175,23 +175,34 @@ be done manually in an appropriate Windows driver test environment. GitHub
 Actions verifies the x64 test driver build, but it does not load kernel
 drivers.
 
+Additional implementation and test notes live under [`docs/`](docs/).
+
+## NuGet and Releases
+
+The `Package` GitHub Actions workflow builds prebuilt x86/x64 Debug/Release
+libraries, packs the `ldk` NuGet package, validates the package with a minimal
+WDK consumer driver, and prepares GitHub Release assets.
+
+The `Release` workflow is the publishing entry point. It updates
+`include/Ldk/internal/version.h`, creates a `v<version>` tag, then dispatches
+the `Package` workflow. NuGet publishing uses NuGet Trusted Publishing and
+requires the repository variable `NUGET_TRUSTED_PUBLISHING_USER`.
+
 ## Releases
 
 Tagged releases are built by GitHub Actions. Pushing a tag such as `v0.7.6`
-builds x86 and x64 Release artifacts and attaches ZIP packages to the GitHub
-Release.
+builds x86 and x64 package artifacts and can attach the generated NuGet package
+and prebuilt ZIP bundle to the GitHub Release.
 
-You can also run the release workflow manually from GitHub Actions. For manual
-runs, either provide an explicit tag input or update
-`include/Ldk/internal/version.h` first; otherwise the workflow derives the tag
-from the version header.
+The normal publishing path is to run the `Release` workflow manually with the
+target version. It creates the version commit and tag, then dispatches the
+`Package` workflow against that tag.
 
-Each release package contains:
+Release assets contain:
 
-- `include/`
-- `lib/<architecture>/`
-- `README.md`
-- `LICENSE`
+- `ldk.<version>.nupkg`
+- `ldk-<version>-prebuilt.zip`
+- `ldk-<version>-SHA256SUMS.txt`
 
 ## Repository Layout
 

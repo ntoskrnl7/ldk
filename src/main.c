@@ -28,6 +28,7 @@ LdkDriverEntry (
     Status = DriverEntry( DriverObject,
                           RegistryPath );
     if (! NT_SUCCESS(Status)) {
+        LdkTerminate();
         return Status;
     }
 

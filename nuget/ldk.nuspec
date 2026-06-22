@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>ldk</id>
+    <version>0.0.0</version>
+    <authors>ntoskrnl7</authors>
+    <title>LDK</title>
+    <description>Experimental Win32/NTDLL-like runtime support library for Windows kernel-mode drivers.</description>
+    <projectUrl>https://github.com/ntoskrnl7/ldk</projectUrl>
+    <repository type="git" url="https://github.com/ntoskrnl7/ldk" />
+    <license type="file">LICENSE</license>
+    <readme>README.md</readme>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>windows kernel driver wdk native c ldk dll loader cmake</tags>
+    <dependencies>
+      <group targetFramework="native0.0" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="README.md" target="README.md" />
+    <file src="..\LICENSE" target="LICENSE" />
+    <file src="..\cmake\**\*" target="cmake" />
+    <file src="..\docs\**\*" target="docs" />
+    <file src="..\include\**\*" target="include" />
+    <file src="..\artifacts\nuget-staging\lib\native\**\*" target="lib\native" />
+
+    <file src="build\native\ldk.props" target="build\native" />
+    <file src="build\native\ldk.targets" target="build\native" />
+  </files>
+</package>

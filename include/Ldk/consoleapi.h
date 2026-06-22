@@ -89,7 +89,7 @@ BOOL
 WINAPI
 ReadConsoleA(
     _In_ HANDLE hConsoleInput,
-    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(TCHAR%),*lpNumberOfCharsRead * sizeof(TCHAR%)) LPVOID lpBuffer,
+    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(CHAR),*lpNumberOfCharsRead * sizeof(CHAR)) LPVOID lpBuffer,
     _In_ DWORD nNumberOfCharsToRead,
     _Out_ _Deref_out_range_(<=,nNumberOfCharsToRead) LPDWORD lpNumberOfCharsRead,
     _In_opt_ PCONSOLE_READCONSOLE_CONTROL pInputControl
@@ -101,7 +101,7 @@ BOOL
 WINAPI
 ReadConsoleW(
     _In_ HANDLE hConsoleInput,
-    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(TCHAR%),*lpNumberOfCharsRead * sizeof(TCHAR%)) LPVOID lpBuffer,
+    _Out_writes_bytes_to_(nNumberOfCharsToRead * sizeof(WCHAR),*lpNumberOfCharsRead * sizeof(WCHAR)) LPVOID lpBuffer,
     _In_ DWORD nNumberOfCharsToRead,
     _Out_ _Deref_out_range_(<=,nNumberOfCharsToRead) LPDWORD lpNumberOfCharsRead,
     _In_opt_ PCONSOLE_READCONSOLE_CONTROL pInputControl

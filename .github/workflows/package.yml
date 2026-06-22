@@ -1,0 +1,386 @@
+name: Package
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/package.yml'
+      - 'nuget/**'
+      - 'scripts/nuget/**'
+      - 'CMakeLists.txt'
+      - 'LICENSE'
+      - 'README.md'
+      - 'build.bat'
+      - 'cmake/**'
+      - 'docs/**'
+      - 'include/**'
+      - 'src/**'
+      - 'test/**'
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+    paths:
+      - '.github/workflows/package.yml'
+      - 'nuget/**'
+      - 'scripts/nuget/**'
+      - 'CMakeLists.txt'
+      - 'LICENSE'
+      - 'README.md'
+      - 'build.bat'
+      - 'cmake/**'
+      - 'docs/**'
+      - 'include/**'
+      - 'src/**'
+      - 'test/**'
+  workflow_dispatch:
+    inputs:
+      package_version:
+        description: Optional package version override
+        required: false
+        type: string
+      publish:
+        description: Publish the generated package to nuget.org
+        required: true
+        type: boolean
+        default: false
+      github_release:
+        description: Upload release assets to GitHub Releases
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Resolve package version
+    runs-on: windows-2022
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve package version
+        id: version
+        shell: pwsh
+        run: |
+          $version = '${{ inputs.package_version }}'
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = ./scripts/nuget/Get-LdkVersion.ps1
+          }
+
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            if ($env:GITHUB_REF_NAME -notmatch '^v(.+)$') {
+              throw "Release tag must use v<version> format."
+            }
+
+            $tagVersion = $Matches[1]
+            if ($version -ne $tagVersion) {
+              throw "Package version '$version' does not match tag version '$tagVersion'."
+            }
+          }
+
+          "package_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Package version: $version"
+
+  build-libs:
+    name: Build NuGet libs ${{ matrix.arch }} ${{ matrix.config }}
+    needs: version
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64]
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build prebuilt libraries
+        shell: pwsh
+        run: >
+          ./scripts/nuget/Build-LdkNuGetLibs.ps1
+          -Architecture '${{ matrix.arch }}'
+          -Configuration '${{ matrix.config }}'
+          -WindowsSdkVersion '10.0.22621.0'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ldk-nuget-libs-${{ matrix.arch }}-${{ matrix.config }}
+          path: artifacts/nuget-staging/lib/native/${{ matrix.arch }}/${{ matrix.config }}
+          if-no-files-found: error
+
+  pack:
+    name: Pack NuGet
+    needs: [version, build-libs]
+    runs-on: windows-2022
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set package version
+        id: version
+        shell: pwsh
+        run: |
+          "package_version=${{ needs.version.outputs.package_version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: NuGet/setup-nuget@v2
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-x86-Debug
+          path: artifacts/nuget-staging/lib/native/x86/Debug
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-x86-Release
+          path: artifacts/nuget-staging/lib/native/x86/Release
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-x64-Debug
+          path: artifacts/nuget-staging/lib/native/x64/Debug
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-x64-Release
+          path: artifacts/nuget-staging/lib/native/x64/Release
+
+      - name: Pack
+        shell: pwsh
+        run: ./scripts/nuget/Pack-LdkNuGet.ps1 -Version '${{ steps.version.outputs.package_version }}'
+
+      - name: Pack GitHub release assets
+        shell: pwsh
+        run: ./scripts/nuget/Pack-LdkReleaseAssets.ps1 -Version '${{ steps.version.outputs.package_version }}'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ldk-nuget-${{ steps.version.outputs.package_version }}
+          path: artifacts/nuget/*.nupkg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ldk-release-assets-${{ steps.version.outputs.package_version }}
+          path: artifacts/release/*
+          if-no-files-found: error
+
+  test-package-driver:
+    name: Test NuGet driver package ${{ matrix.arch }} ${{ matrix.config }}
+    needs: pack
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: NuGet/setup-nuget@v2
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-${{ needs.pack.outputs.package_version }}
+          path: artifacts/nuget
+
+      - name: Build package consumer test driver
+        shell: pwsh
+        run: >
+          ./scripts/nuget/Test-LdkNuGetPackage.ps1
+          -PackageDirectory artifacts/nuget
+          -Version '${{ needs.pack.outputs.package_version }}'
+          -Architecture '${{ matrix.arch }}'
+          -Configuration '${{ matrix.config }}'
+          -WindowsSdkVersion '10.0.22621.0'
+
+  test-package-layout:
+    name: Validate NuGet package layout ${{ matrix.arch }} ${{ matrix.config }}
+    needs: pack
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86]
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: NuGet/setup-nuget@v2
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-${{ needs.pack.outputs.package_version }}
+          path: artifacts/nuget
+
+      - name: Validate package layout
+        shell: pwsh
+        run: >
+          ./scripts/nuget/Test-LdkNuGetPackage.ps1
+          -PackageDirectory artifacts/nuget
+          -Version '${{ needs.pack.outputs.package_version }}'
+          -Architecture '${{ matrix.arch }}'
+          -Configuration '${{ matrix.config }}'
+          -SkipDriverBuild
+
+  test-release-prebuilt-cmake:
+    name: Test release prebuilt CMake asset ${{ matrix.arch }} ${{ matrix.config }}
+    needs: pack
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-release-assets-${{ needs.pack.outputs.package_version }}
+          path: artifacts/release
+
+      - name: Build prebuilt release CMake consumer test
+        shell: pwsh
+        run: >
+          ./scripts/nuget/Test-LdkReleaseAssets.ps1
+          -ReleaseDirectory artifacts/release
+          -Version '${{ needs.pack.outputs.package_version }}'
+          -Architecture '${{ matrix.arch }}'
+          -Configuration '${{ matrix.config }}'
+          -WindowsSdkVersion '10.0.22621.0'
+
+  test-release-prebuilt-layout:
+    name: Validate release prebuilt layout ${{ matrix.arch }} ${{ matrix.config }}
+    needs: pack
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86]
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-release-assets-${{ needs.pack.outputs.package_version }}
+          path: artifacts/release
+
+      - name: Validate prebuilt release layout
+        shell: pwsh
+        run: >
+          ./scripts/nuget/Test-LdkReleaseAssets.ps1
+          -ReleaseDirectory artifacts/release
+          -Version '${{ needs.pack.outputs.package_version }}'
+          -Architecture '${{ matrix.arch }}'
+          -Configuration '${{ matrix.config }}'
+          -SkipDriverBuild
+
+  publish:
+    name: Publish NuGet
+    needs: [pack, test-package-driver, test-package-layout]
+    if: ${{ (github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    runs-on: windows-2022
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-${{ needs.pack.outputs.package_version }}
+          path: artifacts/nuget
+
+      - name: Validate NuGet trusted publishing user
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace('${{ vars.NUGET_TRUSTED_PUBLISHING_USER }}')) {
+            throw 'Repository variable NUGET_TRUSTED_PUBLISHING_USER is required for NuGet Trusted Publishing.'
+          }
+
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ vars.NUGET_TRUSTED_PUBLISHING_USER }}
+
+      - name: Publish to nuget.org
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: ./scripts/nuget/Push-LdkNuGet.ps1 -SkipDuplicate
+
+  github-release:
+    name: Upload GitHub Release Assets
+    needs: [pack, test-package-driver, test-package-layout, test-release-prebuilt-cmake, test-release-prebuilt-layout]
+    if: ${{ (github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.github_release) }}
+    runs-on: windows-2022
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-release-assets-${{ needs.pack.outputs.package_version }}
+          path: artifacts/release
+
+      - name: Create or update GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Set-Location '${{ github.workspace }}'
+          $version = '${{ needs.pack.outputs.package_version }}'
+          $tagName = "v$version"
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $tagName = '${{ github.ref_name }}'
+          }
+          $repo = '${{ github.repository }}'
+
+          $assets = @(Get-ChildItem -Path artifacts\release -File | Sort-Object FullName | ForEach-Object { $_.FullName })
+          if ($assets.Count -eq 0) {
+            throw 'No GitHub Release assets were found.'
+          }
+
+          & gh release view $tagName --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Uploading assets to existing GitHub Release $tagName"
+            & gh release upload $tagName @assets --repo $repo --clobber
+          } else {
+            Write-Host "Creating GitHub Release $tagName"
+            $notes = @(
+              "LDK $version release assets."
+              ""
+              "- ldk.$version.nupkg: offline NuGet package"
+              "- ldk-$version-prebuilt.zip: headers, docs, CMake helpers/package config, native MSBuild imports, and prebuilt x86/x64 Debug/Release libraries"
+              "- ldk-$version-SHA256SUMS.txt: SHA-256 checksums"
+            ) -join [Environment]::NewLine
+            & gh release create $tagName @assets --repo $repo --target '${{ github.sha }}' --title "LDK $version" --notes $notes
+          }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release upload failed with exit code $LASTEXITCODE."
+          }

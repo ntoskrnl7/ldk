@@ -366,6 +366,18 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		"Sleep",
 		Sleep
 	},
+    {
+        "WaitOnAddress",
+        WaitOnAddress
+    },
+    {
+        "WakeByAddressSingle",
+        WakeByAddressSingle
+    },
+    {
+        "WakeByAddressAll",
+        WakeByAddressAll
+    },
 
 	//
 	// fiberapi.c

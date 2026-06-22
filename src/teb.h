@@ -26,6 +26,8 @@ typedef struct _LDK_TEB {
 
 	PVOID KeyedWaitValue;
 
+	BOOLEAN AlertByThreadIdPending;
+
 	ULONG HardErrorsAreDisabled;
 
 	UNICODE_STRING StaticUnicodeString;
@@ -50,6 +52,21 @@ typedef struct _LDK_TEB {
 PLDK_TEB
 LdkCurrentTeb (
 	VOID
+	);
+
+PLDK_TEB
+LdkLookTebByThread (
+	_In_ PETHREAD Thread
+	);
+
+PLDK_TEB
+LdkReferenceTebByThread (
+	_In_ PETHREAD Thread
+	);
+
+VOID
+LdkDereferenceTeb (
+	_Inout_ PLDK_TEB Teb
 	);
 
 

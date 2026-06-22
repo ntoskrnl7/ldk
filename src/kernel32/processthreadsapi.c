@@ -40,7 +40,14 @@ typedef struct _LDK_THREAD_CONTEXT {
 	SIZE_T dwStackSize;
 	PTHREAD_START_ROUTINE ThreadStartRoutine;
 	LPVOID lpThreadParameter;
+	DWORD ExitCode;
 } LDK_THREAD_CONTEXT, *PLDK_THREAD_CONTEXT;
+
+typedef struct _LDK_THREAD_CALLOUT_CONTEXT {
+	PTHREAD_START_ROUTINE ThreadStartRoutine;
+	LPVOID lpThreadParameter;
+	DWORD ExitCode;
+} LDK_THREAD_CALLOUT_CONTEXT, *PLDK_THREAD_CALLOUT_CONTEXT;
 
 PAGED_LOOKASIDE_LIST LdkpThreadContextLookaside;
 
@@ -85,7 +92,7 @@ _Function_class_(EXPAND_STACK_CALLOUT)
 VOID
 NTAPI
 LdkpThreadStartExpandStackAndCallout (
-    _In_ PLDK_THREAD_CONTEXT Context
+    _In_ PLDK_THREAD_CALLOUT_CONTEXT Context
     )
 {
 	PAGED_CODE();
@@ -93,10 +100,7 @@ LdkpThreadStartExpandStackAndCallout (
 	LPVOID lpThreadParameter = Context->lpThreadParameter;
 	PTHREAD_START_ROUTINE ThreadStartRoutine = Context->ThreadStartRoutine;
 
-	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
-								Context );
-
-	ThreadStartRoutine( lpThreadParameter );
+	Context->ExitCode = ThreadStartRoutine( lpThreadParameter );
 
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
 }
@@ -108,6 +112,10 @@ LdkpThreadStartRoutine (
     _In_ PLDK_THREAD_CONTEXT Context
     )
 {
+	LPVOID lpThreadParameter;
+	PTHREAD_START_ROUTINE ThreadStartRoutine;
+	SIZE_T dwStackSize;
+
 	PAGED_CODE();
 
 	if (FlagOn(Context->dwCreationFlags, CREATE_SUSPENDED)) {
@@ -115,23 +123,37 @@ LdkpThreadStartRoutine (
 		KdBreakPoint();
 	}
 
-	if (Context->dwStackSize > IoGetRemainingStackSize()) {
+	lpThreadParameter = Context->lpThreadParameter;
+	ThreadStartRoutine = Context->ThreadStartRoutine;
+	dwStackSize = Context->dwStackSize;
+
+	if (dwStackSize > IoGetRemainingStackSize()) {
+		LDK_THREAD_CALLOUT_CONTEXT CalloutContext;
+
+		CalloutContext.ThreadStartRoutine = ThreadStartRoutine;
+		CalloutContext.lpThreadParameter = lpThreadParameter;
+		CalloutContext.ExitCode = 0;
+
+		ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
+									Context );
+
 		if (NT_SUCCESS(KeExpandKernelStackAndCallout( LdkpThreadStartExpandStackAndCallout,
-													  Context,
-													  Context->dwStackSize ))) {
+													  &CalloutContext,
+													  dwStackSize ))) {
+			DWORD ExitCode = CalloutContext.ExitCode;
+			PsTerminateSystemThread( (NTSTATUS)ExitCode );
 			return;
 		}
+	} else {
+		ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
+									Context );
 	}
 
-	LPVOID lpThreadParameter = Context->lpThreadParameter;
-	PTHREAD_START_ROUTINE ThreadStartRoutine = Context->ThreadStartRoutine;
-
-	ExFreeToPagedLookasideList( &LdkpThreadContextLookaside,
-								Context );
-
-	ThreadStartRoutine( lpThreadParameter );
+	DWORD ExitCode = ThreadStartRoutine( lpThreadParameter );
 
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
+
+	PsTerminateSystemThread( (NTSTATUS)ExitCode );
 }
 
 WINBASEAPI
@@ -178,6 +200,7 @@ CreateThread (
 	Context->dwStackSize = dwStackSize;
 	Context->ThreadStartRoutine = lpStartAddress;
 	Context->lpThreadParameter = lpParameter;
+	Context->ExitCode = 0;
 
 	HANDLE ThreadHandle;
 	CLIENT_ID ClientId;
