@@ -299,7 +299,7 @@ CreateFileW (
 	if (ARGUMENT_PRESENT(hTemplateFile)) {
 
 		// untested :-(
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 
 		FILE_EA_INFORMATION EaInfo;		
 		Status = ZwQueryInformationFile( hTemplateFile,

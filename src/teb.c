@@ -201,7 +201,7 @@ LdkCurrentTeb (
 	//
 	if (LDK_IS_SHUTDOWN_IN_PROGRESS) {
 
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 
 		Teb = LdkpCreateTeb( PsGetCurrentThread() );
 		NT_ASSERT(Teb);

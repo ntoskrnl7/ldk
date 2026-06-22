@@ -164,7 +164,7 @@ LdkAllocateHeap (
 		Tag.Part.Value3++;
 	}
 	if (Tag.Part.Value3 > TAG_CHAR_RANGE) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		return NULL;
 	}
 #undef TAG_CHAR_RANGE

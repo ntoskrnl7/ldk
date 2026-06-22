@@ -45,7 +45,7 @@ IsValidCodePage (
         return TRUE;
     }
 
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
     return FALSE;
 }
 
@@ -123,7 +123,7 @@ GetCPInfo (
                           FALSE );
     }
 
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
     return FALSE;
 }
 
@@ -180,7 +180,7 @@ GetStringTableEntry (
     _In_ int WhichString
     )
 {
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
     UNREFERENCED_PARAMETER( ResourceID );
     UNREFERENCED_PARAMETER( UILangId );
     UNREFERENCED_PARAMETER( pBuffer );
@@ -214,7 +214,7 @@ GetCPInfoExW (
         return FALSE;
     }
 
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
     return FALSE;
 }
 

@@ -161,7 +161,7 @@ NtWaitForKeyedEvent (
                                     Timeout );
     if (NT_SUCCESS(Status)) {
     } else {
-        KdBreakPoint();
+        LDK_DIAGNOSTIC_BREAK();
     }
     return Status;
 }
@@ -211,7 +211,7 @@ NtReleaseKeyedEvent (
     } while (NT_SUCCESS(Status));
 
     if (! NT_SUCCESS(Status)) {
-        KdBreakPoint();
+        LDK_DIAGNOSTIC_BREAK();
         return Status;
     }
 

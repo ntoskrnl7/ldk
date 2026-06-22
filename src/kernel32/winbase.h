@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <Ldk/windows.h>
+#include "../internal.h"
 
 ULONG
 LdkSetLastNTError (

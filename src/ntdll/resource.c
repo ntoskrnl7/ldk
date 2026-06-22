@@ -49,8 +49,8 @@ RtlInitializeCriticalSectionEx (
 
 #define DPRINT              DbgPrint
 #define DPRINT1             DbgPrint
-#define ERROR_DBGBREAK      KdBreakPoint();
-#define UNIMPLEMENTED       KdBreakPoint();
+#define ERROR_DBGBREAK      LDK_DIAGNOSTIC_BREAK();
+#define UNIMPLEMENTED       LDK_DIAGNOSTIC_BREAK();
 #define RtlGetProcessHeap   RtlProcessHeap
 #define NtClose             ZwClose
 

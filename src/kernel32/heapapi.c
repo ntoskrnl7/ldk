@@ -159,7 +159,7 @@ HeapCompact (
 
     PAGED_CODE();
 
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
 
     SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
 
@@ -179,7 +179,7 @@ HeapWalk (
 
     PAGED_CODE();
 
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
 
     SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
 
@@ -205,7 +205,7 @@ HeapQueryInformation (
 
     PAGED_CODE();
 
-    KdBreakPoint();
+    LDK_DIAGNOSTIC_BREAK();
 
     SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
 

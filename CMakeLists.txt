@@ -7,6 +7,8 @@ pkg_get_version(LDK ${CMAKE_CURRENT_SOURCE_DIR}/include/ldk/internal/version.h V
 
 project(Ldk VERSION "${VERSION}" LANGUAGES C)
 
+option(LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS "Set to OFF to suppress LDK diagnostic KdBreakPoint calls" ON)
+
 if ("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
     option(LDK_USE_RAISE_EXCEPTION  "Set to ON to use ldk!RaiseException" ON)
     option(LDK_USE_RTL_RAISE_EXCEPTION  "Set to ON to use ldk!RtlRaiseExceptionn" ON)
@@ -33,6 +35,9 @@ list(REMOVE_DUPLICATES SOURCE_FILES)
 wdk_add_library(Ldk STATIC ${SOURCE_FILES})
 
 target_compile_definitions(Ldk PUBLIC -D_KERNEL32_)
+if (NOT LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS)
+    target_compile_definitions(Ldk PRIVATE -DLDK_ENABLE_DIAGNOSTIC_BREAKPOINTS=0)
+endif()
 if (LDK_USE_RAISE_EXCEPTION)
     target_compile_definitions(Ldk PUBLIC -D_LDK_DEFINE_RAISE_EXCEPTION)
 endif()
