@@ -138,6 +138,8 @@ NlsTestUtf8Conversion (
     VOID
     )
 {
+    static const UCHAR InvalidUtf8[] = { 0xc0, 0xaf };
+    static const WCHAR InvalidWide[] = { 0xd800 };
     CHAR MultiByte[16];
     WCHAR Wide[16];
     BOOL UsedDefaultChar = FALSE;
@@ -174,6 +176,26 @@ NlsTestUtf8Conversion (
     Result &= NlsExpect( Count == 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER,
                          "MultiByteToWideChar(CP_UTF8) reports small buffer" );
 
+    SetLastError( ERROR_SUCCESS );
+    Count = MultiByteToWideChar( CP_UTF8,
+                                 MB_COMPOSITE,
+                                 "abc",
+                                 -1,
+                                 Wide,
+                                 RTL_NUMBER_OF(Wide) );
+    Result &= NlsExpect( Count == 0 && GetLastError() == ERROR_INVALID_FLAGS,
+                         "MultiByteToWideChar(CP_UTF8) rejects invalid flags" );
+
+    SetLastError( ERROR_SUCCESS );
+    Count = MultiByteToWideChar( CP_UTF8,
+                                 MB_ERR_INVALID_CHARS,
+                                 (LPCCH)InvalidUtf8,
+                                 sizeof(InvalidUtf8),
+                                 Wide,
+                                 RTL_NUMBER_OF(Wide) );
+    Result &= NlsExpect( Count == 0 && GetLastError() == ERROR_NO_UNICODE_TRANSLATION,
+                         "MultiByteToWideChar(CP_UTF8) honors MB_ERR_INVALID_CHARS" );
+
     Count = MultiByteToWideChar( CP_UTF8,
                                  0,
                                  "\xE2\x82\xAC",
@@ -199,6 +221,7 @@ NlsTestUtf8Conversion (
                          "WideCharToMultiByte(CP_UTF8) converts multibyte sequence" );
 
     SetLastError( ERROR_SUCCESS );
+    UsedDefaultChar = TRUE;
     Count = WideCharToMultiByte( CP_UTF8,
                                  0,
                                  L"A",
@@ -207,8 +230,35 @@ NlsTestUtf8Conversion (
                                  sizeof(MultiByte),
                                  NULL,
                                  &UsedDefaultChar );
-    Result &= NlsExpect( Count == 0 && GetLastError() == ERROR_INVALID_PARAMETER,
-                         "WideCharToMultiByte(CP_UTF8) rejects lpUsedDefaultChar" );
+    Result &= NlsExpect( Count == 2 &&
+                         MultiByte[0] == 'A' &&
+                         MultiByte[1] == '\0' &&
+                         ! UsedDefaultChar,
+                         "WideCharToMultiByte(CP_UTF8) accepts lpUsedDefaultChar" );
+
+    SetLastError( ERROR_SUCCESS );
+    Count = WideCharToMultiByte( CP_UTF8,
+                                 0x1000,
+                                 L"A",
+                                 -1,
+                                 MultiByte,
+                                 sizeof(MultiByte),
+                                 NULL,
+                                 NULL );
+    Result &= NlsExpect( Count == 0 && GetLastError() == ERROR_INVALID_FLAGS,
+                         "WideCharToMultiByte(CP_UTF8) rejects invalid flags" );
+
+    SetLastError( ERROR_SUCCESS );
+    Count = WideCharToMultiByte( CP_UTF8,
+                                 WC_ERR_INVALID_CHARS,
+                                 InvalidWide,
+                                 RTL_NUMBER_OF(InvalidWide),
+                                 MultiByte,
+                                 sizeof(MultiByte),
+                                 NULL,
+                                 NULL );
+    Result &= NlsExpect( Count == 0 && GetLastError() == ERROR_NO_UNICODE_TRANSLATION,
+                         "WideCharToMultiByte(CP_UTF8) honors WC_ERR_INVALID_CHARS" );
 
     return Result ? TRUE : FALSE;
 }

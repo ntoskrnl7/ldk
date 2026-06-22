@@ -475,8 +475,13 @@ LdkpFillCodePageInfo (
     )
 {
     lpCPInfo->MaxCharSize = CodePageTable->MaximumCharacterSize;
-    lpCPInfo->DefaultChar[0] = (BYTE)(CodePageTable->DefaultChar & 0xff);
-    lpCPInfo->DefaultChar[1] = (BYTE)(CodePageTable->DefaultChar >> 8);
+    if (HIBYTE(CodePageTable->DefaultChar) != 0) {
+        lpCPInfo->DefaultChar[0] = HIBYTE(CodePageTable->DefaultChar);
+        lpCPInfo->DefaultChar[1] = LOBYTE(CodePageTable->DefaultChar);
+    } else {
+        lpCPInfo->DefaultChar[0] = LOBYTE(CodePageTable->DefaultChar);
+        lpCPInfo->DefaultChar[1] = 0;
+    }
 
     RtlCopyMemory( lpCPInfo->LeadByte,
                    CodePageTable->LeadByte,
@@ -732,7 +737,7 @@ GetCPInfoExA (
 
     RtlInitUnicodeString( &Unicode,
                           CPInfoExW.CodePageName );
-    
+
     Ansi.Length = 0;
     Ansi.MaximumLength = sizeof(lpCPInfoEx->CodePageName);
     Ansi.Buffer = lpCPInfoEx->CodePageName;

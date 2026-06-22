@@ -3,6 +3,14 @@
 #include <stdlib.h>
 
 
+#define MB_UTF8_VALID_FLAGS        MB_ERR_INVALID_CHARS
+#define WC_UTF8_VALID_FLAGS        (WC_COMPOSITECHECK | \
+									WC_DISCARDNS | \
+									WC_SEPCHARS | \
+									WC_DEFAULTCHAR | \
+									WC_ERR_INVALID_CHARS | \
+									WC_NO_BEST_FIT_CHARS)
+
 
 static
 NTSTATUS
@@ -302,11 +310,20 @@ MultiByteToWideChar (
 		break;
 
 	case CP_UTF8:
+		if (dwFlags & ~MB_UTF8_VALID_FLAGS) {
+			SetLastError( ERROR_INVALID_FLAGS );
+			return 0;
+		}
 		Status = RtlUTF8ToUnicodeN( NULL,
 									0,
 									&BytesNeeded,
 									lpMultiByteStr,
 									(ULONG)cbMultiByte );
+		if (Status == STATUS_SOME_NOT_MAPPED &&
+			FlagOn(dwFlags, MB_ERR_INVALID_CHARS)) {
+			SetLastError( ERROR_NO_UNICODE_TRANSLATION );
+			return 0;
+		}
 		if (! NT_SUCCESS(Status)) {
 			break;
 		}
@@ -322,6 +339,11 @@ MultiByteToWideChar (
 									&BytesWritten,
 									lpMultiByteStr,
 									(ULONG)cbMultiByte );
+		if (Status == STATUS_SOME_NOT_MAPPED &&
+			FlagOn(dwFlags, MB_ERR_INVALID_CHARS)) {
+			SetLastError( ERROR_NO_UNICODE_TRANSLATION );
+			return 0;
+		}
 		if (NT_SUCCESS(Status)) {
 			return (int)(BytesWritten / sizeof(WCHAR));
 		}
@@ -363,7 +385,7 @@ MultiByteToWideChar (
 		break;
 	}
 	}
-	
+
 	LdkSetLastNTError( Status );
 	return 0;
 }
@@ -466,8 +488,8 @@ WideCharToMultiByte (
 		break;
 
 	case CP_UTF8:
-		if (lpDefaultChar || lpUsedDefaultChar) {
-			SetLastError( ERROR_INVALID_PARAMETER );
+		if (dwFlags & ~WC_UTF8_VALID_FLAGS) {
+			SetLastError( ERROR_INVALID_FLAGS );
 			return 0;
 		}
 		Status = RtlUnicodeToUTF8N( NULL,
@@ -475,6 +497,11 @@ WideCharToMultiByte (
 									&BytesNeeded,
 									lpWideCharStr,
 									SourceBytes );
+		if (Status == STATUS_SOME_NOT_MAPPED &&
+			FlagOn(dwFlags, WC_ERR_INVALID_CHARS)) {
+			SetLastError( ERROR_NO_UNICODE_TRANSLATION );
+			return 0;
+		}
 		if (! NT_SUCCESS(Status)) {
 			break;
 		}
@@ -490,6 +517,11 @@ WideCharToMultiByte (
 									&BytesWritten,
 									lpWideCharStr,
 									SourceBytes );
+		if (Status == STATUS_SOME_NOT_MAPPED &&
+			FlagOn(dwFlags, WC_ERR_INVALID_CHARS)) {
+			SetLastError( ERROR_NO_UNICODE_TRANSLATION );
+			return 0;
+		}
 		if (NT_SUCCESS(Status)) {
 			return (int)BytesWritten;
 		}
@@ -531,7 +563,7 @@ WideCharToMultiByte (
 		break;
 	}
 	}
-	
+
 	LdkSetLastNTError( Status );
 	return 0;
 }
