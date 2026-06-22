@@ -51,6 +51,31 @@ ConsoleTest (
     );
 
 BOOLEAN
+NlsTest (
+    VOID
+    );
+
+BOOLEAN
+LocalMemoryTest (
+    VOID
+    );
+
+BOOLEAN
+Kernel32TimeTest (
+    VOID
+    );
+
+BOOLEAN
+Kernel32RuntimeTest (
+    VOID
+    );
+
+BOOLEAN
+ProcessEnvironmentTest (
+    VOID
+    );
+
+BOOLEAN
 NtdllCurrentDirectoryTest (
     VOID
     );
@@ -104,6 +129,11 @@ DriverEntry (
         LegacyThreadPoolTest,
         ThreadPoolTest,
         ConditionVariableTest,
+        NlsTest,
+        LocalMemoryTest,
+        Kernel32TimeTest,
+        Kernel32RuntimeTest,
+        ProcessEnvironmentTest,
         LibraryTest,
         ConsoleTest,
         NULL
