@@ -44,6 +44,22 @@ NtReleaseKeyedEvent (
     _In_opt_ PLARGE_INTEGER Timeout
     );
 
+NTSTATUS
+NTAPI
+NtAlertThreadByThreadId (
+    _In_ HANDLE ThreadId
+    );
+
+NTSTATUS
+NTAPI
+NtWaitForAlertByThreadId (
+    _In_opt_ PVOID Address,
+    _In_opt_ PLARGE_INTEGER Timeout
+    );
+
+#define ZwAlertThreadByThreadId        NtAlertThreadByThreadId
+#define ZwWaitForAlertByThreadId       NtWaitForAlertByThreadId
+
 
 
 NTSYSAPI

@@ -70,6 +70,11 @@ KeyedEventTest (
     VOID
     );
 
+BOOLEAN
+WaitOnAddressTest (
+    VOID
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, DriverEntry)
 #pragma alloc_text(PAGE, DriverUnload)
@@ -86,27 +91,33 @@ LDK_TEST_ROUTINE (
 
 typedef LDK_TEST_ROUTINE *PLDK_TEST_ROUTINE;
 
+typedef struct _LDK_TEST_ENTRY {
+    PCSTR Name;
+    PLDK_TEST_ROUTINE Routine;
+} LDK_TEST_ENTRY, *PLDK_TEST_ENTRY;
+
 NTSTATUS
 DriverEntry (
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
     )
 {
-    PLDK_TEST_ROUTINE Tests[] = {
-        NtdllCurrentDirectoryTest,
-        NtdllEnvironmentVariableTest,
-        KeyedEventTest,
-        LdrTest,
-        FibersTest,
-        FileTest,
-        CurrentDirectoryTest,
-        EnvironmentVariableTest,
-        LegacyThreadPoolTest,
-        ThreadPoolTest,
-        ConditionVariableTest,
-        LibraryTest,
-        ConsoleTest,
-        NULL
+    LDK_TEST_ENTRY Tests[] = {
+        { "NtdllCurrentDirectoryTest", NtdllCurrentDirectoryTest },
+        { "NtdllEnvironmentVariableTest", NtdllEnvironmentVariableTest },
+        { "KeyedEventTest", KeyedEventTest },
+        { "LdrTest", LdrTest },
+        { "FibersTest", FibersTest },
+        { "FileTest", FileTest },
+        { "CurrentDirectoryTest", CurrentDirectoryTest },
+        { "EnvironmentVariableTest", EnvironmentVariableTest },
+        { "LegacyThreadPoolTest", LegacyThreadPoolTest },
+        { "ThreadPoolTest", ThreadPoolTest },
+        { "ConditionVariableTest", ConditionVariableTest },
+        { "WaitOnAddressTest", WaitOnAddressTest },
+        { "LibraryTest", LibraryTest },
+        { "ConsoleTest", ConsoleTest },
+        { NULL, NULL }
     };
 
     KdBreakPoint();
@@ -115,12 +126,30 @@ DriverEntry (
 
     UNREFERENCED_PARAMETER(RegistryPath);
 
-    for (PLDK_TEST_ROUTINE *test = Tests; *test; test++) {
-        if (! (*test)()) {
+    for (PLDK_TEST_ENTRY Test = Tests; Test->Routine; Test++) {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_INFO_LEVEL,
+                    "[LdkTest] RUN  %s\n",
+                    Test->Name );
+
+        if (! Test->Routine()) {
+            DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                        DPFLTR_ERROR_LEVEL,
+                        "[LdkTest] FAIL %s\n",
+                        Test->Name );
             LdkTerminate();
             return STATUS_UNSUCCESSFUL;
         }
+
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_INFO_LEVEL,
+                    "[LdkTest] PASS %s\n",
+                    Test->Name );
     }
+
+    DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                DPFLTR_INFO_LEVEL,
+                "[LdkTest] PASS all tests\n" );
 
     DriverObject->DriverUnload = DriverUnload;
     return STATUS_SUCCESS;

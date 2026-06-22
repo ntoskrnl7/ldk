@@ -40,6 +40,9 @@
 #pragma alloc_text(PAGE, WaitForMultipleObjectsEx)
 #pragma alloc_text(PAGE, Sleep)
 #pragma alloc_text(PAGE, SleepEx)
+#pragma alloc_text(PAGE, WaitOnAddress)
+#pragma alloc_text(PAGE, WakeByAddressSingle)
+#pragma alloc_text(PAGE, WakeByAddressAll)
 #endif
 
 
@@ -777,6 +780,62 @@ Sleep (
 
 	SleepEx( dwMilliseconds,
              FALSE );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+WaitOnAddress (
+    _In_reads_bytes_(AddressSize) volatile VOID* Address,
+    _In_reads_bytes_(AddressSize) PVOID CompareAddress,
+    _In_ SIZE_T AddressSize,
+    _In_opt_ DWORD dwMilliseconds
+    )
+{
+    LARGE_INTEGER Timeout;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    Status = RtlWaitOnAddress( Address,
+                               CompareAddress,
+                               AddressSize,
+                               LdkFormatTimeout( &Timeout,
+                                                 dwMilliseconds ) );
+    if (Status == STATUS_TIMEOUT) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    if (NT_SUCCESS(Status)) {
+        return TRUE;
+    }
+    LdkSetLastNTError( Status );
+    return FALSE;
+}
+
+WINBASEAPI
+VOID
+WINAPI
+WakeByAddressSingle (
+    _In_ PVOID Address
+    )
+{
+    PAGED_CODE();
+
+    RtlWakeAddressSingle( Address );
+}
+
+WINBASEAPI
+VOID
+WINAPI
+WakeByAddressAll (
+    _In_ PVOID Address
+    )
+{
+    PAGED_CODE();
+
+    RtlWakeAddressAll( Address );
 }
 
 WINBASEAPI

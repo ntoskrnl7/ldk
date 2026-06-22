@@ -102,6 +102,43 @@ LdkLookTebByThread (
 	return NULL;
 }
 
+PLDK_TEB
+LdkReferenceTebByThread (
+	_In_ PETHREAD Thread
+	)
+{
+	PLDK_TEB Teb;
+	PLIST_ENTRY NextEntry;
+	KIRQL OldIrql= ExAcquireSpinLockShared( &LdkpTebListLock );
+
+	for (NextEntry = LdkpTebListHead.Flink;
+		NextEntry != &LdkpTebListHead;
+		NextEntry = NextEntry->Flink) {
+
+		Teb = CONTAINING_RECORD(NextEntry, LDK_TEB, ActiveLinks);
+
+		if (Teb->Thread == Thread &&
+			ExAcquireRundownProtection( &Teb->RundownProtect )) {
+			ExReleaseSpinLockShared( &LdkpTebListLock,
+									 OldIrql );
+			return Teb;
+		}
+
+	}
+
+	ExReleaseSpinLockShared( &LdkpTebListLock,
+							 OldIrql );
+	return NULL;
+}
+
+VOID
+LdkDereferenceTeb (
+	_Inout_ PLDK_TEB Teb
+	)
+{
+	ExReleaseRundownProtection( &Teb->RundownProtect );
+}
+
 PTEB
 LdkGetNextTebRundownProtection (
 	_In_ PTEB Teb
@@ -235,7 +272,7 @@ LdkpInvokeFlsCallback (
 #pragma warning(default:4055)
 			Data = InterlockedExchangePointer( &Teb->FlsSlots[i],
 											   NULL );
-			if (Callback) {
+			if (Callback && Data) {
 				Callback(Data);
 			}				
 		}
@@ -321,6 +358,8 @@ LdkpInitializeTeb (
 						   1L );
 	InitializeListHead( &Teb->KeyedWaitChain );
 	Teb->KeyedWaitValue = NULL;
+
+	Teb->AlertByThreadIdPending = FALSE;
 
 	Teb->ClientId.UniqueProcess = PsGetCurrentProcessId();
 	Teb->ClientId.UniqueThread = PsGetThreadId( Thread );

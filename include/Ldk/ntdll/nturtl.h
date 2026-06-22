@@ -136,6 +136,27 @@ RtlSleepConditionVariableSRW(
     _In_ ULONG Flags
     );
 
+NTSTATUS
+NTAPI
+RtlWaitOnAddress(
+    _In_reads_bytes_(AddressSize) volatile VOID* Address,
+    _In_reads_bytes_(AddressSize) PVOID CompareAddress,
+    _In_ SIZE_T AddressSize,
+    _In_opt_ PLARGE_INTEGER Timeout
+    );
+
+VOID
+NTAPI
+RtlWakeAddressSingle(
+    _In_ PVOID Address
+    );
+
+VOID
+NTAPI
+RtlWakeAddressAll(
+    _In_ PVOID Address
+    );
+
 
 #define RTL_HEAP_MAKE_TAG HEAP_MAKE_TAG_FLAGS
 

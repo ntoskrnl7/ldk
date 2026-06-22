@@ -19,13 +19,19 @@ EnvironmentVariableTest (
 #define PAGED_CODE()
 #endif
 
+#ifndef ERROR_ENVVAR_NOT_FOUND
+#define ERROR_ENVVAR_NOT_FOUND 203L
+#endif
+
 BOOLEAN
 EnvironmentVariableTest (
     VOID
     )
 {
+    BOOLEAN Result;
     PAGED_CODE();
 
+    Result = TRUE;
     printf("EnvironmentVariable Test\n");
 
     CHAR buffer[128];    
@@ -36,6 +42,7 @@ EnvironmentVariableTest (
     if (length == 0) {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         printf("[Failed] GetEnvironmentVariableA(windir)\n\n");
+        Result = FALSE;
     } else {
         printf("%s\n", buffer);
         printf("[Success] GetEnvironmentVariableA(windir)\n\n");
@@ -47,6 +54,7 @@ EnvironmentVariableTest (
     if (length == 0) {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         printf("[Failed] GetEnvironmentVariableW(SystemRoot)\n\n");
+        Result = FALSE;
     } else {
         printf("%ws\n", wbuffer);
         printf("[Success] GetEnvironmentVariableW(SystemRoot)\n\n");
@@ -58,6 +66,7 @@ EnvironmentVariableTest (
     } else {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         printf("[Failed] SetEnvironmentVariableA(TestVar, Test)\n\n");
+        Result = FALSE;
     }
 
     printf("Test GetEnvironmentVariableA(TestVar)\n");
@@ -65,6 +74,7 @@ EnvironmentVariableTest (
     if (length == 0) {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         printf("[Failed] GetEnvironmentVariableA(TestVar)\n\n");
+        Result = FALSE;
     } else {
         printf("%s\n", buffer);
         printf("[Success] GetEnvironmentVariableA(TestVar)\n\n");
@@ -76,17 +86,28 @@ EnvironmentVariableTest (
     } else {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         printf("[Failed] SetEnvironmentVariableW(TestVar, NULL)\n\n");
+        Result = FALSE;
     }
 
     printf("Test GetEnvironmentVariableA(TestVar)\n");
     length = GetEnvironmentVariableA( "TestVar", buffer, sizeof(buffer) );
     if (length == 0) {
-        fprintf(stderr, "[Success] ErrorCode = %d\n", GetLastError());
-        printf("[Success] GetEnvironmentVariableA(TestVar)\n\n");
+        DWORD ErrorCode;
+
+        ErrorCode = GetLastError();
+        if (ErrorCode == ERROR_ENVVAR_NOT_FOUND) {
+            printf("[Success] GetEnvironmentVariableA(TestVar) not found ErrorCode = %d\n\n",
+                   ErrorCode);
+        } else {
+            fprintf(stderr, "[Failed] ErrorCode = %d\n", ErrorCode);
+            printf("[Failed] GetEnvironmentVariableA(TestVar)\n\n");
+            Result = FALSE;
+        }
     } else {
         printf("[Failed] %s\n", buffer);
         printf("[Failed] GetEnvironmentVariableA(TestVar)\n\n");
+        Result = FALSE;
     }
 
-    return TRUE;
+    return Result;
 }

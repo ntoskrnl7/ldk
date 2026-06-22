@@ -175,6 +175,8 @@ be done manually in an appropriate Windows driver test environment. GitHub
 Actions verifies the x64 test driver build, but it does not load kernel
 drivers.
 
+Additional implementation and test notes live under [`docs/`](docs/).
+
 ## Releases
 
 Tagged releases are built by GitHub Actions. Pushing a tag such as `v0.7.6`

@@ -24,6 +24,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 
 file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c ./src/ntdll/rtl/*.c)
+list(APPEND SOURCE_FILES
+    ./src/ntdll/alert.c
+    ./src/ntdll/waitonaddress.c
+)
+list(REMOVE_DUPLICATES SOURCE_FILES)
 
 wdk_add_library(Ldk STATIC ${SOURCE_FILES})
 

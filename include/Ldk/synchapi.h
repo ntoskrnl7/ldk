@@ -387,6 +387,30 @@ Sleep(
     _In_ DWORD dwMilliseconds
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+WaitOnAddress(
+    _In_reads_bytes_(AddressSize) volatile VOID* Address,
+    _In_reads_bytes_(AddressSize) PVOID CompareAddress,
+    _In_ SIZE_T AddressSize,
+    _In_opt_ DWORD dwMilliseconds
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+WakeByAddressSingle(
+    _In_ PVOID Address
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+WakeByAddressAll(
+    _In_ PVOID Address
+    );
+
 EXTERN_C_END
 
 #endif // _SYNCHAPI_H_

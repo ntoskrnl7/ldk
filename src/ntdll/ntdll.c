@@ -56,6 +56,34 @@ LDK_FUNCTION_REGISTRATION LdkpNtdllFunctionRegistration[] = {
         RtlWakeAllConditionVariable
     },
     {
+        "RtlWaitOnAddress",
+        RtlWaitOnAddress
+    },
+    {
+        "RtlWakeAddressSingle",
+        RtlWakeAddressSingle
+    },
+    {
+        "RtlWakeAddressAll",
+        RtlWakeAddressAll
+    },
+    {
+        "NtAlertThreadByThreadId",
+        NtAlertThreadByThreadId
+    },
+    {
+        "NtWaitForAlertByThreadId",
+        NtWaitForAlertByThreadId
+    },
+    {
+        "ZwAlertThreadByThreadId",
+        ZwAlertThreadByThreadId
+    },
+    {
+        "ZwWaitForAlertByThreadId",
+        ZwWaitForAlertByThreadId
+    },
+    {
         "RtlInitializeCriticalSection",
         RtlInitializeCriticalSection
     },
@@ -121,6 +149,12 @@ LDK_TERMINATE_COMPONENT LdkpTerminateCurDir;
 LDK_INITIALIZE_COMPONENT LdkpInitializeKeyedEventList;
 LDK_TERMINATE_COMPONENT LdkpTerminateKeyedEventList;
 
+LDK_INITIALIZE_COMPONENT LdkpInitializeAlertByThreadIdList;
+LDK_TERMINATE_COMPONENT LdkpTerminateAlertByThreadIdList;
+
+LDK_INITIALIZE_COMPONENT LdkpInitializeWaitOnAddressList;
+LDK_TERMINATE_COMPONENT LdkpTerminateWaitOnAddressList;
+
 LDK_INITIALIZE_COMPONENT LdkpInitializeRtlWorkItem;
 LDK_TERMINATE_COMPONENT LdkpTerminateRtlWorkItem;
 
@@ -150,8 +184,23 @@ LdkpNtdllInitialize (
         return Status;
     }
 
+    Status = LdkpInitializeAlertByThreadIdList();
+    if (! NT_SUCCESS(Status)) {
+        LdkpTerminateKeyedEventList();
+        return Status;
+    }
+
+    Status = LdkpInitializeWaitOnAddressList();
+    if (! NT_SUCCESS(Status)) {
+        LdkpTerminateAlertByThreadIdList();
+        LdkpTerminateKeyedEventList();
+        return Status;
+    }
+
     Status = LdkpInitializeRtlWorkItem();
     if (! NT_SUCCESS(Status)) {
+        LdkpTerminateWaitOnAddressList();
+        LdkpTerminateAlertByThreadIdList();
         LdkpTerminateKeyedEventList();
         return Status;
     }
@@ -175,6 +224,10 @@ LdkpNtdllTerminate(
     RtlpDeleteDeferedCriticalSection();
 
     LdkpTerminateRtlWorkItem();
+
+    LdkpTerminateWaitOnAddressList();
+
+    LdkpTerminateAlertByThreadIdList();
 
 	LdkpTerminateKeyedEventList();
 }
