@@ -1,4 +1,4 @@
-﻿/*++
+/*++
 
 Copyright (c) LDK Authors. All rights reserved.
 
@@ -26,6 +26,6 @@ Environment:
 
 #define LDK_VERSION_MAJOR 0
 #define LDK_VERSION_MINOR 7
-#define LDK_VERSION_PATCH 5
+#define LDK_VERSION_PATCH 6
 
 #endif // _LDK_VERSION_H_
