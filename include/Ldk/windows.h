@@ -17,6 +17,8 @@
 
 #include <windef.h>
 #include "winbase.h"
+#include "ioapiset.h"
+#include "winreg.h"
 
 #include "winnls.h"
 

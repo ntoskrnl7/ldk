@@ -384,7 +384,7 @@ LdkpNotImplemented (
 	VOID
 	)
 {
-	KdBreakPoint();
+	LDK_DIAGNOSTIC_BREAK();
 }
 
 NTSTATUS
@@ -411,7 +411,7 @@ LdkpBuildImportDescriptors (
 			}
 		}
 		if (! NT_SUCCESS(Status)) {
-			KdBreakPoint();
+			LDK_DIAGNOSTIC_BREAK();
 			return Status;
 		}
 
@@ -422,7 +422,7 @@ LdkpBuildImportDescriptors (
 
 			if (IMAGE_SNAP_BY_ORDINAL(OriginalFirstThunk->u1.Ordinal)) {
 
-				KdBreakPoint();
+				LDK_DIAGNOSTIC_BREAK();
 				return STATUS_NOT_SUPPORTED;
 
 			} else {
@@ -431,7 +431,7 @@ LdkpBuildImportDescriptors (
 																		   ImportByName->Name,
 																		   0 );
 				if (! FirstThunk->u1.Function) {
-					KdBreakPoint();
+					LDK_DIAGNOSTIC_BREAK();
 					return STATUS_PROCEDURE_NOT_FOUND;
 				}
 			}
@@ -1131,7 +1131,7 @@ LdkGetProcedureAddress (
     )
 {
 	if (! ARGUMENT_PRESENT(DllHandle)) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		DllHandle = NtCurrentPeb()->ImageBaseAddress;
 	}
 
@@ -1173,7 +1173,7 @@ LdkGetProcedureAddress (
 
         ULONG OrdinalBase = ExportDirectory->Base;
 
-        KdBreakPoint();
+        LDK_DIAGNOSTIC_BREAK();
 
         Ordinal = IMAGE_ORDINAL((ULONG_PTR)ProcedureNumber);
 

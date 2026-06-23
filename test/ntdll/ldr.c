@@ -14,6 +14,15 @@ LdrTest (
 
 EXTERN_C_START
 
+#ifndef NTSYSAPI
+#define NTSYSAPI __declspec(dllimport)
+#endif
+
+#ifndef _LDK_WIN32_NTSTATUS_DEFINED
+#define _LDK_WIN32_NTSTATUS_DEFINED
+typedef LONG NTSTATUS;
+#endif
+
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
@@ -145,7 +154,7 @@ LdrTest (
     PAGED_CODE();
 
     // //
-    // // TestFunction함수를 가진 Test.dll를 만들어주세요
+    // // Create Test.dll with an exported TestFunction before enabling this block.
     // //
 
     // typedef LONG(__stdcall* TEST_FN)(LONG);

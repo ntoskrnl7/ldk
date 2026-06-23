@@ -1,4 +1,4 @@
-#include "ntdll.h"
+﻿#include "ntdll.h"
 #include "../ldk.h"
 
 
@@ -322,7 +322,7 @@ RtlSetEnvironmentVariable (
                                 pOld = NULL;
 
                                 // untested :-(
-                                KdBreakPoint();
+                                LDK_DIAGNOSTIC_BREAK();
                                 pNew = pOld;
                             } else {
                                 pStart = CurrentValue.Buffer + Value->Length/sizeof(WCHAR) + 1;

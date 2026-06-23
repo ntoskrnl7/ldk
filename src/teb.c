@@ -169,8 +169,8 @@ LdkCurrentTeb (
 	)
 {
 	//
-	// 스택의 최하단에 Teb가 있다면, Teb를 반환하도록 합니다.
-	// 동기화 후 목록을 순회하는 행동은 너무 느리므로 이러한 방법을 적용하였습니다.
+	// If a TEB is cached at the lowest stack address, return it.
+	// Acquiring synchronization and walking the list on every lookup is too slow.
 	//
 	ULONG_PTR LowLimit, HighLimit;
 	IoGetStackLimits( &LowLimit,
@@ -187,8 +187,8 @@ LdkCurrentTeb (
 	}
 
 	//
-	// KeExpandKernelStackAndCallout/Ex 함수 등을 사용하여 스택 확장등으로 인해서
-	// TEB를 못얻어올 경우가 존재하기때문에 TebMap에서 TEB를 찾도록 합니다.
+	// Stack expansion through KeExpandKernelStackAndCallout/Ex can hide the
+	// cached stack TEB, so fall back to the TEB map.
 	//
 	Teb = LdkLookTebByThread( PsGetCurrentThread() );
 	if (Teb) {
@@ -197,12 +197,9 @@ LdkCurrentTeb (
 	}
 
 	//
-	// LDK가 종료되는 중이라면, 임시 목록에 새 TEB를 추가 후 반환하도록 합니다.
+	// During LDK shutdown, create a TEB on the temporary list and return it.
 	//
 	if (LDK_IS_SHUTDOWN_IN_PROGRESS) {
-
-		KdBreakPoint();
-
 		Teb = LdkpCreateTeb( PsGetCurrentThread() );
 		NT_ASSERT(Teb);
 
@@ -213,7 +210,7 @@ LdkCurrentTeb (
 	}
 
 	//
-	// TEB가 없다면 새로 생성합니다.
+	// Create a new TEB if one does not already exist.
 	//
 	Teb = LdkCreateTeb( PsGetCurrentThread() );
 	NT_ASSERT(Teb);
@@ -286,18 +283,16 @@ LdkpTerminateTebMap (
 	)
 {	
 	//
-	// 현재 스레드의 TEB가 없다면 미리 생성해놓습니다.
-	// LdkpInvokeFlsCallback 호출 시,
-	// Fls Callback 함수 내에 TEB 접근 코드가 존재한다면
-	// TEB를 생성 후 등록하지 못하므로 미리 생성합니다.
+	// Ensure the current thread has a TEB before invoking FLS callbacks.
+	// A callback may access the TEB, and that path cannot safely create and
+	// register a new TEB while callback teardown is already in progress.
 	//
 	PLDK_TEB Teb = LdkCurrentTeb();
 
 	//
-	// Fls Callback은 PASSIVE_LEVEL에서만 호출 가능한 함수를 호출할 가능성이 있으므로
-	// LdkpTebListLock을 획득한 상태에서 LdkpInvokeFlsCallback를 호출하면 안됩니다.
-	// 그래서 LdkpInvokeFlsCallback를 호출하기전에 TEB 목록을 임시 변수로 이동시키도록
-	// 처리했습니다.
+	// FLS callbacks may call routines that are only valid at PASSIVE_LEVEL, so
+	// do not invoke them while holding LdkpTebListLock. Move the TEB list to a
+	// local list before invoking callbacks.
 
 	LIST_ENTRY TebListHead;
 	KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpTebListLock );
@@ -310,7 +305,7 @@ LdkpTerminateTebMap (
 							 	OldIrql );
 
 	//
-	// Teb에 등록된 Fls Callbck을 모두 호출 후 TEB를 할당 해제합니다.
+	// Invoke all FLS callbacks registered on the TEB, then free the TEB.
 	//
 	PLIST_ENTRY Entry = RemoveHeadList( &TebListHead );
 	while (Entry != &TebListHead) {

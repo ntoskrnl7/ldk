@@ -17,6 +17,16 @@
              curr = n, n = curr->Flink )
 #endif
 
+#ifndef LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS
+#define LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS 1
+#endif
+
+#if LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS
+#define LDK_DIAGNOSTIC_BREAK() KdBreakPoint()
+#else
+#define LDK_DIAGNOSTIC_BREAK() ((void)0)
+#endif
+
 
 
 NTKERNELAPI
@@ -29,14 +39,14 @@ KeIsExecutingDpc (
 
 #define EXIT_WHEN_DPC_WITH_NO_RETURN()	\
 	if (KeIsExecutingDpc()) {	\
-		KdBreakPoint();	\
+		LDK_DIAGNOSTIC_BREAK();	\
 		LdkSetLastNTError(STATUS_NOT_SUPPORTED);	\
 		return;	\
 	}
 
 #define EXIT_WHEN_DPC_WITH_RETURN(ReturnValue)	\
 	if (KeIsExecutingDpc()) {	\
-		KdBreakPoint();	\
+		LDK_DIAGNOSTIC_BREAK();	\
 		LdkSetLastNTError(STATUS_NOT_SUPPORTED);	\
 		return ReturnValue;	\
 	}

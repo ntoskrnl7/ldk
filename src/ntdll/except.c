@@ -72,12 +72,23 @@ RtlpCopyContext (
     _In_ PCONTEXT Source
     )
 {
+    RtlZeroMemory( Destination,
+                   sizeof(*Destination) );
+
+    Destination->ContextFlags = Source->ContextFlags;
     Destination->Rip = Source->Rip;
+    Destination->Rax = Source->Rax;
+    Destination->Rcx = Source->Rcx;
+    Destination->Rdx = Source->Rdx;
     Destination->Rbx = Source->Rbx;
     Destination->Rsp = Source->Rsp;
     Destination->Rbp = Source->Rbp;
     Destination->Rsi = Source->Rsi;
     Destination->Rdi = Source->Rdi;
+    Destination->R8 = Source->R8;
+    Destination->R9 = Source->R9;
+    Destination->R10 = Source->R10;
+    Destination->R11 = Source->R11;
     Destination->R12 = Source->R12;
     Destination->R13 = Source->R13;
     Destination->R14 = Source->R14;

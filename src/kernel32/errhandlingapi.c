@@ -126,7 +126,7 @@ UnhandledExceptionFilter (
 
 	PEXCEPTION_RECORD ExceptionRecord = ExceptionInfo->ExceptionRecord;
 
-	KdBreakPoint();
+	LDK_DIAGNOSTIC_BREAK();
 
 	FilterReturn = CheckForReadOnlyResource(ExceptionInfo);
 
@@ -229,7 +229,6 @@ GetErrorMode (
 	NTSTATUS Status;
 	UINT PreviousMode;
 
-	KdBreakPoint();
 	EXIT_WHEN_DPC_WITH_RETURN(0);
 
 	Status = ZwQueryInformationProcess( NtCurrentProcess(),
@@ -261,7 +260,6 @@ SetErrorMode (
     UINT PreviousMode;
     UINT NewMode;
 
-	KdBreakPoint();
     EXIT_WHEN_DPC_WITH_RETURN(0);
 
     PreviousMode = GetErrorMode();

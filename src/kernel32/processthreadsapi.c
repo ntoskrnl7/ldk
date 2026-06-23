@@ -120,7 +120,7 @@ LdkpThreadStartRoutine (
 
 	if (FlagOn(Context->dwCreationFlags, CREATE_SUSPENDED)) {
 		//PsSuspendThread(); :-(
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 	}
 
 	lpThreadParameter = Context->lpThreadParameter;
@@ -172,7 +172,7 @@ CreateThread (
 	PAGED_CODE();
 
 	if (FlagOn(dwCreationFlags, CREATE_SUSPENDED)) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		SetLastError(ERROR_NOT_SUPPORTED);
 		return NULL;
 	}
@@ -540,7 +540,7 @@ ExitProcess (
 	PAGED_CODE();
 
 	// :-(
-	KdBreakPoint();
+	LDK_DIAGNOSTIC_BREAK();
 
 	TerminateProcess( NtCurrentProcess(),
 					  uExitCode );
@@ -556,7 +556,7 @@ TerminateProcess (
 {
 	PAGED_CODE();
 
-	KdBreakPoint(); // :-(
+	LDK_DIAGNOSTIC_BREAK(); // :-(
 
 	if (hProcess == NULL) {
 		SetLastError(ERROR_INVALID_HANDLE);

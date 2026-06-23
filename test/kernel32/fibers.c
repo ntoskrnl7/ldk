@@ -106,8 +106,6 @@ FibersTest (
 {
     PAGED_CODE();
 
-    KdBreakPoint();
-
     printf("Fibers Test\n");
 
     hEvent = CreateEventA( NULL, TRUE, FALSE, NULL );

@@ -78,6 +78,21 @@ LdkSizeHeap (
     _In_ LPCVOID BaseAddress
     );
 
+typedef struct _LDK_HEAP_WALK_ENTRY {
+    PVOID Data;
+    SIZE_T Size;
+    UCHAR Overhead;
+    UCHAR RegionIndex;
+} LDK_HEAP_WALK_ENTRY, *PLDK_HEAP_WALK_ENTRY;
+
+NTSTATUS
+NTAPI
+LdkWalkHeap (
+    _In_ PVOID HeapHandle,
+    _In_opt_ PVOID PreviousData,
+    _Out_ PLDK_HEAP_WALK_ENTRY Entry
+    );
+
 #define RtlCreateHeap               LdkCreateHeap
 #define RtlAllocateHeap             LdkAllocateHeap
 #define RtlReAllocateHeap		    LdkReAllocateHeap

@@ -11,6 +11,26 @@ FileTest (
     );
 
 BOOLEAN
+HeapApiTest (
+    VOID
+    );
+
+BOOLEAN
+FormatMessageTest (
+    VOID
+    );
+
+BOOLEAN
+NlsTest (
+    VOID
+    );
+
+BOOLEAN
+IcuTest (
+    VOID
+    );
+
+BOOLEAN
 LegacyThreadPoolTest (
     VOID
     );
@@ -109,6 +129,10 @@ DriverEntry (
         { "LdrTest", LdrTest },
         { "FibersTest", FibersTest },
         { "FileTest", FileTest },
+        { "HeapApiTest", HeapApiTest },
+        { "FormatMessageTest", FormatMessageTest },
+        { "NlsTest", NlsTest },
+        { "IcuTest", IcuTest },
         { "CurrentDirectoryTest", CurrentDirectoryTest },
         { "EnvironmentVariableTest", EnvironmentVariableTest },
         { "LegacyThreadPoolTest", LegacyThreadPoolTest },
@@ -119,8 +143,6 @@ DriverEntry (
         { "ConsoleTest", ConsoleTest },
         { NULL, NULL }
     };
-
-    KdBreakPoint();
 
     PAGED_CODE();
 

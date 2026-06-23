@@ -9,10 +9,17 @@ only when the kernel-mode behavior can be bounded and tested.
 Related detail pages:
 
 - [Runtime state](runtime-state.md)
-- [Loader](loader.md)
-- [Synchronization](synchronization.md)
-- [Threading and callbacks](threading-and-callbacks.md)
-- [Environment and paths](environment-and-paths.md)
+- [Loader](../runtime/loader.md)
+- [File and handle APIs](../api/file-and-handles.md)
+- [Heap APIs](../api/heap.md)
+- [ICU virtual module](../api/icu.md)
+- [NLS, strings, and time formatting](../api/nls-and-time.md)
+- [Registry APIs](../api/registry.md)
+- [Console and pipe APIs](../api/console-and-pipes.md)
+- [Messages and debugging](../api/messages-and-debugging.md)
+- [Synchronization](../runtime/synchronization.md)
+- [Threading and callbacks](../runtime/threading-and-callbacks.md)
+- [Environment and paths](../runtime/environment-and-paths.md)
 - [API support](api-support.md)
 
 ## Initialization
@@ -69,6 +76,7 @@ runtime categories:
 - File and handle helpers.
 - Console shims.
 - Heap helpers.
+- Registry read helpers.
 - Environment and current-directory helpers.
 - Critical sections, condition variables, keyed events, and selected wait
   primitives.
@@ -76,6 +84,7 @@ runtime categories:
 - FLS/TLS and fiber-related helpers.
 - Loader helpers such as `LoadLibrary`, `GetProcAddress`, and module lookup.
 - Time, NLS, string conversion, and utility helpers.
+- A minimal `ICU.DLL` pseudo-module for fixed-offset time-zone lookups.
 
 Unsupported user-mode subsystems such as GUI APIs, COM, broad CRT startup
 behavior, and arbitrary user-mode assumptions should not be expected to work.

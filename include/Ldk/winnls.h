@@ -1057,8 +1057,14 @@ typedef LPCPINFOEXA LPCPINFOEX;
 
 
 
-#ifdef STRICT
+#ifndef _LDK_LOCALE_ENUMPROCW_DEFINED
+#define _LDK_LOCALE_ENUMPROCW_DEFINED
 typedef BOOL (CALLBACK* LOCALE_ENUMPROCW)(LPWSTR);                                          // DEPRECATED: please use LOCALE_ENUMPROCEX
+#endif
+
+#ifndef _LDK_LOCALE_ENUMPROCEX_DEFINED
+#define _LDK_LOCALE_ENUMPROCEX_DEFINED
+typedef BOOL (CALLBACK* LOCALE_ENUMPROCEX)(LPWSTR, DWORD, LPARAM);
 #endif
 
 
@@ -1194,6 +1200,64 @@ GetUserDefaultLocaleName(
     _Out_writes_(cchLocaleName) LPWSTR lpLocaleName,
     _In_ int cchLocaleName
     );
+
+#define LDK_HAS_LOCALE_NLS_APIS 1
+
+WINBASEAPI
+int
+WINAPI
+GetLocaleInfoW(
+    _In_ LCID     Locale,
+    _In_ LCTYPE   LCType,
+    _Out_writes_opt_(cchData) LPWSTR lpLCData,
+    _In_ int      cchData);
+
+WINBASEAPI
+int
+WINAPI
+GetLocaleInfoEx(
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ LCTYPE LCType,
+    _Out_writes_to_opt_(cchData, return) LPWSTR lpLCData,
+    _In_ int cchData);
+
+WINBASEAPI
+int
+WINAPI
+GetDateFormatW(
+    _In_ LCID Locale,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpDate,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchDate) LPWSTR lpDateStr,
+    _In_ int cchDate);
+
+WINBASEAPI
+int
+WINAPI
+GetTimeFormatW(
+    _In_ LCID Locale,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpTime,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchTime) LPWSTR lpTimeStr,
+    _In_ int cchTime);
+
+WINBASEAPI
+BOOL
+WINAPI
+EnumSystemLocalesW(
+    _In_ LOCALE_ENUMPROCW lpLocaleEnumProc,
+    _In_ DWORD dwFlags);
+
+WINBASEAPI
+BOOL
+WINAPI
+EnumSystemLocalesEx(
+    _In_ LOCALE_ENUMPROCEX lpLocaleEnumProcEx,
+    _In_ DWORD dwFlags,
+    _In_ LPARAM lParam,
+    _In_opt_ LPVOID lpReserved);
 
 //
 // String based NLS APIs

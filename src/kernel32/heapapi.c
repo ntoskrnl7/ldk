@@ -154,15 +154,20 @@ HeapCompact (
     _In_ DWORD dwFlags
     )
 {
-    UNREFERENCED_PARAMETER(hHeap);
     UNREFERENCED_PARAMETER(dwFlags);
 
     PAGED_CODE();
 
-    KdBreakPoint();
+    if (hHeap == NULL) {
+        SetLastError( ERROR_INVALID_HANDLE );
+        return 0;
+    }
 
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
-
+    //
+    // LDK heaps are backed by nonpaged pool allocations, so there is no
+    // committed heap segment to compact. A zero result is a valid "nothing was
+    // compacted" result for this heap model.
+    //
     return 0;
 }
 
@@ -174,16 +179,40 @@ HeapWalk (
     _Inout_ LPPROCESS_HEAP_ENTRY lpEntry
     )
 {
-    UNREFERENCED_PARAMETER(hHeap);
-    UNREFERENCED_PARAMETER(lpEntry);
+    LDK_HEAP_WALK_ENTRY WalkEntry;
+    PVOID PreviousData;
+    NTSTATUS Status;
 
     PAGED_CODE();
 
-    KdBreakPoint();
+    if (hHeap == NULL ||
+        lpEntry == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
 
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    PreviousData = lpEntry->lpData;
+    Status = LdkWalkHeap( hHeap,
+                          PreviousData,
+                          &WalkEntry );
+    if (! NT_SUCCESS(Status)) {
+        if (Status == STATUS_NO_MORE_ENTRIES) {
+            SetLastError( ERROR_NO_MORE_ITEMS );
+        } else {
+            LdkSetLastNTError( Status );
+        }
+        return FALSE;
+    }
 
-    return FALSE;
+    RtlZeroMemory( lpEntry,
+                   sizeof(*lpEntry) );
+    lpEntry->lpData = WalkEntry.Data;
+    lpEntry->cbData = WalkEntry.Size > 0xffffffffu ? 0xffffffffu : (DWORD)WalkEntry.Size;
+    lpEntry->cbOverhead = WalkEntry.Overhead;
+    lpEntry->iRegionIndex = WalkEntry.RegionIndex;
+    lpEntry->wFlags = PROCESS_HEAP_ENTRY_BUSY;
+
+    return TRUE;
 }
 
 WINBASEAPI
@@ -198,16 +227,28 @@ HeapQueryInformation (
     )
 {
     UNREFERENCED_PARAMETER(HeapHandle);
-    UNREFERENCED_PARAMETER(HeapInformationClass);
-    UNREFERENCED_PARAMETER(HeapInformation);
-    UNREFERENCED_PARAMETER(HeapInformationLength);
-    UNREFERENCED_PARAMETER(ReturnLength);
 
     PAGED_CODE();
 
-    KdBreakPoint();
+    if (ReturnLength != NULL) {
+        *ReturnLength = 0;
+    }
 
-    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    if (HeapInformationClass == HeapCompatibilityInformation) {
+        if (ReturnLength != NULL) {
+            *ReturnLength = sizeof(ULONG);
+        }
 
+        if (HeapInformation == NULL ||
+            HeapInformationLength < sizeof(ULONG)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        *(PULONG)HeapInformation = 0;
+        return TRUE;
+    }
+
+    SetLastError( ERROR_INVALID_PARAMETER );
     return FALSE;
 }

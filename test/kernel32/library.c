@@ -10,6 +10,7 @@ LibraryTest (
 #pragma alloc_text(PAGE, LibraryTest)
 #endif
 #else
+#include <windows.h>
 #include <libloaderapi.h>
 #include <stdio.h>
 #define PAGED_CODE()

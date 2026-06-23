@@ -45,6 +45,16 @@ WideCharToMultiByte(
     _Out_opt_ LPBOOL lpUsedDefaultChar
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+GetStringTypeW(
+    _In_ DWORD dwInfoType,
+    _In_NLS_string_(cchSrc) LPCWCH lpSrcStr,
+    _In_ int cchSrc,
+    _Out_ LPWORD lpCharType
+    );
+
 EXTERN_C_END
 
 #endif // _APISETSTRING_

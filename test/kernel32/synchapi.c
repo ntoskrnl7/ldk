@@ -184,6 +184,30 @@ NtWaitForAlertByThreadId (
     _In_opt_ PLARGE_INTEGER Timeout
     );
 
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlWaitOnAddress (
+    _In_ volatile VOID* Address,
+    _In_reads_bytes_(AddressSize) PVOID CompareAddress,
+    _In_ SIZE_T AddressSize,
+    _In_opt_ PLARGE_INTEGER Timeout
+    );
+
+NTSYSAPI
+VOID
+NTAPI
+RtlWakeAddressSingle (
+    _In_ PVOID Address
+    );
+
+NTSYSAPI
+VOID
+NTAPI
+RtlWakeAddressAll (
+    _In_ PVOID Address
+    );
+
 #pragma comment(lib, "ntdll.lib")
 #define PAGED_CODE()
 #endif
@@ -2037,9 +2061,13 @@ WaitOnAddressTest (
     }
 
     printf("Test WaitOnAddress timeout stress\n");
+#if _KERNEL_MODE
     if (! WaitOnAddressTimeoutStressTest()) {
         Result = FALSE;
     }
+#else
+    printf("[Skipped] WaitOnAddress timeout stress in native Win32 baseline\n\n");
+#endif
 
     printf("Test RtlWaitOnAddress/RtlWakeAddressAll stress\n");
     if (! RtlWaitOnAddressWakeAllStressTest()) {
@@ -2052,9 +2080,13 @@ WaitOnAddressTest (
     }
 
     printf("Test RtlWaitOnAddress timeout stress\n");
+#if _KERNEL_MODE
     if (! RtlWaitOnAddressTimeoutStressTest()) {
         Result = FALSE;
     }
+#else
+    printf("[Skipped] RtlWaitOnAddress timeout stress in native Win32 baseline\n\n");
+#endif
 
     printf("Test WaitOnAddress address-isolation stress\n");
     if (! WaitOnAddressAddressIsolationStressTest()) {

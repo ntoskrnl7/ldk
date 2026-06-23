@@ -157,7 +157,7 @@ CreateThreadpoolWork (
     )
 {
 	if (ARGUMENT_PRESENT(pcbe)) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		LdkSetLastNTError(STATUS_NOT_SUPPORTED);
 		return NULL;
 	}
@@ -242,14 +242,14 @@ SubmitThreadpoolWork (
     )
 {
 	if (InterlockedIncrement( &pwk->ReferenceCount ) <= 1) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		LdkSetLastNTError( STATUS_DELETE_PENDING );
 		return;
 	}
 
 	if (InterlockedBitTestAndSet( &pwk->Flags,
 								  LDK_TP_WORK_FLAGS_STARTED_BIT_INDEX )) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		LdkSetLastNTError(STATUS_ALREADY_REGISTERED);
 		InterlockedDecrement( &pwk->ReferenceCount );
 		return;
@@ -285,7 +285,7 @@ WaitForThreadpoolWorkCallbacks (
 	PAGED_CODE();
 
 	if (InterlockedIncrement( &pwk->ReferenceCount ) <= 1) {
-		KdBreakPoint();
+		LDK_DIAGNOSTIC_BREAK();
 		LdkSetLastNTError( STATUS_DELETE_PENDING );
 		return;
 	}

@@ -161,7 +161,7 @@ NtWaitForKeyedEvent (
                                     Timeout );
     if (NT_SUCCESS(Status)) {
     } else {
-        KdBreakPoint();
+        LDK_DIAGNOSTIC_BREAK();
     }
     return Status;
 }
@@ -179,15 +179,12 @@ NtReleaseKeyedEvent (
     PLDK_TEB Found = NULL;
 
     do {
-        KIRQL OldIrql = ExAcquireSpinLockShared( &LdkpKeyedEventWaitListLock );
+        KIRQL OldIrql = ExAcquireSpinLockExclusive( &LdkpKeyedEventWaitListLock );
         PLIST_ENTRY Current;
         PLIST_ENTRY Next;
         LIST_FOR_EACH_SAFE(Current, Next, &LdkpKeyedEventWaitListHead) {
             PLDK_KEYED_EVENT_WAIT_ENTRY Entry = CONTAINING_RECORD( Current, LDK_KEYED_EVENT_WAIT_ENTRY, Links );
             if (Entry->Key == Key) {
-                while (!ExTryConvertSharedSpinLockExclusive( &LdkpKeyedEventWaitListLock )) {
-                    YieldProcessor();
-                }
                 Found = Entry->Teb;
                 Entry->Teb = NULL;
                 Entry->Key = NULL;
@@ -197,21 +194,20 @@ NtReleaseKeyedEvent (
                 break;
             }
         }
+        ExReleaseSpinLockExclusive( &LdkpKeyedEventWaitListLock,
+                                    OldIrql );
+
         if (Found) {
-            ExReleaseSpinLockExclusive( &LdkpKeyedEventWaitListLock,
-                                        OldIrql );
             break;
-        } else {
-            ExReleaseSpinLockShared( &LdkpKeyedEventWaitListLock,
-                                     OldIrql );
-        }        
+        }
+
         Status = ZwWaitForSingleObject( KeyedEventHandle,
                                         Alertable,
                                         Timeout );
     } while (NT_SUCCESS(Status));
 
     if (! NT_SUCCESS(Status)) {
-        KdBreakPoint();
+        LDK_DIAGNOSTIC_BREAK();
         return Status;
     }
 
