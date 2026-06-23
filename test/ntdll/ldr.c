@@ -14,6 +14,15 @@ LdrTest (
 
 EXTERN_C_START
 
+#ifndef NTSYSAPI
+#define NTSYSAPI __declspec(dllimport)
+#endif
+
+#ifndef _LDK_WIN32_NTSTATUS_DEFINED
+#define _LDK_WIN32_NTSTATUS_DEFINED
+typedef LONG NTSTATUS;
+#endif
+
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif

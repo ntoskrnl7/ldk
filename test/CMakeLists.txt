@@ -16,6 +16,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 
 file(GLOB SOURCE_FILES ./driver.c ./*/*.c)
+list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/win32/.*")
 
 wdk_add_driver(LdkTest CUSTOM_ENTRY_POINT "LdkDriverEntry" ${SOURCE_FILES})
 

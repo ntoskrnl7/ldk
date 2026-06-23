@@ -503,6 +503,9 @@ LdkpInitializePeb (
 	extern LDK_MODULE LdkpNtdllModule;
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpNtdllModule.ActiveLinks);
 
+	extern LDK_MODULE LdkpIcuModule;
+	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpIcuModule.ActiveLinks);
+
 	Status = ExInitializeResourceLite( &LdkpPeb.ModuleListResource );
 	if (! NT_SUCCESS(Status)) {
 		LdkpUninitializeProcessParameters();

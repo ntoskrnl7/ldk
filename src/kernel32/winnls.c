@@ -1,4 +1,5 @@
 ﻿#include "winbase.h"
+#include "../ntdll/ntdll.h"
 #include "../peb.h"
 
 
@@ -7,6 +8,16 @@ NTSTATUS
 LdkpInitializeNls (
 	VOID
 	);
+
+PCWSTR
+LdkpGetLocaleName (
+    _In_ LCID Locale
+    );
+
+VOID
+LdkpTerminateNls (
+    VOID
+    );
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeNls)
@@ -20,6 +31,551 @@ extern USHORT *NlsAnsiCodePage;
 extern USHORT *NlsOemCodePage;
 extern PUSHORT *NlsLeadByteInfo;
 
+#define NLS_CP_ALGORITHM_RANGE    60000
+
+typedef struct _LDK_CODE_PAGE_ENTRY {
+    LIST_ENTRY Links;
+    UINT CodePage;
+    PVOID Data;
+    ULONG DataSize;
+    CPTABLEINFO TableInfo;
+} LDK_CODE_PAGE_ENTRY, *PLDK_CODE_PAGE_ENTRY;
+
+LIST_ENTRY LdkpCodePageListHead;
+ERESOURCE LdkpCodePageListResource;
+BOOLEAN LdkpCodePageListInitialized;
+
+static
+VOID
+LdkpAcquireCodePageListExclusive (
+    VOID
+    )
+{
+    KeEnterCriticalRegion();
+    ExAcquireResourceExclusiveLite( &LdkpCodePageListResource,
+                                    TRUE );
+}
+
+static
+VOID
+LdkpAcquireCodePageListShared (
+    VOID
+    )
+{
+    KeEnterCriticalRegion();
+    ExAcquireResourceSharedLite( &LdkpCodePageListResource,
+                                 TRUE );
+}
+
+static
+VOID
+LdkpReleaseCodePageList (
+    VOID
+    )
+{
+    ExReleaseResourceLite( &LdkpCodePageListResource );
+    KeLeaveCriticalRegion();
+}
+
+static
+PLDK_CODE_PAGE_ENTRY
+LdkpFindCodePageEntryLocked (
+    _In_ UINT CodePage
+    )
+{
+    for (PLIST_ENTRY Link = LdkpCodePageListHead.Flink;
+         Link != &LdkpCodePageListHead;
+         Link = Link->Flink) {
+        PLDK_CODE_PAGE_ENTRY Entry = CONTAINING_RECORD( Link,
+                                                        LDK_CODE_PAGE_ENTRY,
+                                                        Links );
+        if (Entry->CodePage == CodePage) {
+            return Entry;
+        }
+    }
+
+    return NULL;
+}
+
+static
+BOOLEAN
+LdkpAppendString (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ PCWSTR String
+    )
+{
+    while (*String) {
+        if (*Remaining <= 1) {
+            return FALSE;
+        }
+
+        **Cursor = *String;
+        (*Cursor)++;
+        (*Remaining)--;
+        String++;
+    }
+
+    **Cursor = UNICODE_NULL;
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpAppendNumber (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ UINT Number
+    )
+{
+    WCHAR Digits[10];
+    ULONG Count = 0;
+
+    do {
+        Digits[Count++] = (WCHAR)(L'0' + (Number % 10));
+        Number /= 10;
+    } while (Number != 0);
+
+    if (*Remaining <= Count) {
+        return FALSE;
+    }
+
+    while (Count != 0) {
+        **Cursor = Digits[--Count];
+        (*Cursor)++;
+        (*Remaining)--;
+    }
+
+    **Cursor = UNICODE_NULL;
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpAppendPaddedNumber (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ UINT Number,
+    _In_ ULONG Width
+    )
+{
+    WCHAR Digits[10];
+    ULONG Count = 0;
+    ULONG Index;
+
+    do {
+        Digits[Count++] = (WCHAR)(L'0' + (Number % 10));
+        Number /= 10;
+    } while (Number != 0);
+
+    if (Width < Count) {
+        Width = Count;
+    }
+
+    if (*Remaining <= Width) {
+        return FALSE;
+    }
+
+    for (Index = Count; Index < Width; Index++) {
+        **Cursor = L'0';
+        (*Cursor)++;
+        (*Remaining)--;
+    }
+
+    while (Count != 0) {
+        **Cursor = Digits[--Count];
+        (*Cursor)++;
+        (*Remaining)--;
+    }
+
+    **Cursor = UNICODE_NULL;
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpBuildCodePageFileName (
+    _In_ UINT CodePage,
+    _Out_writes_(PathCch) PWSTR Path,
+    _In_ SIZE_T PathCch
+    )
+{
+    PWSTR Cursor = Path;
+    SIZE_T Remaining = PathCch;
+
+    *Path = UNICODE_NULL;
+
+    return LdkpAppendString( &Cursor,
+                             &Remaining,
+                             L"\\SystemRoot\\System32\\C_" ) &&
+           LdkpAppendNumber( &Cursor,
+                             &Remaining,
+                             CodePage ) &&
+           LdkpAppendString( &Cursor,
+                             &Remaining,
+                             L".NLS" );
+}
+
+static
+BOOLEAN
+LdkpIsMissingCodePageFileStatus (
+    _In_ NTSTATUS Status
+    )
+{
+    return Status == STATUS_OBJECT_NAME_NOT_FOUND ||
+           Status == STATUS_OBJECT_PATH_NOT_FOUND ||
+           Status == STATUS_NO_SUCH_FILE;
+}
+
+static
+NTSTATUS
+LdkpReadCodePageFile (
+    _In_ UINT CodePage,
+    _Outptr_result_bytebuffer_(*DataSize) PVOID *Data,
+    _Out_ PULONG DataSize
+    )
+{
+    WCHAR PathBuffer[64];
+    UNICODE_STRING FileName;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    IO_STATUS_BLOCK IoStatus;
+    FILE_STANDARD_INFORMATION StandardInfo;
+    LARGE_INTEGER ByteOffset;
+    HANDLE FileHandle = NULL;
+    PVOID Buffer = NULL;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *Data = NULL;
+    *DataSize = 0;
+
+    if (! LdkpBuildCodePageFileName( CodePage,
+                                     PathBuffer,
+                                     RTL_NUMBER_OF(PathBuffer) )) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlInitUnicodeString( &FileName,
+                          PathBuffer );
+    InitializeObjectAttributes( &ObjectAttributes,
+                                &FileName,
+                                OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                                NULL,
+                                NULL );
+
+    Status = ZwOpenFile( &FileHandle,
+                         FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+                         &ObjectAttributes,
+                         &IoStatus,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+
+    try {
+        Status = ZwQueryInformationFile( FileHandle,
+                                         &IoStatus,
+                                         &StandardInfo,
+                                         sizeof(StandardInfo),
+                                         FileStandardInformation );
+        if (! NT_SUCCESS(Status)) {
+            leave;
+        }
+
+        if (StandardInfo.EndOfFile.HighPart != 0 ||
+            StandardInfo.EndOfFile.LowPart < sizeof(USHORT)) {
+            Status = STATUS_INVALID_PARAMETER;
+            leave;
+        }
+
+        Buffer = RtlAllocateHeap( RtlProcessHeap(),
+                                  0,
+                                  StandardInfo.EndOfFile.LowPart );
+        if (Buffer == NULL) {
+            Status = STATUS_NO_MEMORY;
+            leave;
+        }
+
+        ByteOffset.QuadPart = 0;
+        Status = ZwReadFile( FileHandle,
+                             NULL,
+                             NULL,
+                             NULL,
+                             &IoStatus,
+                             Buffer,
+                             StandardInfo.EndOfFile.LowPart,
+                             &ByteOffset,
+                             NULL );
+        if (! NT_SUCCESS(Status)) {
+            leave;
+        }
+
+        *Data = Buffer;
+        *DataSize = StandardInfo.EndOfFile.LowPart;
+        Buffer = NULL;
+    } finally {
+        if (Buffer != NULL) {
+            RtlFreeHeap( RtlProcessHeap(),
+                         0,
+                         Buffer );
+        }
+
+        ZwClose( FileHandle );
+    }
+
+    return Status;
+}
+
+static
+VOID
+LdkpFreeCodePageEntry (
+    _In_ PLDK_CODE_PAGE_ENTRY Entry
+    )
+{
+    if (Entry->Data != NULL) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Entry->Data );
+    }
+
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 Entry );
+}
+
+static
+NTSTATUS
+LdkpLoadCodePageEntry (
+    _In_ UINT CodePage,
+    _Outptr_ PLDK_CODE_PAGE_ENTRY *CodePageEntry
+    )
+{
+    PLDK_CODE_PAGE_ENTRY Entry;
+    PVOID Data;
+    ULONG DataSize;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *CodePageEntry = NULL;
+
+    Status = LdkpReadCodePageFile( CodePage,
+                                   &Data,
+                                   &DataSize );
+    if (! NT_SUCCESS(Status)) {
+        if (LdkpIsMissingCodePageFileStatus( Status )) {
+            return STATUS_INVALID_PARAMETER;
+        }
+        return Status;
+    }
+
+    Entry = RtlAllocateHeap( RtlProcessHeap(),
+                             HEAP_ZERO_MEMORY,
+                             sizeof(*Entry) );
+    if (Entry == NULL) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Data );
+        return STATUS_NO_MEMORY;
+    }
+
+    Entry->CodePage = CodePage;
+    Entry->Data = Data;
+    Entry->DataSize = DataSize;
+
+    RtlInitCodePageTable( (PUSHORT)Data,
+                          &Entry->TableInfo );
+    if (Entry->TableInfo.CodePage != CodePage) {
+        LdkpFreeCodePageEntry( Entry );
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    *CodePageEntry = Entry;
+    return STATUS_SUCCESS;
+}
+
+static
+UINT
+LdkpGetMacCodePage (
+    VOID
+    )
+{
+    LANGID LangId = LANGIDFROMLCID( LdkpSystemLocale );
+
+    switch (PRIMARYLANGID(LangId)) {
+    case LANG_ARABIC:
+        return 10004;
+
+    case LANG_CHINESE:
+        return SUBLANGID(LangId) == SUBLANG_CHINESE_SIMPLIFIED ? 10008 : 10002;
+
+    case LANG_GREEK:
+        return 10006;
+
+    case LANG_HEBREW:
+        return 10005;
+
+    case LANG_JAPANESE:
+        return 10001;
+
+    case LANG_KOREAN:
+        return 10003;
+
+    case LANG_RUSSIAN:
+        return 10007;
+
+    case LANG_THAI:
+        return 10021;
+
+    default:
+        return 10000;
+    }
+}
+
+UINT
+LdkpResolveCodePage (
+    _In_ UINT CodePage
+    )
+{
+    switch (CodePage) {
+    case CP_ACP:
+    case CP_THREAD_ACP:
+        return *NlsAnsiCodePage;
+
+    case CP_OEMCP:
+        return *NlsOemCodePage;
+
+    case CP_MACCP:
+        return LdkpGetMacCodePage();
+
+    default:
+        return CodePage;
+    }
+}
+
+NTSTATUS
+LdkpGetCodePageTable (
+    _In_ UINT CodePage,
+    _Outptr_ PCPTABLEINFO *CodePageTable
+    )
+{
+    PLDK_CODE_PAGE_ENTRY Entry;
+    PLDK_CODE_PAGE_ENTRY ExistingEntry;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    *CodePageTable = NULL;
+
+    if (! LdkpCodePageListInitialized || CodePage >= NLS_CP_ALGORITHM_RANGE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    CodePage = LdkpResolveCodePage( CodePage );
+    if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    LdkpAcquireCodePageListShared();
+    Entry = LdkpFindCodePageEntryLocked( CodePage );
+    if (Entry != NULL) {
+        *CodePageTable = &Entry->TableInfo;
+        LdkpReleaseCodePageList();
+        return STATUS_SUCCESS;
+    }
+    LdkpReleaseCodePageList();
+
+    Status = LdkpLoadCodePageEntry( CodePage,
+                                    &Entry );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+
+    LdkpAcquireCodePageListExclusive();
+    ExistingEntry = LdkpFindCodePageEntryLocked( CodePage );
+    if (ExistingEntry != NULL) {
+        *CodePageTable = &ExistingEntry->TableInfo;
+        LdkpReleaseCodePageList();
+        LdkpFreeCodePageEntry( Entry );
+        return STATUS_SUCCESS;
+    }
+
+    InsertTailList( &LdkpCodePageListHead,
+                    &Entry->Links );
+    *CodePageTable = &Entry->TableInfo;
+    LdkpReleaseCodePageList();
+    return STATUS_SUCCESS;
+}
+
+VOID
+LdkpFillCodePageInfo (
+    _In_ PCPTABLEINFO CodePageTable,
+    _Out_ LPCPINFO lpCPInfo,
+    _In_ BOOL fExVer
+    )
+{
+    lpCPInfo->MaxCharSize = CodePageTable->MaximumCharacterSize;
+    if (HIBYTE(CodePageTable->DefaultChar) != 0) {
+        lpCPInfo->DefaultChar[0] = HIBYTE(CodePageTable->DefaultChar);
+        lpCPInfo->DefaultChar[1] = LOBYTE(CodePageTable->DefaultChar);
+    } else {
+        lpCPInfo->DefaultChar[0] = LOBYTE(CodePageTable->DefaultChar);
+        lpCPInfo->DefaultChar[1] = 0;
+    }
+
+    RtlCopyMemory( lpCPInfo->LeadByte,
+                   CodePageTable->LeadByte,
+                   RTL_NUMBER_OF(lpCPInfo->LeadByte) );
+
+    if (fExVer) {
+        LPCPINFOEXW lpCPInfoEx = (LPCPINFOEXW)lpCPInfo;
+        lpCPInfoEx->UnicodeDefaultChar = CodePageTable->UniDefaultChar;
+        lpCPInfoEx->CodePage = CodePageTable->CodePage;
+    }
+}
+
+VOID
+LdkpFormatCodePageName (
+    _In_ UINT CodePage,
+    _Out_writes_(cchBuffer) LPWSTR Buffer,
+    _In_ int cchBuffer
+    )
+{
+    PWSTR Cursor = Buffer;
+    SIZE_T Remaining = (SIZE_T)cchBuffer;
+
+    *Buffer = UNICODE_NULL;
+
+    if (CodePage == CP_UTF7) {
+        LdkpAppendString( &Cursor,
+                          &Remaining,
+                          L"65000 (UTF-7)" );
+        return;
+    }
+
+    if (CodePage == CP_UTF8) {
+        LdkpAppendString( &Cursor,
+                          &Remaining,
+                          L"65001 (UTF-8)" );
+        return;
+    }
+
+    LdkpAppendNumber( &Cursor,
+                      &Remaining,
+                      CodePage );
+    LdkpAppendString( &Cursor,
+                      &Remaining,
+                      L"   (Code Page " );
+    LdkpAppendNumber( &Cursor,
+                      &Remaining,
+                      CodePage );
+    LdkpAppendString( &Cursor,
+                      &Remaining,
+                      L")" );
+}
+
 NTSTATUS
 LdkpInitializeNls (
 	VOID
@@ -29,9 +585,44 @@ LdkpInitializeNls (
 
     PAGED_CODE();
 
+    InitializeListHead( &LdkpCodePageListHead );
+    Status = ExInitializeResourceLite( &LdkpCodePageListResource );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+    LdkpCodePageListInitialized = TRUE;
+
 	Status = ZwQueryDefaultLocale( FALSE,
                                    &LdkpSystemLocale );
+    if (! NT_SUCCESS(Status)) {
+        LdkpTerminateNls();
+    }
 	return Status;
+}
+
+VOID
+LdkpTerminateNls (
+    VOID
+    )
+{
+    PAGED_CODE();
+
+    if (! LdkpCodePageListInitialized) {
+        return;
+    }
+
+    LdkpAcquireCodePageListExclusive();
+    while (! IsListEmpty( &LdkpCodePageListHead )) {
+        PLIST_ENTRY Link = RemoveHeadList( &LdkpCodePageListHead );
+        PLDK_CODE_PAGE_ENTRY Entry = CONTAINING_RECORD( Link,
+                                                        LDK_CODE_PAGE_ENTRY,
+                                                        Links );
+        LdkpFreeCodePageEntry( Entry );
+    }
+    LdkpReleaseCodePageList();
+
+    ExDeleteResourceLite( &LdkpCodePageListResource );
+    LdkpCodePageListInitialized = FALSE;
 }
 
 WINBASEAPI
@@ -41,12 +632,21 @@ IsValidCodePage (
     _In_ UINT CodePage
     )
 {
-    if ((CodePage == *NlsAnsiCodePage) || (CodePage == *NlsOemCodePage) || (CodePage == CP_UTF7) || (CodePage == CP_UTF8)) {
+    PCPTABLEINFO CodePageTable;
+
+    if (CodePage == CP_ACP ||
+        CodePage == CP_OEMCP ||
+        CodePage == CP_MACCP ||
+        CodePage == CP_THREAD_ACP) {
+        return FALSE;
+    }
+
+    if (CodePage == CP_UTF7 || CodePage == CP_UTF8) {
         return TRUE;
     }
 
-    LDK_DIAGNOSTIC_BREAK();
-    return FALSE;
+    return NT_SUCCESS(LdkpGetCodePageTable( CodePage,
+                                            &CodePageTable ));
 }
 
 WINBASEAPI
@@ -107,8 +707,6 @@ UTFCPInfo (
     return TRUE;
 }
 
-#define NLS_CP_ALGORITHM_RANGE    60000
-
 WINBASEAPI
 BOOL
 WINAPI
@@ -117,14 +715,33 @@ GetCPInfo (
     _Out_ LPCPINFO lpCPInfo
     )
 {
+    PCPTABLEINFO CodePageTable;
+    NTSTATUS Status;
+
+    if (lpCPInfo == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    CodePage = LdkpResolveCodePage( CodePage );
+
     if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
         return UTFCPInfo( CodePage,
                           lpCPInfo,
                           FALSE );
     }
 
-    LDK_DIAGNOSTIC_BREAK();
-    return FALSE;
+    Status = LdkpGetCodePageTable( CodePage,
+                                   &CodePageTable );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    LdkpFillCodePageInfo( CodePageTable,
+                          lpCPInfo,
+                          FALSE );
+    return TRUE;
 }
 
 WINBASEAPI
@@ -141,32 +758,41 @@ GetCPInfoExA (
 
 	PAGED_CODE();
 
+    if (lpCPInfoEx == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
 	bSuccess = GetCPInfoExW( CodePage,
                              dwFlags,
                              &CPInfoExW );
+    if (! bSuccess) {
+        return FALSE;
+    }
 
     UNICODE_STRING Unicode;
 	ANSI_STRING Ansi;
-
-    RtlInitUnicodeString( &Unicode,
-                          CPInfoExW.CodePageName );
-    
-    Ansi.MaximumLength = MAX_PATH;
-    Ansi.Buffer = lpCPInfoEx->CodePageName;
-
-    NTSTATUS Status = LdkAnsiStringToUnicodeString( &Unicode,
-                                                    &Ansi,
-                                                    FALSE ) ;
-    if (! NT_SUCCESS(Status)) {
-        LdkSetLastNTError( Status );
-        return FALSE;
-    }
 
     RtlMoveMemory( lpCPInfoEx,
                    &CPInfoExW,
                    FIELD_OFFSET(CPINFOEXW, CodePageName) );
 
-	return bSuccess;
+    RtlInitUnicodeString( &Unicode,
+                          CPInfoExW.CodePageName );
+
+    Ansi.Length = 0;
+    Ansi.MaximumLength = sizeof(lpCPInfoEx->CodePageName);
+    Ansi.Buffer = lpCPInfoEx->CodePageName;
+
+    NTSTATUS Status = LdkUnicodeStringToAnsiString( &Ansi,
+                                                    &Unicode,
+                                                    FALSE );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+	return TRUE;
 }
 
 #define RC_CODE_PAGE_NAME         3
@@ -180,14 +806,25 @@ GetStringTableEntry (
     _In_ int WhichString
     )
 {
-    LDK_DIAGNOSTIC_BREAK();
-    UNREFERENCED_PARAMETER( ResourceID );
     UNREFERENCED_PARAMETER( UILangId );
-    UNREFERENCED_PARAMETER( pBuffer );
-    UNREFERENCED_PARAMETER( ResourceID );
-    UNREFERENCED_PARAMETER( cchBuffer );
     UNREFERENCED_PARAMETER( WhichString );
-    return 0;
+
+    WCHAR Name[MAX_PATH];
+
+    LdkpFormatCodePageName( ResourceID,
+                            Name,
+                            RTL_NUMBER_OF(Name) );
+
+    int Length = (int)wcslen( Name ) + 1;
+    if (cchBuffer < Length) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    wcscpy_s( pBuffer,
+              cchBuffer,
+              Name );
+    return Length;
 }
 
 WINBASEAPI
@@ -200,6 +837,15 @@ GetCPInfoExW (
     )
 {
     UNREFERENCED_PARAMETER( dwFlags );
+    PCPTABLEINFO CodePageTable;
+    NTSTATUS Status;
+
+    if (lpCPInfoEx == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    CodePage = LdkpResolveCodePage( CodePage );
 
     if (CodePage >= NLS_CP_ALGORITHM_RANGE) {
         if (UTFCPInfo( CodePage,
@@ -214,8 +860,21 @@ GetCPInfoExW (
         return FALSE;
     }
 
-    LDK_DIAGNOSTIC_BREAK();
-    return FALSE;
+    Status = LdkpGetCodePageTable( CodePage,
+                                   &CodePageTable );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    LdkpFillCodePageInfo( CodePageTable,
+                          (LPCPINFO)lpCPInfoEx,
+                          TRUE );
+    return GetStringTableEntry( CodePageTable->CodePage,
+                                0,
+                                lpCPInfoEx->CodePageName,
+                                MAX_PATH,
+                                RC_CODE_PAGE_NAME );
 }
 
 #define NLS_VALID_LOCALE_MASK          0x000fffff
@@ -230,7 +889,12 @@ IsValidLocale (
     )
 {
     UNREFERENCED_PARAMETER(dwFlags);
-    return IS_INVALID_LOCALE(Locale);
+
+    if (IS_INVALID_LOCALE(Locale)) {
+        return FALSE;
+    }
+
+    return LdkpGetLocaleName( Locale ) != NULL;
 }
 
 PCWSTR
@@ -1940,7 +2604,21 @@ LCIDToLocaleName (
     }
 
     PCWSTR name = LdkpGetLocaleName( Locale );
+    if (name == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
     int len = (int)wcslen(name) + 1;
+
+    if (cchName == 0) {
+        return len;
+    }
+
+    if (lpName == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
 
     if (cchName < len) {
         SetLastError( ERROR_INSUFFICIENT_BUFFER );
@@ -1951,6 +2629,36 @@ LCIDToLocaleName (
               cchName,
               name );
     return len;
+}
+
+static
+BOOL
+LdkpNormalizeLocaleName (
+    _In_ LPCWSTR LocaleName,
+    _Out_writes_(NormalizedNameCch) PWSTR NormalizedName,
+    _In_ SIZE_T NormalizedNameCch
+    )
+{
+    SIZE_T Index = 0;
+
+    if (NormalizedNameCch == 0) {
+        return FALSE;
+    }
+
+    while (LocaleName[Index] != UNICODE_NULL &&
+           LocaleName[Index] != L'.' &&
+           LocaleName[Index] != L'@') {
+        if (Index + 1 >= NormalizedNameCch) {
+            NormalizedName[0] = UNICODE_NULL;
+            return FALSE;
+        }
+
+        NormalizedName[Index] = LocaleName[Index] == L'_' ? L'-' : LocaleName[Index];
+        Index++;
+    }
+
+    NormalizedName[Index] = UNICODE_NULL;
+    return TRUE;
 }
 
 WINBASEAPI
@@ -1976,7 +2684,18 @@ LocaleNameToLCID (
     } else if (wcslen(lpName) == 0) { // LOCALE_NAME_INVARIANT
         return 0x0409;
     } else {
-        return LdkpGetLCID(lpName);
+        WCHAR NormalizedName[128];
+        LCID lcid = LdkpGetLCID(lpName);
+        if (lcid == 0 &&
+            LdkpNormalizeLocaleName( lpName,
+                                     NormalizedName,
+                                     RTL_NUMBER_OF(NormalizedName) )) {
+            lcid = LdkpGetLCID(NormalizedName);
+        }
+        if (lcid == 0) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+        }
+        return lcid;
     }
 }
 
@@ -2014,4 +2733,1273 @@ GetUserDefaultLocaleName (
                              lpLocaleName,
                              cchLocaleName,
                              0 );
+}
+
+static
+int
+LdkpCopyLocaleString (
+    _In_ PCWSTR Value,
+    _Out_writes_opt_(cchData) LPWSTR lpLCData,
+    _In_ int cchData
+    )
+{
+    int Required = (int)wcslen(Value) + 1;
+
+    if (lpLCData == NULL || cchData == 0) {
+        return Required;
+    }
+
+    if (cchData < Required) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    wcscpy_s( lpLCData,
+              cchData,
+              Value );
+    return Required;
+}
+
+static
+int
+LdkpCopyLocaleNumber (
+    _In_ DWORD Value,
+    _Out_writes_opt_(cchData) LPWSTR lpLCData,
+    _In_ int cchData
+    )
+{
+    int Required = sizeof(DWORD) / sizeof(WCHAR);
+
+    if (lpLCData == NULL || cchData == 0) {
+        return Required;
+    }
+
+    if (cchData < Required) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    RtlCopyMemory( lpLCData,
+                   &Value,
+                   sizeof(Value) );
+    return Required;
+}
+
+typedef struct _LDKP_LOCALE_DATA {
+    LCID Locale;
+    PCWSTR DisplayName;
+    PCWSTR LanguageName;
+    PCWSTR AbbreviatedLanguageName;
+    PCWSTR Iso639LanguageName;
+    PCWSTR Iso639LanguageName2;
+    PCWSTR CountryName;
+    PCWSTR AbbreviatedCountryName;
+    PCWSTR Iso3166CountryName;
+    PCWSTR Iso3166CountryName2;
+    PCWSTR ListSeparator;
+    PCWSTR DecimalSeparator;
+    PCWSTR ThousandSeparator;
+    PCWSTR Grouping;
+    PCWSTR MonetaryDecimalSeparator;
+    PCWSTR MonetaryThousandSeparator;
+    PCWSTR MonetaryGrouping;
+    PCWSTR CurrencySymbol;
+    PCWSTR InternationalCurrencySymbol;
+    PCWSTR ShortDate;
+    PCWSTR LongDate;
+    PCWSTR TimeFormat;
+    PCWSTR ShortTime;
+    PCWSTR YearMonth;
+    PCWSTR Duration;
+    PCWSTR DateSeparator;
+    PCWSTR TimeSeparator;
+    PCWSTR AmDesignator;
+    PCWSTR PmDesignator;
+    PCWSTR Scripts;
+    PCWSTR Parent;
+    DWORD DialingCode;
+    DWORD DefaultCountry;
+    DWORD Measure;
+    DWORD Digits;
+    DWORD CurrencyDigits;
+    DWORD InternationalCurrencyDigits;
+    DWORD PositiveSymbolPrecedes;
+    DWORD NegativeSymbolPrecedes;
+    DWORD PositiveSeparatedBySpace;
+    DWORD NegativeSeparatedBySpace;
+    DWORD PositiveSignPosition;
+    DWORD NegativeSignPosition;
+    DWORD CurrencyFormat;
+    DWORD NegativeCurrencyFormat;
+    DWORD FirstDayOfWeek;
+    DWORD GeoId;
+    DWORD DateOrder;
+    DWORD LongDateOrder;
+    DWORD TimeFormat24Hour;
+} LDKP_LOCALE_DATA, *PLDKP_LOCALE_DATA;
+
+static const LDKP_LOCALE_DATA LdkpLocaleData[] = {
+    {
+        0x0409, L"English (United States)", L"English", L"ENU", L"en", L"eng",
+        L"United States", L"USA", L"US", L"USA", L",", L".", L",", L"3;0",
+        L".", L",", L"3;0", L"$", L"USD", L"M/d/yyyy",
+        L"dddd, MMMM d, yyyy", L"h:mm:ss tt", L"h:mm tt", L"MMMM yyyy",
+        L"h:mm:ss", L"/", L":", L"AM", L"PM", L"Latn;", L"en", 1, 1, 1, 2,
+        2, 2, 1, 1, 0, 0, 3, 0, 0, 0, 6, 244, 0, 0, 0
+    },
+    {
+        0x0407, L"German (Germany)", L"German", L"DEU", L"de", L"deu",
+        L"Germany", L"DEU", L"DE", L"DEU", L";", L",", L".", L"3;0",
+        L",", L".", L"3;0", L"\x20ac", L"EUR", L"dd.MM.yyyy",
+        L"dddd, d. MMMM yyyy", L"HH:mm:ss", L"HH:mm", L"MMMM yyyy",
+        L"HH:mm:ss", L".", L":", L"", L"", L"Latn;", L"de", 49, 49, 0, 2,
+        2, 2, 0, 0, 1, 1, 3, 1, 3, 8, 0, 94, 1, 1, 1
+    },
+    {
+        0x0809, L"English (United Kingdom)", L"English", L"ENG", L"en", L"eng",
+        L"United Kingdom", L"GBR", L"GB", L"GBR", L",", L".", L",", L"3;0",
+        L".", L",", L"3;0", L"\x00a3", L"GBP", L"dd/MM/yyyy",
+        L"dd MMMM yyyy", L"HH:mm:ss", L"HH:mm", L"MMMM yyyy", L"HH:mm:ss",
+        L"/", L":", L"am", L"pm", L"Latn;", L"en", 44, 44, 0, 2, 2, 2, 1,
+        1, 0, 0, 3, 1, 0, 1, 0, 242, 1, 1, 1
+    },
+    {
+        0x0412, L"Korean (Korea)", L"Korean", L"KOR", L"ko", L"kor",
+        L"Korea", L"KOR", L"KR", L"KOR", L",", L".", L",", L"3;0",
+        L".", L",", L"3;0", L"\x20a9", L"KRW", L"yyyy-MM-dd",
+        L"yyyy'\xb144' M'\xc6d4' d'\xc77c' dddd", L"tt h:mm:ss", L"tt h:mm",
+        L"yyyy'\xb144' M'\xc6d4'", L"h:mm:ss", L"-", L":",
+        L"\xc624\xc804", L"\xc624\xd6c4", L"Hang;Hani;Kore;", L"ko", 82, 82, 0, 2,
+        0, 0, 1, 1, 0, 0, 3, 3, 0, 0, 6, 134, 2, 2, 0
+    },
+    {
+        0x0804, L"Chinese (Simplified, China)", L"Chinese", L"CHS", L"zh", L"zho",
+        L"China", L"CHN", L"CN", L"CHN", L",", L".", L",", L"3;0",
+        L".", L",", L"3;0", L"\x00a5", L"CNY", L"yyyy/M/d",
+        L"yyyy'\x5e74'M'\x6708'd'\x65e5'", L"H:mm:ss", L"H:mm",
+        L"yyyy'\x5e74'M'\x6708'", L"H:mm:ss", L"/", L":",
+        L"\x4e0a\x5348", L"\x4e0b\x5348", L"Hani;Hans;", L"zh-Hans", 86, 86, 0, 2,
+        2, 2, 1, 1, 0, 0, 3, 3, 0, 0, 0, 45, 2, 2, 1
+    },
+    {
+        0x0411, L"Japanese (Japan)", L"Japanese", L"JPN", L"ja", L"jpn",
+        L"Japan", L"JPN", L"JP", L"JPN", L",", L".", L",", L"3;0",
+        L".", L",", L"3;0", L"\x00a5", L"JPY", L"yyyy/MM/dd",
+        L"yyyy'\x5e74'M'\x6708'd'\x65e5'", L"H:mm:ss", L"H:mm",
+        L"yyyy'\x5e74'M'\x6708'", L"H:mm:ss", L"/", L":",
+        L"\x5348\x524d", L"\x5348\x5f8c", L"Hani;Hira;Jpan;Kana;", L"ja", 81, 81, 0, 2,
+        0, 0, 1, 1, 0, 0, 3, 3, 0, 0, 0, 122, 2, 2, 1
+    },
+    {
+        0x0419, L"Russian (Russia)", L"Russian", L"RUS", L"ru", L"rus",
+        L"Russia", L"RUS", L"RU", L"RUS", L";", L",", L"\x00a0", L"3;0",
+        L",", L"\x00a0", L"3;0", L"\x20bd", L"RUB", L"dd.MM.yyyy",
+        L"d MMMM yyyy '\x0433.'", L"H:mm:ss", L"H:mm",
+        L"MMMM yyyy", L"H:mm:ss", L".", L":", L"", L"",
+        L"Cyrl;", L"ru", 7, 7, 0, 2, 2, 2, 0, 0, 1, 1, 3, 3, 3, 8, 0, 203, 1, 1, 1
+    },
+};
+
+static
+const LDKP_LOCALE_DATA *
+LdkpGetLocaleData (
+    _In_ LCID Locale
+    )
+{
+    LCID BaseLocale = Locale & 0xFFFF;
+    ULONG Index;
+
+    for (Index = 0; Index < RTL_NUMBER_OF(LdkpLocaleData); Index++) {
+        if (LdkpLocaleData[Index].Locale == BaseLocale) {
+            return &LdkpLocaleData[Index];
+        }
+    }
+
+    return &LdkpLocaleData[0];
+}
+
+static
+BOOL
+LdkpGetLocaleNumber (
+    _In_ LCID Locale,
+    _In_ LCTYPE LCType,
+    _Out_ PDWORD Value
+    )
+{
+    const LDKP_LOCALE_DATA *LocaleData = LdkpGetLocaleData(Locale);
+
+    switch (LCType) {
+    case LOCALE_ILANGUAGE:
+    case LOCALE_IDEFAULTLANGUAGE:
+        *Value = Locale;
+        return TRUE;
+    case LOCALE_IDEFAULTANSICODEPAGE:
+        *Value = GetACP();
+        return TRUE;
+    case LOCALE_IDEFAULTCODEPAGE:
+        *Value = GetOEMCP();
+        return TRUE;
+    case LOCALE_IDEFAULTMACCODEPAGE:
+        *Value = LdkpGetMacCodePage();
+        return TRUE;
+    case LOCALE_IDEFAULTEBCDICCODEPAGE:
+        *Value = 37;
+        return TRUE;
+    case LOCALE_IDIALINGCODE:
+        *Value = LocaleData->DialingCode;
+        return TRUE;
+    case LOCALE_IDEFAULTCOUNTRY:
+        *Value = LocaleData->DefaultCountry;
+        return TRUE;
+    case LOCALE_IMEASURE:
+        *Value = LocaleData->Measure;
+        return TRUE;
+    case LOCALE_IDIGITS:
+        *Value = LocaleData->Digits;
+        return TRUE;
+    case LOCALE_ICURRDIGITS:
+        *Value = LocaleData->CurrencyDigits;
+        return TRUE;
+    case LOCALE_IINTLCURRDIGITS:
+        *Value = LocaleData->InternationalCurrencyDigits;
+        return TRUE;
+    case LOCALE_ILZERO:
+    case LOCALE_ICALENDARTYPE:
+    case LOCALE_IOPTIONALCALENDAR:
+    case LOCALE_IPAPERSIZE:
+    case LOCALE_IDIGITSUBSTITUTION:
+    case LOCALE_ICENTURY:
+        *Value = 1;
+        return TRUE;
+    case LOCALE_INEGNUMBER:
+        *Value = 1;
+        return TRUE;
+    case LOCALE_IPOSSYMPRECEDES:
+        *Value = LocaleData->PositiveSymbolPrecedes;
+        return TRUE;
+    case LOCALE_INEGSYMPRECEDES:
+        *Value = LocaleData->NegativeSymbolPrecedes;
+        return TRUE;
+    case LOCALE_IPOSSEPBYSPACE:
+        *Value = LocaleData->PositiveSeparatedBySpace;
+        return TRUE;
+    case LOCALE_INEGSEPBYSPACE:
+        *Value = LocaleData->NegativeSeparatedBySpace;
+        return TRUE;
+    case LOCALE_ICURRENCY:
+        *Value = LocaleData->CurrencyFormat;
+        return TRUE;
+    case LOCALE_INEGCURR:
+        *Value = LocaleData->NegativeCurrencyFormat;
+        return TRUE;
+    case LOCALE_IFIRSTWEEKOFYEAR:
+    case LOCALE_INEUTRAL:
+    case LOCALE_IREADINGLAYOUT:
+    case LOCALE_ITIMEMARKPOSN:
+    case LOCALE_ITLZERO:
+    case LOCALE_IDAYLZERO:
+    case LOCALE_IMONLZERO:
+    case LOCALE_IPOSITIVEPERCENT:
+    case LOCALE_INEGATIVEPERCENT:
+        *Value = 0;
+        return TRUE;
+    case LOCALE_IDATE:
+        *Value = LocaleData->DateOrder;
+        return TRUE;
+    case LOCALE_ILDATE:
+        *Value = LocaleData->LongDateOrder;
+        return TRUE;
+    case LOCALE_ITIME:
+        *Value = LocaleData->TimeFormat24Hour;
+        return TRUE;
+    case LOCALE_IPOSSIGNPOSN:
+        *Value = LocaleData->PositiveSignPosition;
+        return TRUE;
+    case LOCALE_INEGSIGNPOSN:
+        *Value = LocaleData->NegativeSignPosition;
+        return TRUE;
+    case LOCALE_IFIRSTDAYOFWEEK:
+        *Value = LocaleData->FirstDayOfWeek;
+        return TRUE;
+    case LOCALE_IGEOID:
+        *Value = LocaleData->GeoId;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static
+PCWSTR
+LdkpGetNativeDisplayName (
+    _In_ const LDKP_LOCALE_DATA *LocaleData
+    )
+{
+    switch (LocaleData->Locale) {
+    case 0x0412:
+        return L"\xd55c\xad6d\xc5b4(\xb300\xd55c\xbbfc\xad6d)";
+    case 0x0804:
+        return L"\x4e2d\x6587(\x4e2d\x56fd)";
+    case 0x0411:
+        return L"\x65e5\x672c\x8a9e (\x65e5\x672c)";
+    case 0x0419:
+        return L"\x0440\x0443\x0441\x0441\x043a\x0438\x0439 (\x0420\x043e\x0441\x0441\x0438\x044f)";
+    }
+
+    return LocaleData->DisplayName;
+}
+
+static
+PCWSTR
+LdkpGetNativeLanguageName (
+    _In_ const LDKP_LOCALE_DATA *LocaleData
+    )
+{
+    switch (LocaleData->Locale) {
+    case 0x0412:
+        return L"\xd55c\xad6d\xc5b4";
+    case 0x0804:
+        return L"\x4e2d\x6587(\x7b80\x4f53)";
+    case 0x0411:
+        return L"\x65e5\x672c\x8a9e";
+    case 0x0419:
+        return L"\x0440\x0443\x0441\x0441\x043a\x0438\x0439";
+    }
+
+    return LocaleData->LanguageName;
+}
+
+static
+PCWSTR
+LdkpGetNativeCountryName (
+    _In_ const LDKP_LOCALE_DATA *LocaleData
+    )
+{
+    switch (LocaleData->Locale) {
+    case 0x0412:
+        return L"\xb300\xd55c\xbbfc\xad6d";
+    case 0x0804:
+        return L"\x4e2d\x56fd";
+    case 0x0411:
+        return L"\x65e5\x672c";
+    case 0x0419:
+        return L"\x0420\x043e\x0441\x0441\x0438\x044f";
+    }
+
+    return LocaleData->CountryName;
+}
+
+static
+PCWSTR
+LdkpGetLocaleString (
+    _In_ LCID Locale,
+    _In_ LCTYPE LCType
+    )
+{
+    const LDKP_LOCALE_DATA *LocaleData = LdkpGetLocaleData(Locale);
+    static PCWSTR LongDays[] = {
+        L"Monday", L"Tuesday", L"Wednesday", L"Thursday", L"Friday", L"Saturday", L"Sunday"
+    };
+    static PCWSTR ShortDays[] = {
+        L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat", L"Sun"
+    };
+    static PCWSTR ShortestDays[] = {
+        L"M", L"T", L"W", L"T", L"F", L"S", L"S"
+    };
+    static PCWSTR LongMonths[] = {
+        L"January", L"February", L"March", L"April", L"May", L"June",
+        L"July", L"August", L"September", L"October", L"November", L"December"
+    };
+    static PCWSTR ShortMonths[] = {
+        L"Jan", L"Feb", L"Mar", L"Apr", L"May", L"Jun",
+        L"Jul", L"Aug", L"Sep", L"Oct", L"Nov", L"Dec"
+    };
+    static PCWSTR GermanLongDays[] = {
+        L"Montag", L"Dienstag", L"Mittwoch", L"Donnerstag", L"Freitag", L"Samstag", L"Sonntag"
+    };
+    static PCWSTR GermanShortDays[] = {
+        L"Mo", L"Di", L"Mi", L"Do", L"Fr", L"Sa", L"So"
+    };
+    static PCWSTR GermanShortestDays[] = {
+        L"M", L"D", L"M", L"D", L"F", L"S", L"S"
+    };
+    static PCWSTR GermanLongMonths[] = {
+        L"Januar", L"Februar", L"M\x00e4rz", L"April", L"Mai", L"Juni",
+        L"Juli", L"August", L"September", L"Oktober", L"November", L"Dezember"
+    };
+    static PCWSTR GermanShortMonths[] = {
+        L"Jan", L"Feb", L"M\x00e4r", L"Apr", L"Mai", L"Jun",
+        L"Jul", L"Aug", L"Sep", L"Okt", L"Nov", L"Dez"
+    };
+    static PCWSTR KoreanLongDays[] = {
+        L"\xc6d4\xc694\xc77c", L"\xd654\xc694\xc77c", L"\xc218\xc694\xc77c",
+        L"\xbaa9\xc694\xc77c", L"\xae08\xc694\xc77c", L"\xd1a0\xc694\xc77c",
+        L"\xc77c\xc694\xc77c"
+    };
+    static PCWSTR KoreanShortDays[] = {
+        L"\xc6d4", L"\xd654", L"\xc218", L"\xbaa9", L"\xae08", L"\xd1a0", L"\xc77c"
+    };
+    static PCWSTR KoreanLongMonths[] = {
+        L"1" L"\xc6d4", L"2" L"\xc6d4", L"3" L"\xc6d4", L"4" L"\xc6d4",
+        L"5" L"\xc6d4", L"6" L"\xc6d4", L"7" L"\xc6d4", L"8" L"\xc6d4",
+        L"9" L"\xc6d4", L"10" L"\xc6d4", L"11" L"\xc6d4", L"12" L"\xc6d4"
+    };
+    static PCWSTR ChineseLongDays[] = {
+        L"\x661f\x671f\x4e00", L"\x661f\x671f\x4e8c", L"\x661f\x671f\x4e09",
+        L"\x661f\x671f\x56db", L"\x661f\x671f\x4e94", L"\x661f\x671f\x516d",
+        L"\x661f\x671f\x65e5"
+    };
+    static PCWSTR ChineseShortDays[] = {
+        L"\x5468\x4e00", L"\x5468\x4e8c", L"\x5468\x4e09", L"\x5468\x56db",
+        L"\x5468\x4e94", L"\x5468\x516d", L"\x5468\x65e5"
+    };
+    static PCWSTR ChineseShortestDays[] = {
+        L"\x4e00", L"\x4e8c", L"\x4e09", L"\x56db", L"\x4e94", L"\x516d", L"\x65e5"
+    };
+    static PCWSTR ChineseLongMonths[] = {
+        L"\x4e00\x6708", L"\x4e8c\x6708", L"\x4e09\x6708", L"\x56db\x6708",
+        L"\x4e94\x6708", L"\x516d\x6708", L"\x4e03\x6708", L"\x516b\x6708",
+        L"\x4e5d\x6708", L"\x5341\x6708", L"\x5341\x4e00\x6708", L"\x5341\x4e8c\x6708"
+    };
+    static PCWSTR JapaneseLongDays[] = {
+        L"\x6708\x66dc\x65e5", L"\x706b\x66dc\x65e5", L"\x6c34\x66dc\x65e5",
+        L"\x6728\x66dc\x65e5", L"\x91d1\x66dc\x65e5", L"\x571f\x66dc\x65e5",
+        L"\x65e5\x66dc\x65e5"
+    };
+    static PCWSTR JapaneseShortDays[] = {
+        L"\x6708", L"\x706b", L"\x6c34", L"\x6728", L"\x91d1", L"\x571f", L"\x65e5"
+    };
+    static PCWSTR JapaneseLongMonths[] = {
+        L"1" L"\x6708", L"2" L"\x6708", L"3" L"\x6708", L"4" L"\x6708",
+        L"5" L"\x6708", L"6" L"\x6708", L"7" L"\x6708", L"8" L"\x6708",
+        L"9" L"\x6708", L"10" L"\x6708", L"11" L"\x6708", L"12" L"\x6708"
+    };
+    static PCWSTR RussianLongDays[] = {
+        L"\x043f\x043e\x043d\x0435\x0434\x0435\x043b\x044c\x043d\x0438\x043a",
+        L"\x0432\x0442\x043e\x0440\x043d\x0438\x043a",
+        L"\x0441\x0440\x0435\x0434\x0430",
+        L"\x0447\x0435\x0442\x0432\x0435\x0440\x0433",
+        L"\x043f\x044f\x0442\x043d\x0438\x0446\x0430",
+        L"\x0441\x0443\x0431\x0431\x043e\x0442\x0430",
+        L"\x0432\x043e\x0441\x043a\x0440\x0435\x0441\x0435\x043d\x044c\x0435"
+    };
+    static PCWSTR RussianShortDays[] = {
+        L"\x043f\x043d", L"\x0432\x0442", L"\x0441\x0440", L"\x0447\x0442",
+        L"\x043f\x0442", L"\x0441\x0431", L"\x0432\x0441"
+    };
+    static PCWSTR RussianLongMonths[] = {
+        L"\x042f\x043d\x0432\x0430\x0440\x044c",
+        L"\x0424\x0435\x0432\x0440\x0430\x043b\x044c",
+        L"\x041c\x0430\x0440\x0442",
+        L"\x0410\x043f\x0440\x0435\x043b\x044c",
+        L"\x041c\x0430\x0439",
+        L"\x0418\x044e\x043d\x044c",
+        L"\x0418\x044e\x043b\x044c",
+        L"\x0410\x0432\x0433\x0443\x0441\x0442",
+        L"\x0421\x0435\x043d\x0442\x044f\x0431\x0440\x044c",
+        L"\x041e\x043a\x0442\x044f\x0431\x0440\x044c",
+        L"\x041d\x043e\x044f\x0431\x0440\x044c",
+        L"\x0414\x0435\x043a\x0430\x0431\x0440\x044c"
+    };
+    static PCWSTR RussianShortMonths[] = {
+        L"\x044f\x043d\x0432.", L"\x0444\x0435\x0432\x0440.", L"\x043c\x0430\x0440.",
+        L"\x0430\x043f\x0440.", L"\x043c\x0430\x0439", L"\x0438\x044e\x043d.",
+        L"\x0438\x044e\x043b.", L"\x0430\x0432\x0433.", L"\x0441\x0435\x043d\x0442.",
+        L"\x043e\x043a\x0442.", L"\x043d\x043e\x044f\x0431.", L"\x0434\x0435\x043a."
+    };
+    PCWSTR *ActiveLongDays = LongDays;
+    PCWSTR *ActiveShortDays = ShortDays;
+    PCWSTR *ActiveShortestDays = ShortestDays;
+    PCWSTR *ActiveLongMonths = LongMonths;
+    PCWSTR *ActiveShortMonths = ShortMonths;
+
+    if (LocaleData->Locale == 0x0407) {
+        ActiveLongDays = GermanLongDays;
+        ActiveShortDays = GermanShortDays;
+        ActiveShortestDays = GermanShortestDays;
+        ActiveLongMonths = GermanLongMonths;
+        ActiveShortMonths = GermanShortMonths;
+    } else if (LocaleData->Locale == 0x0412) {
+        ActiveLongDays = KoreanLongDays;
+        ActiveShortDays = KoreanShortDays;
+        ActiveShortestDays = KoreanShortDays;
+        ActiveLongMonths = KoreanLongMonths;
+        ActiveShortMonths = KoreanLongMonths;
+    } else if (LocaleData->Locale == 0x0804) {
+        ActiveLongDays = ChineseLongDays;
+        ActiveShortDays = ChineseShortDays;
+        ActiveShortestDays = ChineseShortestDays;
+        ActiveLongMonths = ChineseLongMonths;
+        ActiveShortMonths = ChineseLongMonths;
+    } else if (LocaleData->Locale == 0x0411) {
+        ActiveLongDays = JapaneseLongDays;
+        ActiveShortDays = JapaneseShortDays;
+        ActiveShortestDays = JapaneseShortDays;
+        ActiveLongMonths = JapaneseLongMonths;
+        ActiveShortMonths = JapaneseLongMonths;
+    } else if (LocaleData->Locale == 0x0419) {
+        ActiveLongDays = RussianLongDays;
+        ActiveShortDays = RussianShortDays;
+        ActiveShortestDays = RussianShortDays;
+        ActiveLongMonths = RussianLongMonths;
+        ActiveShortMonths = RussianShortMonths;
+    }
+
+    if (LCType >= LOCALE_SDAYNAME1 && LCType <= LOCALE_SDAYNAME7) {
+        return ActiveLongDays[LCType - LOCALE_SDAYNAME1];
+    }
+    if (LCType >= LOCALE_SABBREVDAYNAME1 && LCType <= LOCALE_SABBREVDAYNAME7) {
+        return ActiveShortDays[LCType - LOCALE_SABBREVDAYNAME1];
+    }
+    if (LCType >= LOCALE_SSHORTESTDAYNAME1 && LCType <= LOCALE_SSHORTESTDAYNAME7) {
+        return ActiveShortestDays[LCType - LOCALE_SSHORTESTDAYNAME1];
+    }
+    if (LCType >= LOCALE_SMONTHNAME1 && LCType <= LOCALE_SMONTHNAME12) {
+        return ActiveLongMonths[LCType - LOCALE_SMONTHNAME1];
+    }
+    if (LCType >= LOCALE_SABBREVMONTHNAME1 && LCType <= LOCALE_SABBREVMONTHNAME12) {
+        return ActiveShortMonths[LCType - LOCALE_SABBREVMONTHNAME1];
+    }
+
+    switch (LCType) {
+    case LOCALE_SNAME:
+    case LOCALE_SSORTLOCALE:
+        return LdkpGetLocaleName(Locale);
+    case LOCALE_SLOCALIZEDDISPLAYNAME:
+    case LOCALE_SENGLISHDISPLAYNAME:
+        return LocaleData->DisplayName;
+    case LOCALE_SNATIVEDISPLAYNAME:
+        return LdkpGetNativeDisplayName(LocaleData);
+    case LOCALE_SLOCALIZEDLANGUAGENAME:
+    case LOCALE_SENGLISHLANGUAGENAME:
+        return LocaleData->LanguageName;
+    case LOCALE_SNATIVELANGUAGENAME:
+        return LdkpGetNativeLanguageName(LocaleData);
+    case LOCALE_SABBREVLANGNAME:
+        return LocaleData->AbbreviatedLanguageName;
+    case LOCALE_SISO639LANGNAME:
+        return LocaleData->Iso639LanguageName;
+    case LOCALE_SISO639LANGNAME2:
+        return LocaleData->Iso639LanguageName2;
+    case LOCALE_SLOCALIZEDCOUNTRYNAME:
+    case LOCALE_SENGLISHCOUNTRYNAME:
+        return LocaleData->CountryName;
+    case LOCALE_SNATIVECOUNTRYNAME:
+        return LdkpGetNativeCountryName(LocaleData);
+    case LOCALE_SABBREVCTRYNAME:
+        return LocaleData->AbbreviatedCountryName;
+    case LOCALE_SISO3166CTRYNAME:
+        return LocaleData->Iso3166CountryName;
+    case LOCALE_SISO3166CTRYNAME2:
+        return LocaleData->Iso3166CountryName2;
+    case LOCALE_SLIST:
+        return LocaleData->ListSeparator;
+    case LOCALE_SDECIMAL:
+        return LocaleData->DecimalSeparator;
+    case LOCALE_SMONDECIMALSEP:
+        return LocaleData->MonetaryDecimalSeparator;
+    case LOCALE_STHOUSAND:
+        return LocaleData->ThousandSeparator;
+    case LOCALE_SMONTHOUSANDSEP:
+        return LocaleData->MonetaryThousandSeparator;
+    case LOCALE_SGROUPING:
+        return LocaleData->Grouping;
+    case LOCALE_SMONGROUPING:
+        return LocaleData->MonetaryGrouping;
+    case LOCALE_SNATIVEDIGITS:
+        return L"0123456789";
+    case LOCALE_SCURRENCY:
+        return LocaleData->CurrencySymbol;
+    case LOCALE_SINTLSYMBOL:
+        return LocaleData->InternationalCurrencySymbol;
+    case LOCALE_SPOSITIVESIGN:
+    case LOCALE_SSORTNAME:
+        return L"";
+    case LOCALE_SNEGATIVESIGN:
+        return L"-";
+    case LOCALE_SSHORTDATE:
+        return LocaleData->ShortDate;
+    case LOCALE_SLONGDATE:
+        return LocaleData->LongDate;
+    case LOCALE_STIMEFORMAT:
+        return LocaleData->TimeFormat;
+    case LOCALE_SSHORTTIME:
+        return LocaleData->ShortTime;
+    case LOCALE_SYEARMONTH:
+        return LocaleData->YearMonth;
+    case LOCALE_SMONTHNAME13:
+    case LOCALE_SABBREVMONTHNAME13:
+        return L"";
+    case LOCALE_SDURATION:
+        return LocaleData->Duration;
+    case LOCALE_SDATE:
+        return LocaleData->DateSeparator;
+    case LOCALE_STIME:
+        return LocaleData->TimeSeparator;
+    case LOCALE_SAM:
+        return LocaleData->AmDesignator;
+    case LOCALE_SPM:
+        return LocaleData->PmDesignator;
+    case LOCALE_SNAN:
+        return L"NaN";
+    case LOCALE_SPOSINFINITY:
+        return L"Infinity";
+    case LOCALE_SNEGINFINITY:
+        return L"-Infinity";
+    case LOCALE_SSCRIPTS:
+        return LocaleData->Scripts;
+    case LOCALE_SPARENT:
+    case LOCALE_SCONSOLEFALLBACKNAME:
+        return LocaleData->Parent;
+    case LOCALE_SPERCENT:
+        return L"%";
+    case LOCALE_SPERMILLE:
+        return L"\x2030";
+    case LOCALE_SMONTHDAY:
+        if (LocaleData->Locale == 0x0412) {
+            return L"M'\xc6d4' d'\xc77c'";
+        }
+        if (LocaleData->Locale == 0x0804 ||
+            LocaleData->Locale == 0x0411) {
+            return L"M'\x6708'd'\x65e5'";
+        }
+        if (LocaleData->Locale == 0x0419) {
+            return L"d MMMM";
+        }
+        return L"MMMM d";
+#ifdef LOCALE_SSHORTESTAM
+    case LOCALE_SSHORTESTAM:
+        return L"A";
+#endif
+#ifdef LOCALE_SSHORTESTPM
+    case LOCALE_SSHORTESTPM:
+        return L"P";
+#endif
+    case LOCALE_SOPENTYPELANGUAGETAG:
+        switch (LocaleData->Locale) {
+        case 0x0409:
+        case 0x0809:
+            return L"ENG ";
+        case 0x0407:
+            return L"DEU ";
+        case 0x0412:
+            return L"KOR ";
+        case 0x0804:
+            return L"ZHS ";
+        case 0x0411:
+            return L"JAN ";
+        case 0x0419:
+            return L"RUS ";
+        }
+        return L"latn";
+    }
+
+    return NULL;
+}
+
+WINBASEAPI
+int
+WINAPI
+GetLocaleInfoW (
+    _In_ LCID     Locale,
+    _In_ LCTYPE   LCType,
+    _Out_writes_opt_(cchData) LPWSTR lpLCData,
+    _In_ int      cchData
+    )
+{
+    DWORD Value;
+    LCTYPE BaseType = LCType & ~(LOCALE_RETURN_NUMBER | LOCALE_USE_CP_ACP | LOCALE_NOUSEROVERRIDE);
+
+    if (! IsValidLocale( Locale,
+                         LCID_SUPPORTED )) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (LCType & LOCALE_RETURN_NUMBER) {
+        if (! LdkpGetLocaleNumber( Locale,
+                                   BaseType,
+                                   &Value )) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return 0;
+        }
+
+        return LdkpCopyLocaleNumber( Value,
+                                     lpLCData,
+                                     cchData );
+    }
+
+    PCWSTR StringValue = LdkpGetLocaleString( Locale,
+                                              BaseType );
+    if (StringValue == NULL) {
+        if (LdkpGetLocaleNumber( Locale,
+                                 BaseType,
+                                 &Value )) {
+            WCHAR NumberString[16];
+            PWSTR Cursor = NumberString;
+            SIZE_T Remaining = RTL_NUMBER_OF(NumberString);
+
+            if (! LdkpAppendNumber( &Cursor,
+                                    &Remaining,
+                                    Value )) {
+                SetLastError( ERROR_INSUFFICIENT_BUFFER );
+                return 0;
+            }
+
+            return LdkpCopyLocaleString( NumberString,
+                                         lpLCData,
+                                         cchData );
+        }
+
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    return LdkpCopyLocaleString( StringValue,
+                                 lpLCData,
+                                 cchData );
+}
+
+WINBASEAPI
+int
+WINAPI
+GetLocaleInfoEx (
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ LCTYPE LCType,
+    _Out_writes_to_opt_(cchData, return) LPWSTR lpLCData,
+    _In_ int cchData
+    )
+{
+    LCID Locale;
+
+    if (lpLocaleName == LOCALE_NAME_USER_DEFAULT) {
+        Locale = GetUserDefaultLCID();
+    } else if (_wcsicmp(lpLocaleName, LOCALE_NAME_SYSTEM_DEFAULT) == 0) {
+        Locale = LdkpSystemLocale;
+        if (Locale == 0) {
+            Locale = 0x0409;
+        }
+    } else if (lpLocaleName[0] == L'\0') {
+        Locale = 0x0409;
+    } else {
+        Locale = LocaleNameToLCID( lpLocaleName,
+                                   0 );
+    }
+
+    if (Locale == 0) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    return GetLocaleInfoW( Locale,
+                           LCType,
+                           lpLCData,
+                           cchData );
+}
+
+static
+PCWSTR
+LdkpGetSystemTimeDayName (
+    _In_ LCID Locale,
+    _In_ WORD DayOfWeek,
+    _In_ BOOL Abbreviated
+    )
+{
+    LCTYPE BaseType;
+    WORD MondayBased;
+
+    MondayBased = DayOfWeek == 0 ? 6 : (WORD)(DayOfWeek - 1);
+    BaseType = Abbreviated ? LOCALE_SABBREVDAYNAME1 : LOCALE_SDAYNAME1;
+    return LdkpGetLocaleString( Locale,
+                                BaseType + MondayBased );
+}
+
+static
+PCWSTR
+LdkpGetSystemTimeMonthName (
+    _In_ LCID Locale,
+    _In_ WORD Month,
+    _In_ BOOL Abbreviated
+    )
+{
+    LCTYPE BaseType;
+
+    if (Month < 1 || Month > 12) {
+        return L"";
+    }
+
+    BaseType = Abbreviated ? LOCALE_SABBREVMONTHNAME1 : LOCALE_SMONTHNAME1;
+    return LdkpGetLocaleString( Locale,
+                                BaseType + Month - 1 );
+}
+
+static
+BOOLEAN
+LdkpAppendDateFormatToken (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ LCID Locale,
+    _In_ const SYSTEMTIME *Date,
+    _In_ WCHAR Token,
+    _In_ ULONG Count
+    )
+{
+    switch (Token) {
+    case L'y':
+        if (Count <= 2) {
+            return LdkpAppendPaddedNumber( Cursor,
+                                           Remaining,
+                                           Date->wYear % 100,
+                                           2 );
+        }
+        return LdkpAppendPaddedNumber( Cursor,
+                                       Remaining,
+                                       Date->wYear,
+                                       4 );
+    case L'M':
+        if (Count >= 4) {
+            return LdkpAppendString( Cursor,
+                                     Remaining,
+                                     LdkpGetSystemTimeMonthName( Locale,
+                                                                 Date->wMonth,
+                                                                 FALSE ) );
+        }
+        if (Count == 3) {
+            return LdkpAppendString( Cursor,
+                                     Remaining,
+                                     LdkpGetSystemTimeMonthName( Locale,
+                                                                 Date->wMonth,
+                                                                 TRUE ) );
+        }
+        return Count == 2 ?
+               LdkpAppendPaddedNumber( Cursor,
+                                        Remaining,
+                                        Date->wMonth,
+                                        2 ) :
+               LdkpAppendNumber( Cursor,
+                                  Remaining,
+                                  Date->wMonth );
+    case L'd':
+        if (Count >= 4) {
+            return LdkpAppendString( Cursor,
+                                     Remaining,
+                                     LdkpGetSystemTimeDayName( Locale,
+                                                               Date->wDayOfWeek,
+                                                               FALSE ) );
+        }
+        if (Count == 3) {
+            return LdkpAppendString( Cursor,
+                                     Remaining,
+                                     LdkpGetSystemTimeDayName( Locale,
+                                                               Date->wDayOfWeek,
+                                                               TRUE ) );
+        }
+        return Count == 2 ?
+               LdkpAppendPaddedNumber( Cursor,
+                                        Remaining,
+                                        Date->wDay,
+                                        2 ) :
+               LdkpAppendNumber( Cursor,
+                                  Remaining,
+                                  Date->wDay );
+    default:
+        while (Count != 0) {
+            if (*Remaining <= 1) {
+                return FALSE;
+            }
+
+            **Cursor = Token;
+            (*Cursor)++;
+            (*Remaining)--;
+            Count--;
+        }
+        **Cursor = UNICODE_NULL;
+        return TRUE;
+    }
+}
+
+static
+BOOLEAN
+LdkpAppendDateFormat (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ LCID Locale,
+    _In_ const SYSTEMTIME *Date,
+    _In_ PCWSTR Format
+    )
+{
+    while (*Format != UNICODE_NULL) {
+        WCHAR Token = *Format++;
+        ULONG Count = 1;
+
+        if (Token == L'\'') {
+            while (*Format != UNICODE_NULL && *Format != L'\'') {
+                WCHAR Literal[2] = { *Format++, UNICODE_NULL };
+                if (! LdkpAppendString( Cursor,
+                                        Remaining,
+                                        Literal )) {
+                    return FALSE;
+                }
+            }
+            if (*Format == L'\'') {
+                Format++;
+            }
+            continue;
+        }
+
+        while (*Format == Token) {
+            Count++;
+            Format++;
+        }
+
+        if (! LdkpAppendDateFormatToken( Cursor,
+                                         Remaining,
+                                         Locale,
+                                         Date,
+                                         Token,
+                                         Count )) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static
+UINT
+LdkpGetTwelveHour (
+    _In_ WORD Hour
+    )
+{
+    UINT TwelveHour = Hour % 12;
+
+    return TwelveHour == 0 ? 12 : TwelveHour;
+}
+
+static
+BOOLEAN
+LdkpAppendTimeFormatToken (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ LCID Locale,
+    _In_ const SYSTEMTIME *Time,
+    _In_ DWORD Flags,
+    _In_ WCHAR Token,
+    _In_ ULONG Count
+    )
+{
+    switch (Token) {
+    case L'H':
+        return Count == 2 ?
+               LdkpAppendPaddedNumber( Cursor,
+                                        Remaining,
+                                        Time->wHour,
+                                        2 ) :
+               LdkpAppendNumber( Cursor,
+                                  Remaining,
+                                  Time->wHour );
+    case L'h':
+        if (Flags & TIME_FORCE24HOURFORMAT) {
+            return Count == 2 ?
+                   LdkpAppendPaddedNumber( Cursor,
+                                            Remaining,
+                                            Time->wHour,
+                                            2 ) :
+                   LdkpAppendNumber( Cursor,
+                                      Remaining,
+                                      Time->wHour );
+        }
+        return Count == 2 ?
+               LdkpAppendPaddedNumber( Cursor,
+                                        Remaining,
+                                        LdkpGetTwelveHour(Time->wHour),
+                                        2 ) :
+               LdkpAppendNumber( Cursor,
+                                  Remaining,
+                                  LdkpGetTwelveHour(Time->wHour) );
+    case L'm':
+        if (Flags & TIME_NOMINUTESORSECONDS) {
+            return TRUE;
+        }
+        return Count == 2 ?
+               LdkpAppendPaddedNumber( Cursor,
+                                        Remaining,
+                                        Time->wMinute,
+                                        2 ) :
+               LdkpAppendNumber( Cursor,
+                                  Remaining,
+                                  Time->wMinute );
+    case L's':
+        if (Flags & (TIME_NOMINUTESORSECONDS | TIME_NOSECONDS)) {
+            return TRUE;
+        }
+        return Count == 2 ?
+               LdkpAppendPaddedNumber( Cursor,
+                                        Remaining,
+                                        Time->wSecond,
+                                        2 ) :
+               LdkpAppendNumber( Cursor,
+                                  Remaining,
+                                  Time->wSecond );
+    case L't':
+        if (Flags & (TIME_NOTIMEMARKER | TIME_FORCE24HOURFORMAT)) {
+            return TRUE;
+        }
+        return LdkpAppendString( Cursor,
+                                 Remaining,
+                                 Time->wHour < 12 ?
+                                     LdkpGetLocaleString(Locale, LOCALE_SAM) :
+                                     LdkpGetLocaleString(Locale, LOCALE_SPM) );
+    default:
+        while (Count != 0) {
+            if (*Remaining <= 1) {
+                return FALSE;
+            }
+
+            **Cursor = Token;
+            (*Cursor)++;
+            (*Remaining)--;
+            Count--;
+        }
+        **Cursor = UNICODE_NULL;
+        return TRUE;
+    }
+}
+
+static
+BOOLEAN
+LdkpAppendTimeFormat (
+    _Inout_ PWSTR *Cursor,
+    _Inout_ PSIZE_T Remaining,
+    _In_ LCID Locale,
+    _In_ const SYSTEMTIME *Time,
+    _In_ DWORD Flags,
+    _In_ PCWSTR Format
+    )
+{
+    while (*Format != UNICODE_NULL) {
+        WCHAR Token = *Format++;
+        ULONG Count = 1;
+
+        if (Token == L'\'') {
+            while (*Format != UNICODE_NULL && *Format != L'\'') {
+                WCHAR Literal[2] = { *Format++, UNICODE_NULL };
+                if (! LdkpAppendString( Cursor,
+                                        Remaining,
+                                        Literal )) {
+                    return FALSE;
+                }
+            }
+            if (*Format == L'\'') {
+                Format++;
+            }
+            continue;
+        }
+
+        while (*Format == Token) {
+            Count++;
+            Format++;
+        }
+
+        if (! LdkpAppendTimeFormatToken( Cursor,
+                                         Remaining,
+                                         Locale,
+                                         Time,
+                                         Flags,
+                                         Token,
+                                         Count )) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+WINBASEAPI
+int
+WINAPI
+GetDateFormatW (
+    _In_ LCID Locale,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpDate,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchDate) LPWSTR lpDateStr,
+    _In_ int cchDate
+    )
+{
+    SYSTEMTIME CurrentDate;
+    WCHAR Buffer[160];
+    PWSTR Cursor = Buffer;
+    SIZE_T Remaining = RTL_NUMBER_OF(Buffer);
+    PCWSTR Format = lpFormat;
+
+    if (! IsValidLocale( Locale,
+                         LCID_SUPPORTED )) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (lpDate == NULL) {
+        GetLocalTime( &CurrentDate );
+        lpDate = &CurrentDate;
+    }
+
+    if (Format == NULL) {
+        LCTYPE FormatType = LOCALE_SSHORTDATE;
+
+        if (dwFlags & DATE_LONGDATE) {
+            FormatType = LOCALE_SLONGDATE;
+#ifdef DATE_YEARMONTH
+        } else if (dwFlags & DATE_YEARMONTH) {
+            FormatType = LOCALE_SYEARMONTH;
+#endif
+#ifdef DATE_MONTHDAY
+        } else if (dwFlags & DATE_MONTHDAY) {
+            FormatType = LOCALE_SMONTHDAY;
+#endif
+        }
+
+        Format = LdkpGetLocaleString( Locale,
+                                      FormatType );
+    }
+
+    *Buffer = UNICODE_NULL;
+    if (! LdkpAppendDateFormat( &Cursor,
+                                &Remaining,
+                                Locale,
+                                lpDate,
+                                Format )) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    return LdkpCopyLocaleString( Buffer,
+                                 lpDateStr,
+                                 cchDate );
+}
+
+WINBASEAPI
+int
+WINAPI
+GetTimeFormatW (
+    _In_ LCID Locale,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpTime,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchTime) LPWSTR lpTimeStr,
+    _In_ int cchTime
+    )
+{
+    SYSTEMTIME CurrentTime;
+    WCHAR Buffer[96];
+    PWSTR Cursor = Buffer;
+    SIZE_T Remaining = RTL_NUMBER_OF(Buffer);
+    PCWSTR Format = lpFormat;
+
+    if (! IsValidLocale( Locale,
+                         LCID_SUPPORTED )) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (lpTime == NULL) {
+        GetLocalTime( &CurrentTime );
+        lpTime = &CurrentTime;
+    }
+
+    if (Format == NULL) {
+        Format = LdkpGetLocaleString( Locale,
+                                      (dwFlags & TIME_NOSECONDS) ?
+                                          LOCALE_SSHORTTIME :
+                                          LOCALE_STIMEFORMAT );
+    }
+
+    *Buffer = UNICODE_NULL;
+    if (! LdkpAppendTimeFormat( &Cursor,
+                                &Remaining,
+                                Locale,
+                                lpTime,
+                                dwFlags,
+                                Format )) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    return LdkpCopyLocaleString( Buffer,
+                                 lpTimeStr,
+                                 cchTime );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+EnumSystemLocalesW (
+    _In_ LOCALE_ENUMPROCW lpLocaleEnumProc,
+    _In_ DWORD dwFlags
+    )
+{
+    static PWSTR LocaleNames[] = {
+        L"0409",
+        L"0407",
+        L"0809",
+        L"0412",
+        L"0804",
+        L"0411",
+        L"0419",
+    };
+    ULONG Index;
+
+    UNREFERENCED_PARAMETER(dwFlags);
+
+    if (lpLocaleEnumProc == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    for (Index = 0; Index < RTL_NUMBER_OF(LocaleNames); Index++) {
+        if (! lpLocaleEnumProc( LocaleNames[Index] )) {
+            break;
+        }
+    }
+
+    return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+EnumSystemLocalesEx (
+    _In_ LOCALE_ENUMPROCEX lpLocaleEnumProcEx,
+    _In_ DWORD dwFlags,
+    _In_ LPARAM lParam,
+    _In_opt_ LPVOID lpReserved
+    )
+{
+    static PWSTR LocaleNames[] = {
+        L"en-US",
+        L"de-DE",
+        L"en-GB",
+        L"ko-KR",
+        L"zh-CN",
+        L"ja-JP",
+        L"ru-RU",
+    };
+    ULONG Index;
+
+    UNREFERENCED_PARAMETER(lpReserved);
+
+    if (lpLocaleEnumProcEx == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    for (Index = 0; Index < RTL_NUMBER_OF(LocaleNames); Index++) {
+        if (! lpLocaleEnumProcEx( LocaleNames[Index],
+                                  dwFlags,
+                                  lParam )) {
+            break;
+        }
+    }
+
+    return TRUE;
 }

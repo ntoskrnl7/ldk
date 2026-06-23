@@ -178,6 +178,26 @@ GetFileAttributesW(
 #define GetFileAttributes  GetFileAttributesA
 #endif // !UNICODE
 
+typedef struct _WIN32_FILE_ATTRIBUTE_DATA {
+    DWORD dwFileAttributes;
+    FILETIME ftCreationTime;
+    FILETIME ftLastAccessTime;
+    FILETIME ftLastWriteTime;
+    DWORD nFileSizeHigh;
+    DWORD nFileSizeLow;
+} WIN32_FILE_ATTRIBUTE_DATA, *LPWIN32_FILE_ATTRIBUTE_DATA;
+#define LDK_HAS_WIN32_FILE_ATTRIBUTE_DATA 1
+
+WINBASEAPI
+BOOL
+WINAPI
+GetFileAttributesExW(
+    _In_ LPCWSTR lpFileName,
+    _In_ GET_FILEEX_INFO_LEVELS fInfoLevelId,
+    _Out_writes_bytes_(sizeof(WIN32_FILE_ATTRIBUTE_DATA)) LPVOID lpFileInformation
+    );
+#define LDK_HAS_GET_FILE_ATTRIBUTES_EXW 1
+
 
 WINBASEAPI
 DWORD
@@ -277,6 +297,26 @@ DeleteFileW(
     _In_ LPCWSTR lpFileName
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+RemoveDirectoryA(
+    _In_ LPCSTR lpPathName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+RemoveDirectoryW(
+    _In_ LPCWSTR lpPathName
+    );
+
+#ifdef UNICODE
+#define RemoveDirectory  RemoveDirectoryW
+#else
+#define RemoveDirectory  RemoveDirectoryA
+#endif // !UNICODE
+
 
 typedef struct _BY_HANDLE_FILE_INFORMATION {
     DWORD dwFileAttributes;
@@ -297,6 +337,80 @@ WINAPI
 GetFileInformationByHandle(
     _In_ HANDLE hFile,
     _Out_ LPBY_HANDLE_FILE_INFORMATION lpFileInformation
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+GetFileInformationByHandleEx(
+    _In_ HANDLE hFile,
+    _In_ FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
+    _Out_writes_bytes_(dwBufferSize) LPVOID lpFileInformation,
+    _In_ DWORD dwBufferSize
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetFileInformationByHandle(
+    _In_ HANDLE hFile,
+    _In_ FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
+    _In_reads_bytes_(dwBufferSize) LPVOID lpFileInformation,
+    _In_ DWORD dwBufferSize
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetFinalPathNameByHandleW(
+    _In_ HANDLE hFile,
+    _Out_writes_(cchFilePath) LPWSTR lpszFilePath,
+    _In_ DWORD cchFilePath,
+    _In_ DWORD dwFlags
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+FindClose(
+    _Inout_ HANDLE hFindFile
+    );
+
+WINBASEAPI
+HANDLE
+WINAPI
+FindFirstFileW(
+    _In_ LPCWSTR lpFileName,
+    _Out_ LPWIN32_FIND_DATAW lpFindFileData
+    );
+
+WINBASEAPI
+HANDLE
+WINAPI
+FindFirstFileExW(
+    _In_ LPCWSTR lpFileName,
+    _In_ FINDEX_INFO_LEVELS fInfoLevelId,
+    _Out_writes_bytes_(sizeof(WIN32_FIND_DATAW)) LPVOID lpFindFileData,
+    _In_ FINDEX_SEARCH_OPS fSearchOp,
+    _Reserved_ LPVOID lpSearchFilter,
+    _In_ DWORD dwAdditionalFlags
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+FindNextFileW(
+    _In_ HANDLE hFindFile,
+    _Out_ LPWIN32_FIND_DATAW lpFindFileData
+    );
+#define LDK_HAS_FILE_ENUM_APIS 1
+
+WINBASEAPI
+BOOL
+WINAPI
+SetFileAttributesW(
+    _In_ LPCWSTR lpFileName,
+    _In_ DWORD dwFileAttributes
     );
 
 WINBASEAPI
@@ -340,6 +454,18 @@ GetDriveTypeW(
 
 
 WINBASEAPI
+BOOL
+WINAPI
+GetDiskFreeSpaceExW(
+    _In_opt_ LPCWSTR lpDirectoryName,
+    _Out_opt_ PULARGE_INTEGER lpFreeBytesAvailableToCaller,
+    _Out_opt_ PULARGE_INTEGER lpTotalNumberOfBytes,
+    _Out_opt_ PULARGE_INTEGER lpTotalNumberOfFreeBytes
+    );
+
+
+
+WINBASEAPI
 DWORD
 WINAPI
 GetTempPathA(
@@ -353,6 +479,14 @@ WINAPI
 GetTempPathW(
     _In_ DWORD nBufferLength,
     _Out_writes_to_opt_(nBufferLength,return + 1) LPWSTR lpBuffer
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetTempPath2W(
+    _In_ DWORD BufferLength,
+    _Out_writes_to_opt_(BufferLength, return + 1) LPWSTR Buffer
     );
 
 WINBASEAPI

@@ -229,7 +229,6 @@ GetErrorMode (
 	NTSTATUS Status;
 	UINT PreviousMode;
 
-	LDK_DIAGNOSTIC_BREAK();
 	EXIT_WHEN_DPC_WITH_RETURN(0);
 
 	Status = ZwQueryInformationProcess( NtCurrentProcess(),
@@ -261,7 +260,6 @@ SetErrorMode (
     UINT PreviousMode;
     UINT NewMode;
 
-	LDK_DIAGNOSTIC_BREAK();
     EXIT_WHEN_DPC_WITH_RETURN(0);
 
     PreviousMode = GetErrorMode();

@@ -1,5 +1,6 @@
 ﻿#include "winbase.h"
 #include <Ldk/ntdll/ntxcapi.h>
+#include "ioapiset.h"
 #include "../ldk.h"
 
 
@@ -11,6 +12,7 @@ LDK_INITIALIZE_COMPONENT LdkpInitializeThreadContexts;
 LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
 
 LDK_INITIALIZE_COMPONENT LdkpInitializeNls;
+LDK_TERMINATE_COMPONENT LdkpTerminateNls;
 
 LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
 LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
@@ -59,12 +61,108 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		FlushFileBuffers
 	},
 	{
+		"CopyFileW",
+		CopyFileW
+	},
+	{
+		"CreateDirectoryExW",
+		CreateDirectoryExW
+	},
+	{
+		"RemoveDirectoryA",
+		RemoveDirectoryA
+	},
+	{
+		"RemoveDirectoryW",
+		RemoveDirectoryW
+	},
+	{
+		"CreateHardLinkW",
+		CreateHardLinkW
+	},
+	{
+		"CreateSymbolicLinkW",
+		CreateSymbolicLinkW
+	},
+	{
+		"MoveFileExW",
+		MoveFileExW
+	},
+	{
+		"GetFileAttributesExW",
+		GetFileAttributesExW
+	},
+	{
+		"SetFileAttributesW",
+		SetFileAttributesW
+	},
+	{
+		"GetFileInformationByHandle",
+		GetFileInformationByHandle
+	},
+	{
+		"GetFileInformationByHandleEx",
+		GetFileInformationByHandleEx
+	},
+	{
+		"SetFileInformationByHandle",
+		SetFileInformationByHandle
+	},
+	{
+		"GetFinalPathNameByHandleW",
+		GetFinalPathNameByHandleW
+	},
+	{
+		"FindClose",
+		FindClose
+	},
+	{
+		"FindFirstFileW",
+		FindFirstFileW
+	},
+	{
+		"FindFirstFileExW",
+		FindFirstFileExW
+	},
+	{
+		"FindNextFileW",
+		FindNextFileW
+	},
+	{
 		"GetDriveTypeA",
 		GetDriveTypeA
 	},
 	{
 		"GetDriveTypeW",
 		GetDriveTypeW
+	},
+	{
+		"GetDiskFreeSpaceExW",
+		GetDiskFreeSpaceExW
+	},
+	{
+		"GetTempPathA",
+		GetTempPathA
+	},
+	{
+		"GetTempPathW",
+		GetTempPathW
+	},
+	{
+		"GetTempPath2W",
+		GetTempPath2W
+	},
+	{
+		"GetTempFileNameA",
+		GetTempFileNameA
+	},
+	{
+		"GetTempFileNameW",
+		GetTempFileNameW
+	},
+	{
+		"DeviceIoControl",
+		DeviceIoControl
 	},
 
 	//
@@ -129,6 +227,46 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"GetCommandLineW",
 		GetCommandLineW
+	},
+
+	//
+	// winbase.c
+	//
+	{
+		"FormatMessageA",
+		FormatMessageA
+	},
+	{
+		"FormatMessageW",
+		FormatMessageW
+	},
+	{
+		"LocalAlloc",
+		LocalAlloc
+	},
+	{
+		"LocalReAlloc",
+		LocalReAlloc
+	},
+	{
+		"LocalLock",
+		LocalLock
+	},
+	{
+		"LocalHandle",
+		LocalHandle
+	},
+	{
+		"LocalUnlock",
+		LocalUnlock
+	},
+	{
+		"LocalSize",
+		LocalSize
+	},
+	{
+		"LocalFree",
+		LocalFree
 	},
 
 	//
@@ -668,6 +806,34 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetCPInfoExW
 	},
 	{
+		"GetLocaleInfoW",
+		GetLocaleInfoW
+	},
+	{
+		"GetLocaleInfoEx",
+		GetLocaleInfoEx
+	},
+	{
+		"GetDateFormatW",
+		GetDateFormatW
+	},
+	{
+		"GetTimeFormatW",
+		GetTimeFormatW
+	},
+	{
+		"GetStringTypeW",
+		GetStringTypeW
+	},
+	{
+		"EnumSystemLocalesW",
+		EnumSystemLocalesW
+	},
+	{
+		"EnumSystemLocalesEx",
+		EnumSystemLocalesEx
+	},
+	{
 		"IsValidLocale",
 		IsValidLocale
 	},
@@ -753,6 +919,7 @@ LdkpKernel32Initialize (
 	PAGED_CODE();
 
 	SetFileApisToANSI();
+	LdkpInitializeWinBaseMessageResources();
 
 	NTSTATUS Status = LdkpInitializeThreadpoolApiset();
 	if (! NT_SUCCESS(Status)) {
@@ -775,6 +942,8 @@ LdkpKernel32Terminate (
 {
 	PAGED_CODE();
 
+	LdkpTerminateNls();
 	LdkpTerminateThreadContexts();
 	LdkpTerminateThreadpoolApiset();
+	LdkpTerminateWinBaseMessageResources();
 }

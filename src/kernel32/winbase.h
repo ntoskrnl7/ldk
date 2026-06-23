@@ -14,6 +14,22 @@ LdkFormatTimeout (
 	_In_ DWORD Milliseconds
 	);
 
+VOID
+LdkpInitializeWinBaseMessageResources (
+	VOID
+	);
+
+VOID
+LdkpTerminateWinBaseMessageResources (
+	VOID
+	);
+
+NTSTATUS
+LdkpGetCodePageTable (
+	_In_ UINT CodePage,
+	_Outptr_ PCPTABLEINFO *CodePageTable
+	);
+
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _Must_inspect_result_
 PUNICODE_STRING

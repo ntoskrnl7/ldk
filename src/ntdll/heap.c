@@ -317,6 +317,75 @@ LdkSizeHeap (
 	return (SIZE_T)-1;
 }
 
+NTSTATUS
+NTAPI
+LdkWalkHeap (
+    _In_ PVOID HeapHandle,
+    _In_opt_ PVOID PreviousData,
+    _Out_ PLDK_HEAP_WALK_ENTRY Entry
+    )
+{
+	PLIST_ENTRY Link;
+	PLDK_HEAP_HEADER Header;
+	KIRQL OldIrql;
+
+	if (HeapHandle == NULL ||
+		Entry == NULL) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	RtlZeroMemory( Entry,
+				   sizeof(*Entry) );
+
+	OldIrql = ExAcquireSpinLockShared( &LdkpHeapListLock );
+
+	if (PreviousData != NULL) {
+		PLDK_HEAP_HEADER PreviousHeader;
+
+		if (! MmIsAddressValid( PreviousData )) {
+			ExReleaseSpinLockShared( &LdkpHeapListLock,
+									 OldIrql );
+			return STATUS_INVALID_PARAMETER;
+		}
+
+		PreviousHeader = LDK_HEAP_IMP_GET_HEADER( PreviousData );
+		if (! MmIsAddressValid( PreviousHeader ) ||
+			PreviousHeader->HeapHandle != HeapHandle) {
+			ExReleaseSpinLockShared( &LdkpHeapListLock,
+									 OldIrql );
+			return STATUS_INVALID_PARAMETER;
+		}
+
+		Link = PreviousHeader->Links.Flink;
+	} else {
+		Link = LdkpHeapListHead.Flink;
+	}
+
+	while (Link != &LdkpHeapListHead) {
+		Header = CONTAINING_RECORD( Link,
+									LDK_HEAP_HEADER,
+									Links );
+		Link = Link->Flink;
+
+		if (Header->HeapHandle != HeapHandle) {
+			continue;
+		}
+
+		Entry->Data = LDK_HEAP_IMP_GET_BUFFER( Header );
+		Entry->Size = Header->Size;
+		Entry->Overhead = (UCHAR)sizeof(LDK_HEAP_HEADER);
+		Entry->RegionIndex = 0;
+
+		ExReleaseSpinLockShared( &LdkpHeapListLock,
+								 OldIrql );
+		return STATUS_SUCCESS;
+	}
+
+	ExReleaseSpinLockShared( &LdkpHeapListLock,
+							 OldIrql );
+	return STATUS_NO_MORE_ENTRIES;
+}
+
 BOOLEAN
 NTAPI
 LdkValidateHeap (

@@ -116,14 +116,499 @@ FileTest (
         printf("[Failed] Test ReadFile(Test.tmp)\n\n");
     }
 
+    printf("Test CopyFileW(Test.tmp, TestCopy.tmp)\n");
+    DeleteFileW( L"TestCopy.tmp" );
+    rv = CopyFileW( L"Test.tmp", L"TestCopy.tmp", TRUE );
+    if (!rv) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CopyFileW(Test.tmp, TestCopy.tmp)\n\n");
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"TestCopy.tmp", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CopyFileW(Test.tmp, TestCopy.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Buffer, sizeof(Buffer) );
+    length = 0;
+    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    CloseHandle( hFile );
+    if (!rv || length != 4 || memcmp(Buffer, "1234", 4)) {
+        fprintf(stderr, "[Failed] ErrorCode = %d, length = %d\n", GetLastError(), length);
+        printf("[Failed] Test CopyFileW(Test.tmp, TestCopy.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CopyFileW(Test.tmp, TestCopy.tmp)\n\n");
+
+    printf("Test MoveFileExW(TestCopy.tmp, TestMoved.tmp)\n");
+    DeleteFileW( L"TestMoved.tmp" );
+    rv = MoveFileExW( L"TestCopy.tmp",
+                      L"TestMoved.tmp",
+                      MOVEFILE_COPY_ALLOWED | MOVEFILE_REPLACE_EXISTING );
+    if (!rv) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test MoveFileExW(TestCopy.tmp, TestMoved.tmp)\n\n");
+        goto DeleteTest;
+    }
+    if (GetFileAttributesW( L"TestCopy.tmp" ) != INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW( L"TestMoved.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] TestCopy.tmp/TestMoved.tmp rename state is invalid\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test MoveFileExW(TestCopy.tmp, TestMoved.tmp)\n\n");
+
+    printf("Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n");
+    DeleteFileW( L"TestHardLink.tmp" );
+    rv = CreateHardLinkW( L"TestHardLink.tmp",
+                          L"Test.tmp",
+                          NULL );
+    if (!rv) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"Test.tmp",
+                         GENERIC_READ,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    BY_HANDLE_FILE_INFORMATION HandleInfo;
+    rv = GetFileInformationByHandle( hFile,
+                                     &HandleInfo );
+    UCHAR FileNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
+    PFILE_NAME_INFO NameInfo = (PFILE_NAME_INFO)FileNameInfoBuffer;
+    RtlZeroMemory( FileNameInfoBuffer,
+                   sizeof(FileNameInfoBuffer) );
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileNameInfo,
+                                        NameInfo,
+                                        sizeof(FileNameInfoBuffer) )) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileNameInfo) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    CloseHandle( hFile );
+    if (!rv || HandleInfo.nNumberOfLinks < 2) {
+        fprintf(stderr,
+                "[Failed] nNumberOfLinks = %lu, ErrorCode = %d\n",
+                rv ? HandleInfo.nNumberOfLinks : 0,
+                GetLastError());
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    static const WCHAR ExpectedFileName[] = L"Test.tmp";
+    ULONG FileNameChars = NameInfo->FileNameLength / sizeof(WCHAR);
+    ULONG ExpectedFileNameChars = RTL_NUMBER_OF(ExpectedFileName) - 1;
+    if (FileNameChars < ExpectedFileNameChars ||
+        RtlCompareMemory( NameInfo->FileName + FileNameChars - ExpectedFileNameChars,
+                          ExpectedFileName,
+                          ExpectedFileNameChars * sizeof(WCHAR) ) !=
+                          ExpectedFileNameChars * sizeof(WCHAR)) {
+        fprintf(stderr, "[Failed] GetFileInformationByHandleEx(FileNameInfo) returned unexpected name\n");
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    if (!DeleteFileW( L"Test.tmp" )) {
+        fprintf(stderr, "[Failed] DeleteFileW(Test.tmp) ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"TestHardLink.tmp",
+                         GENERIC_READ,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Buffer, sizeof(Buffer) );
+    length = 0;
+    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    CloseHandle( hFile );
+    if (!rv || length != 4 || memcmp(Buffer, "1234", 4)) {
+        fprintf(stderr, "[Failed] ErrorCode = %d, length = %d\n", GetLastError(), length);
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    if (!CopyFileW( L"TestHardLink.tmp",
+                    L"Test.tmp",
+                    TRUE )) {
+        fprintf(stderr, "[Failed] Restore Test.tmp ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+
+    printf("Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n");
+    DeleteFileW( L"TestSymlink.tmp" );
+    rv = CreateSymbolicLinkW( L"TestSymlink.tmp",
+                              L"Test.tmp",
+                              0 );
+    if (!rv) {
+        DWORD Error = GetLastError();
+#if !_KERNEL_MODE
+        if (Error == ERROR_PRIVILEGE_NOT_HELD ||
+            Error == ERROR_ACCESS_DENIED) {
+            printf("[Skipped] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp) ErrorCode = %lu\n\n",
+                   Error);
+            goto AfterSymlinkTest;
+        }
+#endif
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", Error);
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    DWORD SymlinkAttributes = GetFileAttributesW( L"TestSymlink.tmp" );
+    if (SymlinkAttributes == INVALID_FILE_ATTRIBUTES ||
+        !(SymlinkAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        fprintf(stderr, "[Failed] SymlinkAttributes = 0x%08lx, ErrorCode = %d\n",
+                SymlinkAttributes,
+                GetLastError());
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    WIN32_FIND_DATAW SymlinkFindData;
+    HANDLE hFind = FindFirstFileW( L"TestSymlink.tmp",
+                                   &SymlinkFindData );
+    if (hFind == INVALID_HANDLE_VALUE ||
+        !(SymlinkFindData.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+        SymlinkFindData.dwReserved0 != IO_REPARSE_TAG_SYMLINK) {
+        fprintf(stderr, "[Failed] SymlinkFindData Attr = 0x%08lx, Tag = 0x%08lx, ErrorCode = %d\n",
+                hFind == INVALID_HANDLE_VALUE ? 0 : SymlinkFindData.dwFileAttributes,
+                hFind == INVALID_HANDLE_VALUE ? 0 : SymlinkFindData.dwReserved0,
+                GetLastError());
+        if (hFind != INVALID_HANDLE_VALUE) {
+            FindClose( hFind );
+        }
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    FindClose( hFind );
+
+    hFile = CreateFileW( L"TestSymlink.tmp",
+                         FILE_READ_ATTRIBUTES,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_FLAG_OPEN_REPARSE_POINT,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FILE_ATTRIBUTE_TAG_INFO SymlinkTagInfo;
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileAttributeTagInfo,
+                                        &SymlinkTagInfo,
+                                        sizeof(SymlinkTagInfo) ) ||
+        !(SymlinkTagInfo.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) ||
+        SymlinkTagInfo.ReparseTag != IO_REPARSE_TAG_SYMLINK) {
+        fprintf(stderr, "[Failed] SymlinkTagInfo Attr = 0x%08lx, Tag = 0x%08lx, ErrorCode = %d\n",
+                SymlinkTagInfo.FileAttributes,
+                SymlinkTagInfo.ReparseTag,
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    CloseHandle( hFile );
+
+    hFile = CreateFileW( L"TestSymlink.tmp",
+                         GENERIC_READ,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Buffer, sizeof(Buffer) );
+    length = 0;
+    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    CloseHandle( hFile );
+    if (!rv || length != 4 || memcmp(Buffer, "1234", 4)) {
+        fprintf(stderr, "[Failed] ErrorCode = %d, length = %d\n", GetLastError(), length);
+        printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+
+#if !_KERNEL_MODE
+AfterSymlinkTest:
+#endif
+    printf("Test GetFinalPathNameByHandleW(Test.tmp)\n");
+    hFile = CreateFileW( L"Test.tmp",
+                         GENERIC_READ,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test GetFinalPathNameByHandleW(Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    WCHAR FinalPath[MAX_PATH];
+    DWORD FinalPathLength = GetFinalPathNameByHandleW( hFile,
+                                                       FinalPath,
+                                                       RTL_NUMBER_OF(FinalPath),
+                                                       FILE_NAME_NORMALIZED | VOLUME_NAME_NT );
+    if (FinalPathLength == 0 ||
+        FinalPathLength >= RTL_NUMBER_OF(FinalPath) ||
+        FinalPath[0] != L'\\') {
+        CloseHandle( hFile );
+        fprintf(stderr, "[Failed] FinalPathLength = %lu, ErrorCode = %d\n",
+                FinalPathLength,
+                GetLastError());
+        printf("[Failed] Test GetFinalPathNameByHandleW(Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FinalPathLength = GetFinalPathNameByHandleW( hFile,
+                                                 FinalPath,
+                                                 RTL_NUMBER_OF(FinalPath),
+                                                 FILE_NAME_NORMALIZED | VOLUME_NAME_DOS );
+    CloseHandle( hFile );
+    if (FinalPathLength == 0 ||
+        FinalPathLength >= RTL_NUMBER_OF(FinalPath) ||
+        FinalPath[0] != L'\\' ||
+        FinalPath[1] != L'\\' ||
+        FinalPath[2] != L'?' ||
+        FinalPath[3] != L'\\' ||
+        FinalPath[5] != L':' ||
+        FinalPath[6] != L'\\') {
+        fprintf(stderr, "[Failed] FinalPathLength = %lu, ErrorCode = %d\n",
+                FinalPathLength,
+                GetLastError());
+        printf("[Failed] Test GetFinalPathNameByHandleW(Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetFinalPathNameByHandleW(Test.tmp)\n\n");
+
+    printf("Test GetTempPathA / GetTempPathW\n");
+    CHAR TempPathA[MAX_PATH];
+    WCHAR TempPathW[MAX_PATH];
+    DWORD TempPathLengthA = GetTempPathA( RTL_NUMBER_OF(TempPathA),
+                                          TempPathA );
+    DWORD TempPathLengthW = GetTempPathW( RTL_NUMBER_OF(TempPathW),
+                                          TempPathW );
+    if (TempPathLengthA == 0 ||
+        TempPathLengthA >= RTL_NUMBER_OF(TempPathA) ||
+        TempPathA[TempPathLengthA - 1] != '\\') {
+        fprintf(stderr, "[Failed] GetTempPathA ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    if (TempPathLengthW == 0 ||
+        TempPathLengthW >= RTL_NUMBER_OF(TempPathW) ||
+        TempPathW[TempPathLengthW - 1] != L'\\' ||
+        GetFileAttributesW( TempPathW ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] GetTempPathW ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetTempPathA / GetTempPathW\n\n");
+
+    printf("Test GetTempFileNameA / GetTempFileNameW\n");
+    WCHAR TempFileNameW[MAX_PATH];
+    CHAR TempFileNameA[MAX_PATH];
+    UINT TempUniqueW = GetTempFileNameW( TempPathW,
+                                         L"ldw",
+                                         0,
+                                         TempFileNameW );
+    if (TempUniqueW == 0 ||
+        GetFileAttributesW( TempFileNameW ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] GetTempFileNameW ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    if (! DeleteFileW( TempFileNameW )) {
+        fprintf(stderr, "[Failed] DeleteFileW(GetTempFileNameW result) ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    UINT TempUniqueA = GetTempFileNameA( TempPathA,
+                                         "lda",
+                                         0,
+                                         TempFileNameA );
+    if (TempUniqueA == 0 ||
+        GetFileAttributesA( TempFileNameA ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] GetTempFileNameA ErrorCode = %d\n", GetLastError());
+        DeleteFileW( TempFileNameW );
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    if (! DeleteFileA( TempFileNameA )) {
+        fprintf(stderr, "[Failed] DeleteFileA(GetTempFileNameA result) ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    TempUniqueA = GetTempFileNameA( TempPathA,
+                                    "ldn",
+                                    0x4C44,
+                                    TempFileNameA );
+    if (TempUniqueA != 0x4C44 || TempFileNameA[0] == ANSI_NULL) {
+        fprintf(stderr,
+                "[Failed] GetTempFileNameA unique ErrorCode = %d Unique = 0x%04x\n",
+                GetLastError(),
+                TempUniqueA);
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetTempFileNameA / GetTempFileNameW\n\n");
+
+    printf("Test SetFileInformationByHandle(FileAllocationInfo)\n");
+    DeleteFileW( L"TestAllocation.tmp" );
+    hFile = CreateFileW( L"TestAllocation.tmp",
+                         GENERIC_READ | GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileAllocationInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FILE_ALLOCATION_INFO AllocationInfo;
+    AllocationInfo.AllocationSize.QuadPart = 4096;
+    rv = SetFileInformationByHandle( hFile,
+                                     FileAllocationInfo,
+                                     &AllocationInfo,
+                                     sizeof(AllocationInfo) );
+    CloseHandle( hFile );
+    if (!rv) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileAllocationInfo)\n\n");
+        goto DeleteTest;
+    }
+    printf("[Success] Test SetFileInformationByHandle(FileAllocationInfo)\n\n");
+
+    printf("Test SetFileInformationByHandle(FileDispositionInfoEx)\n");
+    DeleteFileW( L"TestDisposition.tmp" );
+    hFile = CreateFileW( L"TestDisposition.tmp",
+                         DELETE | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                         FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+                         NULL,
+                         CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileDispositionInfoEx)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FILE_DISPOSITION_INFO_EX DispositionInfoEx;
+    DispositionInfoEx.Flags = FILE_DISPOSITION_FLAG_DELETE |
+                              FILE_DISPOSITION_FLAG_POSIX_SEMANTICS |
+                              FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE;
+    rv = SetFileInformationByHandle( hFile,
+                                     FileDispositionInfoEx,
+                                     &DispositionInfoEx,
+                                     sizeof(DispositionInfoEx) );
+    CloseHandle( hFile );
+    if (!rv) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileDispositionInfoEx)\n\n");
+        goto DeleteTest;
+    }
+    if (GetFileAttributesW( L"TestDisposition.tmp" ) != INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] TestDisposition.tmp still exists\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test SetFileInformationByHandle(FileDispositionInfoEx)\n\n");
+
+    printf("Test GetErrorMode / SetErrorMode\n");
+    UINT ErrorMode = GetErrorMode();
+    UINT PreviousMode = SetErrorMode( ErrorMode );
+    if (PreviousMode != ErrorMode) {
+        fprintf(stderr, "[Failed] PreviousMode = %u, ErrorMode = %u\n", PreviousMode, ErrorMode);
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetErrorMode / SetErrorMode\n\n");
+
 DeleteTest:
+    DeleteFileW( L"TestAllocation.tmp" );
+    DeleteFileW( L"TestDisposition.tmp" );
+    DeleteFileW( L"TestMoved.tmp" );
+    DeleteFileW( L"TestCopy.tmp" );
+    DeleteFileW( L"TestHardLink.tmp" );
+    DeleteFileW( L"TestSymlink.tmp" );
     printf("Test DeleteFileA(Test.tmp)\n");
-    rv = DeleteFileA( "Test.tmp" );
-    if (rv) {
+    BOOL DeleteResult = DeleteFileA( "Test.tmp" );
+    if (DeleteResult) {
         printf("[Success] Test DeleteFileA(Test.tmp)\n\n");
     } else {
-        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
-        printf("[Failed] Test DeleteFileA(Test.tmp)\n\n");
+        DWORD Error = GetLastError();
+        if (Error != ERROR_FILE_NOT_FOUND &&
+            Error != ERROR_PATH_NOT_FOUND) {
+            fprintf(stderr, "[Failed] ErrorCode = %d\n", Error);
+            printf("[Failed] Test DeleteFileA(Test.tmp)\n\n");
+            rv = FALSE;
+        }
     }
     return rv == TRUE;
 }

@@ -200,9 +200,6 @@ LdkCurrentTeb (
 	// During LDK shutdown, create a TEB on the temporary list and return it.
 	//
 	if (LDK_IS_SHUTDOWN_IN_PROGRESS) {
-
-		LDK_DIAGNOSTIC_BREAK();
-
 		Teb = LdkpCreateTeb( PsGetCurrentThread() );
 		NT_ASSERT(Teb);
 

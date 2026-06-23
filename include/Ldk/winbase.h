@@ -95,6 +95,148 @@ EXTERN_C_START
 #define FILE_FLAG_OPEN_NO_RECALL        0x00100000
 #define FILE_FLAG_FIRST_PIPE_INSTANCE   0x00080000
 
+#ifndef FILE_NAME_NORMALIZED
+#define FILE_NAME_NORMALIZED 0x0
+#endif
+
+#ifndef FILE_NAME_OPENED
+#define FILE_NAME_OPENED 0x8
+#endif
+
+#ifndef VOLUME_NAME_DOS
+#define VOLUME_NAME_DOS 0x0
+#endif
+
+#ifndef VOLUME_NAME_GUID
+#define VOLUME_NAME_GUID 0x1
+#endif
+
+#ifndef VOLUME_NAME_NT
+#define VOLUME_NAME_NT 0x2
+#endif
+
+#ifndef VOLUME_NAME_NONE
+#define VOLUME_NAME_NONE 0x4
+#endif
+
+#ifndef MOVEFILE_REPLACE_EXISTING
+#define MOVEFILE_REPLACE_EXISTING 0x00000001
+#endif
+
+#ifndef MOVEFILE_COPY_ALLOWED
+#define MOVEFILE_COPY_ALLOWED 0x00000002
+#endif
+
+#ifndef MOVEFILE_DELAY_UNTIL_REBOOT
+#define MOVEFILE_DELAY_UNTIL_REBOOT 0x00000004
+#endif
+
+#ifndef MOVEFILE_WRITE_THROUGH
+#define MOVEFILE_WRITE_THROUGH 0x00000008
+#endif
+
+#ifndef MOVEFILE_CREATE_HARDLINK
+#define MOVEFILE_CREATE_HARDLINK 0x00000010
+#endif
+
+#ifndef MOVEFILE_FAIL_IF_NOT_TRACKABLE
+#define MOVEFILE_FAIL_IF_NOT_TRACKABLE 0x00000020
+#endif
+
+#ifndef FILE_DISPOSITION_FLAG_DO_NOT_DELETE
+#define FILE_DISPOSITION_FLAG_DO_NOT_DELETE 0x00000000
+#define FILE_DISPOSITION_FLAG_DELETE 0x00000001
+#define FILE_DISPOSITION_FLAG_POSIX_SEMANTICS 0x00000002
+#define FILE_DISPOSITION_FLAG_FORCE_IMAGE_SECTION_CHECK 0x00000004
+#define FILE_DISPOSITION_FLAG_ON_CLOSE 0x00000008
+#define FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE 0x00000010
+#endif
+
+#ifndef SYMBOLIC_LINK_FLAG_DIRECTORY
+#define SYMBOLIC_LINK_FLAG_DIRECTORY 0x1
+#endif
+
+#ifndef SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE
+#define SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE 0x2
+#endif
+
+typedef struct _FILE_BASIC_INFO {
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    DWORD FileAttributes;
+} FILE_BASIC_INFO, *PFILE_BASIC_INFO;
+
+typedef struct _FILE_STANDARD_INFO {
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    DWORD NumberOfLinks;
+    BOOLEAN DeletePending;
+    BOOLEAN Directory;
+} FILE_STANDARD_INFO, *PFILE_STANDARD_INFO;
+
+typedef struct _FILE_NAME_INFO {
+    DWORD FileNameLength;
+    WCHAR FileName[1];
+} FILE_NAME_INFO, *PFILE_NAME_INFO;
+
+typedef struct _FILE_DISPOSITION_INFO {
+    BOOLEAN DeleteFile;
+} FILE_DISPOSITION_INFO, *PFILE_DISPOSITION_INFO;
+
+typedef struct _FILE_ALLOCATION_INFO {
+    LARGE_INTEGER AllocationSize;
+} FILE_ALLOCATION_INFO, *PFILE_ALLOCATION_INFO;
+
+typedef struct _FILE_DISPOSITION_INFO_EX {
+    DWORD Flags;
+} FILE_DISPOSITION_INFO_EX, *PFILE_DISPOSITION_INFO_EX;
+
+typedef struct _FILE_END_OF_FILE_INFO {
+    LARGE_INTEGER EndOfFile;
+} FILE_END_OF_FILE_INFO, *PFILE_END_OF_FILE_INFO;
+
+typedef struct _FILE_ATTRIBUTE_TAG_INFO {
+    DWORD FileAttributes;
+    DWORD ReparseTag;
+} FILE_ATTRIBUTE_TAG_INFO, *PFILE_ATTRIBUTE_TAG_INFO;
+
+typedef struct _FILE_ID_INFO {
+    ULONGLONG VolumeSerialNumber;
+    FILE_ID_128 FileId;
+} FILE_ID_INFO, *PFILE_ID_INFO;
+
+#ifndef FileBasicInfo
+#define FileBasicInfo ((FILE_INFO_BY_HANDLE_CLASS)0)
+#endif
+#ifndef FileStandardInfo
+#define FileStandardInfo ((FILE_INFO_BY_HANDLE_CLASS)1)
+#endif
+#ifndef FileNameInfo
+#define FileNameInfo ((FILE_INFO_BY_HANDLE_CLASS)2)
+#endif
+#ifndef FileDispositionInfo
+#define FileDispositionInfo ((FILE_INFO_BY_HANDLE_CLASS)4)
+#endif
+#ifndef FileAllocationInfo
+#define FileAllocationInfo ((FILE_INFO_BY_HANDLE_CLASS)5)
+#endif
+#ifndef FileEndOfFileInfo
+#define FileEndOfFileInfo ((FILE_INFO_BY_HANDLE_CLASS)6)
+#endif
+#ifndef FileAttributeTagInfo
+#define FileAttributeTagInfo ((FILE_INFO_BY_HANDLE_CLASS)9)
+#endif
+#ifndef FileIdInfo
+#define FileIdInfo ((FILE_INFO_BY_HANDLE_CLASS)18)
+#endif
+#ifndef FileDispositionInfoEx
+#define FileDispositionInfoEx ((FILE_INFO_BY_HANDLE_CLASS)21)
+#endif
+
+#define LDK_HAS_WINBASE_FILE_INFO_TYPES 1
+
 #if (_WIN32_WINNT >= _WIN32_WINNT_WIN8)
 
 //
@@ -169,6 +311,51 @@ FormatMessageW(
 #define FORMAT_MESSAGE_FROM_SYSTEM     0x00001000
 #define FORMAT_MESSAGE_ARGUMENT_ARRAY  0x00002000
 #define FORMAT_MESSAGE_MAX_WIDTH_MASK  0x000000FF
+
+WINBASEAPI
+BOOL
+WINAPI
+CopyFileW(
+    _In_ LPCWSTR lpExistingFileName,
+    _In_ LPCWSTR lpNewFileName,
+    _In_ BOOL bFailIfExists
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+CreateDirectoryExW(
+    _In_ LPCWSTR lpTemplateDirectory,
+    _In_ LPCWSTR lpNewDirectory,
+    _In_opt_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+CreateHardLinkW(
+    _In_ LPCWSTR lpFileName,
+    _In_ LPCWSTR lpExistingFileName,
+    _Reserved_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+MoveFileExW(
+    _In_ LPCWSTR lpExistingFileName,
+    _In_opt_ LPCWSTR lpNewFileName,
+    _In_ DWORD dwFlags
+    );
+
+WINBASEAPI
+BOOLEAN
+WINAPI
+CreateSymbolicLinkW(
+    _In_ LPCWSTR lpSymlinkFileName,
+    _In_ LPCWSTR lpTargetFileName,
+    _In_ DWORD dwFlags
+    );
 
 
 

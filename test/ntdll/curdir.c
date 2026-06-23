@@ -14,6 +14,15 @@ NtdllCurrentDirectoryTest (
 
 EXTERN_C_START
 
+#ifndef NTSYSAPI
+#define NTSYSAPI __declspec(dllimport)
+#endif
+
+#ifndef _LDK_WIN32_NTSTATUS_DEFINED
+#define _LDK_WIN32_NTSTATUS_DEFINED
+typedef LONG NTSTATUS;
+#endif
+
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
@@ -81,6 +90,31 @@ char _RTL_CONSTANT_STRING_type_check(const void* s);
     sizeof( s ) / sizeof(_RTL_CONSTANT_STRING_type_check(s)), \
     _RTL_CONSTANT_STRING_remove_const_macro(s) \
 }
+
+NTSYSAPI
+ULONG
+NTAPI
+RtlGetCurrentDirectory_U (
+    _In_ ULONG BufferLength,
+    _Out_writes_bytes_(BufferLength) PWSTR Buffer
+    );
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+RtlSetCurrentDirectory_U (
+    _In_ PUNICODE_STRING PathName
+    );
+
+_Must_inspect_result_
+NTSYSAPI
+BOOLEAN
+NTAPI
+RtlEqualUnicodeString(
+    _In_ PCUNICODE_STRING String1,
+    _In_ PCUNICODE_STRING String2,
+    _In_ BOOLEAN CaseInSensitive
+    );
 
 #pragma comment(lib, "ntdll.lib")
 
