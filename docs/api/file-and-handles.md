@@ -33,6 +33,8 @@ attribute helpers are backed by native file information queries and setters.
 `SetFileInformationByHandle` currently supports:
 
 - `FileBasicInfo`
+- `FileRenameInfo`
+- `FileRenameInfoEx`
 - `FileAllocationInfo`
 - `FileEndOfFileInfo`
 - `FileDispositionInfo`
@@ -55,9 +57,12 @@ without treating every unknown value as a caller bug.
 names where the kernel object can be resolved.
 
 `FindFirstFileW`, `FindFirstFileExW`, `FindNextFileW`, and `FindClose` cover the
-normal wildcard enumeration path. `FIND_FIRST_EX_CASE_SENSITIVE` is not
-implemented because it needs case-sensitive path policy support across the
-directory open and match path.
+normal wildcard enumeration path. `FindFirstFileExW` accepts the documented
+`FIND_FIRST_EX_CASE_SENSITIVE`, `FIND_FIRST_EX_LARGE_FETCH`, and
+`FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY` flags and rejects unknown flag bits with
+`ERROR_INVALID_PARAMETER`. The flags are routed through the native directory
+query path; LDK does not add a stricter case policy than the underlying file
+system namespace provides.
 
 `CreateHardLinkW` and `CreateSymbolicLinkW` are implemented for the tested file
 scenarios. Symbolic-link tests verify the reparse tag path and target reads.
@@ -89,6 +94,6 @@ completion semantics rather than a synchronous approximation.
 ## Tests
 
 `FileTest` covers the common file path, copy, move, hard-link, symbolic-link,
-final-path, temp-path, temp-file, `FileNameInfo`, `FileAllocationInfo`, and
-disposition paths. Runtime validation still requires loading `LdkTest.sys` in
-a driver test VM.
+final-path, temp-path, temp-file, `FileNameInfo`, `FindFirstFileExW` flags,
+`FileAllocationInfo`, rename, and disposition paths. Runtime validation still
+requires loading `LdkTest.sys` in a driver test VM.

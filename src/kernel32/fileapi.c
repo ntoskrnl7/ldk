@@ -22,6 +22,20 @@ LdkpQueryFullFileAttributes (
     );
 
 #define LDK_FIND_HANDLE_MAGIC 0x464B444Cu
+#ifdef FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY
+#define LDK_FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY
+#else
+#define LDK_FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY 0
+#endif
+#define LDK_FIND_FIRST_EX_SUPPORTED_FLAGS \
+    (FIND_FIRST_EX_CASE_SENSITIVE | \
+     FIND_FIRST_EX_LARGE_FETCH | \
+     LDK_FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY)
+#define LDK_FILE_RENAME_INFO_EX_SUPPORTED_FLAGS \
+    (FILE_RENAME_FLAG_REPLACE_IF_EXISTS | \
+     FILE_RENAME_FLAG_POSIX_SEMANTICS | \
+     FILE_RENAME_FLAG_SUPPRESS_PIN_STATE_INHERITANCE)
+#define LDK_FILE_RENAME_INFORMATION_EX_CLASS ((FILE_INFORMATION_CLASS)65)
 
 typedef union _LDK_FIND_QUERY_BUFFER {
     FILE_BOTH_DIR_INFORMATION Alignment;
@@ -2704,6 +2718,145 @@ SetFileInformationByHandle (
         return FALSE;
     }
 
+    if (FileInformationClass == FileRenameInfo ||
+        FileInformationClass == FileRenameInfoEx) {
+        PFILE_RENAME_INFO RenameInfo;
+        PFILE_RENAME_INFORMATION NativeRenameInfo;
+        FILE_INFORMATION_CLASS NativeInformationClass;
+        UNICODE_STRING RenameFileName;
+        UNICODE_STRING NtRenameFileName;
+        RTL_RELATIVE_NAME_U RelativeName;
+        PUNICODE_STRING NativeFileName;
+        HANDLE RootDirectory;
+        PWSTR NullTerminatedName;
+        PVOID FreeNtBuffer;
+        ULONG MinimumSize;
+        ULONG NativeRenameInfoSize;
+
+        MinimumSize = FIELD_OFFSET(FILE_RENAME_INFO, FileName);
+        if (dwBufferSize < MinimumSize) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        RenameInfo = (PFILE_RENAME_INFO)lpFileInformation;
+        if (RenameInfo->FileNameLength == 0 ||
+            RenameInfo->FileNameLength > MAXUSHORT ||
+            (RenameInfo->FileNameLength & (sizeof(WCHAR) - 1)) != 0) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return FALSE;
+        }
+
+        if (RenameInfo->FileNameLength > dwBufferSize - MinimumSize) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        if (FileInformationClass == FileRenameInfoEx &&
+            (RenameInfo->Flags & ~LDK_FILE_RENAME_INFO_EX_SUPPORTED_FLAGS) != 0) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return FALSE;
+        }
+
+        RenameFileName.Length = (USHORT)RenameInfo->FileNameLength;
+        RenameFileName.MaximumLength = RenameFileName.Length;
+        RenameFileName.Buffer = RenameInfo->FileName;
+        NativeFileName = &RenameFileName;
+        RootDirectory = RenameInfo->RootDirectory;
+        FreeNtBuffer = NULL;
+
+        if (RootDirectory == NULL) {
+            NullTerminatedName = RtlAllocateHeap( RtlProcessHeap(),
+                                                 MAKE_TAG( TMP_TAG ),
+                                                 RenameInfo->FileNameLength + sizeof(UNICODE_NULL) );
+            if (NullTerminatedName == NULL) {
+                LdkSetLastNTError( STATUS_NO_MEMORY );
+                return FALSE;
+            }
+
+            RtlCopyMemory( NullTerminatedName,
+                           RenameInfo->FileName,
+                           RenameInfo->FileNameLength );
+            NullTerminatedName[RenameInfo->FileNameLength / sizeof(WCHAR)] = UNICODE_NULL;
+
+            if (! RtlDosPathNameToNtPathName_U( NullTerminatedName,
+                                                &NtRenameFileName,
+                                                NULL,
+                                                &RelativeName )) {
+                RtlFreeHeap( RtlProcessHeap(),
+                             0,
+                             NullTerminatedName );
+                SetLastError( ERROR_PATH_NOT_FOUND );
+                return FALSE;
+            }
+
+            RtlFreeHeap( RtlProcessHeap(),
+                         0,
+                         NullTerminatedName );
+            FreeNtBuffer = NtRenameFileName.Buffer;
+            if (RelativeName.RelativeName.Length) {
+                NativeFileName = (PUNICODE_STRING)&RelativeName.RelativeName;
+                RootDirectory = RelativeName.ContainingDirectory;
+            } else {
+                NativeFileName = &NtRenameFileName;
+            }
+        }
+
+        NativeRenameInfoSize = FIELD_OFFSET(FILE_RENAME_INFORMATION, FileName) +
+                               NativeFileName->Length;
+        NativeRenameInfo = RtlAllocateHeap( RtlProcessHeap(),
+                                            MAKE_TAG( TMP_TAG ),
+                                            NativeRenameInfoSize );
+        if (NativeRenameInfo == NULL) {
+            if (FreeNtBuffer != NULL) {
+                RtlFreeHeap( RtlProcessHeap(),
+                             0,
+                             FreeNtBuffer );
+            }
+            LdkSetLastNTError( STATUS_NO_MEMORY );
+            return FALSE;
+        }
+
+        RtlZeroMemory( NativeRenameInfo,
+                       NativeRenameInfoSize );
+        if (FileInformationClass == FileRenameInfoEx) {
+            RtlCopyMemory( NativeRenameInfo,
+                           &RenameInfo->Flags,
+                           sizeof(RenameInfo->Flags) );
+            NativeInformationClass = LDK_FILE_RENAME_INFORMATION_EX_CLASS;
+        } else {
+            NativeRenameInfo->ReplaceIfExists = RenameInfo->ReplaceIfExists;
+            NativeInformationClass = FileRenameInformation;
+        }
+        NativeRenameInfo->RootDirectory = RootDirectory;
+        NativeRenameInfo->FileNameLength = NativeFileName->Length;
+        RtlCopyMemory( NativeRenameInfo->FileName,
+                       NativeFileName->Buffer,
+                       NativeFileName->Length );
+
+        Status = ZwSetInformationFile( hFile,
+                                       &IoStatus,
+                                       NativeRenameInfo,
+                                       NativeRenameInfoSize,
+                                       NativeInformationClass );
+
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     NativeRenameInfo );
+        if (FreeNtBuffer != NULL) {
+            RtlFreeHeap( RtlProcessHeap(),
+                         0,
+                         FreeNtBuffer );
+        }
+
+        if (NT_SUCCESS(Status)) {
+            return TRUE;
+        }
+
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
     if (FileInformationClass == FileBasicInfo) {
         PFILE_BASIC_INFO BasicInfo;
         FILE_BASIC_INFORMATION NativeBasicInfo;
@@ -3272,9 +3425,8 @@ FindFirstFileExW (
         return INVALID_HANDLE_VALUE;
     }
 
-    if (dwAdditionalFlags & FIND_FIRST_EX_CASE_SENSITIVE) {
-        LDK_DIAGNOSTIC_BREAK();
-        LdkSetLastNTError( STATUS_NOT_IMPLEMENTED );
+    if ((dwAdditionalFlags & ~LDK_FIND_FIRST_EX_SUPPORTED_FLAGS) != 0) {
+        SetLastError( ERROR_INVALID_PARAMETER );
         return INVALID_HANDLE_VALUE;
     }
 
