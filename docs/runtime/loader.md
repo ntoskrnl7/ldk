@@ -21,8 +21,16 @@ Those registrations let loaded code resolve supported imports by name.
 ## Load path
 
 `LoadLibraryExW` handles the current image path case and computes a DLL search
-path from the current image directory followed by `PATH`, so private DLLs next
-to the driver win over same-named DLLs found in system directories.
+path before calling `LdrLoadDll`. The default path is the current image
+directory followed by `PATH`, so private DLLs next to the driver win over
+same-named DLLs found in system directories.
+
+The tested `LoadLibraryExW` search subset includes
+`LOAD_LIBRARY_SEARCH_SYSTEM32`, `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR`,
+`LOAD_LIBRARY_SEARCH_APPLICATION_DIR`, `LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`, and
+`LOAD_WITH_ALTERED_SEARCH_PATH`. When a DLL is loaded from a specific directory,
+imports discovered while loading that DLL inherit the same search context where
+applicable, which lets private dependency DLLs live beside their owner DLL.
 
 `LdrLoadDll` forwards to `LdkLoadDll`, unless loader initialization is already
 in progress. The core load path:
@@ -47,6 +55,12 @@ Repeated `LoadLibrary` / `LdrLoadDll` calls for an already loaded dynamic
 module increment the module load count and return the existing module handle.
 `DONT_RESOLVE_DLL_REFERENCES` loads the image without walking imports or calling
 the entry point, matching the limited behavior needed by LDK loader tests.
+
+`LOAD_LIBRARY_AS_DATAFILE`, `LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE`, and
+`LOAD_LIBRARY_AS_IMAGE_RESOURCE` create resource-only handles. LDK tags those
+handles internally so `FreeLibrary` and resource-oriented module filename
+queries can map them back to the loaded image, while `GetProcAddress` rejects
+them instead of treating them as executable module handles.
 
 When import resolution loads or references another dynamic module, LDK records
 that relationship as a module dependency. The dependent module keeps one
@@ -102,3 +116,9 @@ graphs, advanced side-by-side activation behavior, delay-load ownership, and
 arbitrary loader callback interactions are outside the current contract.
 Drivers that rely on complex DLL dependency trees should add workload-specific
 load/unload tests before using that pattern.
+
+The `LoadLibraryExW` flag model is also intentionally narrower than Windows:
+LDK does not implement `AddDllDirectory`, per-thread default DLL directories,
+activation contexts, signed-target enforcement, or the full safe search mode
+policy. Unsupported flag combinations fail early instead of being silently
+treated as normal loads.

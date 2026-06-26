@@ -75,12 +75,14 @@ LdkpReleaseModuleList (
 
 VOID
 LdkpUnloadDll (
-	_In_ PVOID ImageBase
+	_In_ PVOID ImageBase,
+	_In_ BOOLEAN CallEntryPoint
 	);
 
 NTSTATUS
 LdkpLoadDll (
 	_In_ PUNICODE_STRING FileName,
+	_In_opt_ PWSTR DllPath,
 	_In_ BOOLEAN ResolveImports,
 	_Inout_opt_ PLIST_ENTRY DependencyList,
 	_Outptr_ PVOID *ImageBase,
@@ -285,7 +287,9 @@ LdkpUnregisterModule (
 {
 	if (LDK_MODULE_HAS_UNREGISTRABLE(Module)) {
 		if (Module->Base) {
-			LdkpUnloadDll( Module->Base );
+			LdkpUnloadDll( Module->Base,
+						   BooleanFlagOn(Module->Flags,
+										 LDK_MODULE_FLAG_PROCESS_ATTACHED) );
 		}
 		LdkpReleaseModuleDependencies( &Module->DependencyList );
 		LdkFreeAnsiString( &Module->ModuleName );
@@ -540,11 +544,14 @@ LdkpNotImplemented (
 NTSTATUS
 LdkpResolveImportModule (
 	_In_ PCSZ ModuleName,
+	_In_opt_ PWSTR DllPath,
 	_Inout_opt_ PLIST_ENTRY DependencyList,
 	_Out_ PLDK_MODULE *Module
 	)
 {
 	NTSTATUS Status;
+	ANSI_STRING AnsiModuleName;
+	UNICODE_STRING UnicodeModuleName;
 	BOOLEAN IncrementLoadCount;
 
 	Status = LdkGetModuleByName( ModuleName,
@@ -552,19 +559,34 @@ LdkpResolveImportModule (
 	IncrementLoadCount = TRUE;
 
 	if (! NT_SUCCESS(Status)) {
-		HMODULE hModule = LoadLibraryA( ModuleName );
-		if (! hModule) {
+		PVOID DllHandle;
+
+		RtlInitAnsiString( &AnsiModuleName,
+						   ModuleName );
+		Status = LdkAnsiStringToUnicodeString( &UnicodeModuleName,
+											   &AnsiModuleName,
+											   TRUE );
+		if (! NT_SUCCESS(Status)) {
 			return Status;
 		}
 
-		Status = LdkGetModuleByBase( hModule,
+		Status = LdkLoadDll( DllPath,
+							 NULL,
+							 &UnicodeModuleName,
+							 &DllHandle );
+		LdkFreeUnicodeString( &UnicodeModuleName );
+		if (! NT_SUCCESS(Status)) {
+			return Status;
+		}
+
+		Status = LdkGetModuleByBase( DllHandle,
 									 Module );
 		if (! NT_SUCCESS(Status)) {
 			Status = LdkGetModuleByName( ModuleName,
 										 Module );
 		}
 		if (! NT_SUCCESS(Status)) {
-			LdkUnloadDll( hModule );
+			LdkUnloadDll( DllHandle );
 			return Status;
 		}
 
@@ -587,6 +609,7 @@ NTSTATUS
 LdkpBuildImportDescriptors (
 	_In_ PVOID ImageBase,
 	_In_ PIMAGE_IMPORT_DESCRIPTOR ImportDescriptors,
+	_In_opt_ PWSTR DllPath,
 	_Inout_opt_ PLIST_ENTRY DependencyList
 	)
 {
@@ -599,6 +622,7 @@ LdkpBuildImportDescriptors (
 	for (; ImportDescriptors->Name || ImportDescriptors->FirstThunk; ImportDescriptors++) {
 	
 		Status = LdkpResolveImportModule( (LPSTR)Add2Ptr(ImageBase, ImportDescriptors->Name),
+										  DllPath,
 										  DependencyList,
 										  &Module );
 		if (! NT_SUCCESS(Status)) {
@@ -643,6 +667,7 @@ NTSTATUS
 LdkpBuildBoundImportDescriptors (
 	_In_ PVOID ImageBase,
 	_In_ PIMAGE_BOUND_IMPORT_DESCRIPTOR BoundImportDescriptors,
+	_In_opt_ PWSTR DllPath,
 	_Inout_opt_ PLIST_ENTRY DependencyList
 	)
 {
@@ -659,6 +684,7 @@ LdkpBuildBoundImportDescriptors (
 		ForwarderModuleName = (PSTR)Add2Ptr(BoundImportDescriptors, BoundImportDescriptors->OffsetModuleName);
 
 		Status = LdkpResolveImportModule( ForwarderModuleName,
+										  DllPath,
 										  DependencyList,
 										  &Module );
 		if (! NT_SUCCESS(Status)) {
@@ -691,6 +717,7 @@ LdkpBuildBoundImportDescriptors (
 		}
 		Status = LdkpBuildImportDescriptors( ImageBase,
 											 ImportDescriptor,
+											 DllPath,
 											 DependencyList );
 		if (! NT_SUCCESS(Status)) {
 			return Status;
@@ -703,6 +730,7 @@ LdkpBuildBoundImportDescriptors (
 NTSTATUS
 LdkpWalkImportDescriptors (
 	_In_ PVOID ImageBase,
+	_In_opt_ PWSTR DllPath,
 	_Inout_opt_ PLIST_ENTRY DependencyList
 	)
 {
@@ -720,10 +748,12 @@ LdkpWalkImportDescriptors (
 	if (BoundImportDescriptors) {
 		return LdkpBuildBoundImportDescriptors( ImageBase,
 												BoundImportDescriptors,
+												DllPath,
 												DependencyList );
 	} else if (ImportDescriptors) {
 		return LdkpBuildImportDescriptors( ImageBase,
 										   ImportDescriptors,
+										   DllPath,
 										   DependencyList );
 	}
 	return STATUS_SUCCESS;
@@ -832,6 +862,7 @@ LdkpCallEntryPoint (
 NTSTATUS
 LdkpLoadDll (
 	_In_ PUNICODE_STRING FileName,
+	_In_opt_ PWSTR DllPath,
 	_In_ BOOLEAN ResolveImports,
 	_Inout_opt_ PLIST_ENTRY DependencyList,
 	_Outptr_ PVOID *ImageBase,
@@ -992,6 +1023,7 @@ LdkpLoadDll (
 
 		if (ResolveImports) {
 			Status = LdkpWalkImportDescriptors( Base,
+												DllPath,
 												DependencyList );
 			if (! NT_SUCCESS(Status)) {
 				leave;
@@ -1027,12 +1059,15 @@ LdkpLoadDll (
 
 VOID
 LdkpUnloadDll (
-	_In_ PVOID ImageBase
+	_In_ PVOID ImageBase,
+	_In_ BOOLEAN CallEntryPoint
 	)
 {
-	LdkpCallEntryPoint( (HINSTANCE)ImageBase,
-						DLL_PROCESS_DETACH,
-						NULL );
+	if (CallEntryPoint) {
+		LdkpCallEntryPoint( (HINSTANCE)ImageBase,
+							DLL_PROCESS_DETACH,
+							NULL );
+	}
 
 	ExFreePoolWithTag( ImageBase,
 					   TAG_DLL_POOL );
@@ -1273,15 +1308,21 @@ LdkLoadDll (
 	ANSI_STRING DllNameAnsi;
 	ULONG ImageSize;
 	BOOLEAN ResolveImports = TRUE;
+	BOOLEAN ResourceOnly = FALSE;
 	LIST_ENTRY LoadDependencyList;
 	PLDK_MODULE RegisteredModule;
 
 	PAGED_CODE();
 	InitializeListHead( &LoadDependencyList );
 
-	if (DllCharacteristics &&
-		FlagOn(*DllCharacteristics, IMAGE_FILE_EXECUTABLE_IMAGE)) {
-		ResolveImports = FALSE;
+	if (DllCharacteristics) {
+		if (FlagOn(*DllCharacteristics, LDK_LOAD_DLL_DONT_RESOLVE_IMPORTS)) {
+			ResolveImports = FALSE;
+		}
+		if (FlagOn(*DllCharacteristics, LDK_LOAD_DLL_RESOURCE_ONLY)) {
+			ResolveImports = FALSE;
+			ResourceOnly = TRUE;
+		}
 	}
 
 	DllNameAnsi.MaximumLength = (USHORT)(RtlUnicodeStringToAnsiSize( DllName ) + (USHORT)sizeof(".dll"));
@@ -1367,6 +1408,7 @@ retry:
 	}
 
 	Status = LdkpLoadDll( &NtFileName,
+						  DllPath,
 						  ResolveImports,
 						  &LoadDependencyList,
 						  DllHandle,
@@ -1384,15 +1426,19 @@ retry:
 		if (NT_SUCCESS(Status)) {
 			LdkpMoveModuleDependencies( &RegisteredModule->DependencyList,
 										&LoadDependencyList );
-			if (ResolveImports &&
-				(! LdkpCallEntryPoint( *DllHandle,
-										DLL_PROCESS_ATTACH,
-										NULL ))) {
-				LdkUnloadDll( *DllHandle );
-				RtlFreeHeap( RtlProcessHeap(),
-							 0,
-							 NtFileName.Buffer );
-				return STATUS_DLL_INIT_FAILED;
+			if ((! ResourceOnly) &&
+				ResolveImports) {
+				SetFlag( RegisteredModule->Flags,
+						 LDK_MODULE_FLAG_PROCESS_ATTACHED );
+				if (! LdkpCallEntryPoint( *DllHandle,
+										  DLL_PROCESS_ATTACH,
+										  NULL )) {
+					LdkUnloadDll( *DllHandle );
+					RtlFreeHeap( RtlProcessHeap(),
+								 0,
+								 NtFileName.Buffer );
+					return STATUS_DLL_INIT_FAILED;
+				}
 			}
 			RtlFreeHeap( RtlProcessHeap(),
 						 0,
@@ -1400,7 +1446,8 @@ retry:
 			return Status;
 		}
 		LdkpReleaseModuleDependencies( &LoadDependencyList );
-		LdkpUnloadDll( *DllHandle );
+		LdkpUnloadDll( *DllHandle,
+					   FALSE );
 	}
 	LdkpReleaseModuleDependencies( &LoadDependencyList );
 	RtlFreeHeap( RtlProcessHeap(),

@@ -51,7 +51,9 @@ The current test suite covers:
 - Keyed events.
 - Loader helpers, including name and ordinal lookup, import-by-ordinal,
   balanced load/unload reference-count behavior, and basic imported-dependency
-  unload behavior.
+  unload behavior. The loader tests also cover selected `LoadLibraryExW`
+  search flags, `DONT_RESOLVE_DLL_REFERENCES`, and datafile/resource-style
+  handles.
 - Fibers and FLS callbacks.
 - File helpers, including selected `GetFileInformationByHandleEx`,
   `SetFileInformationByHandle`, temporary-file, link, and final-path paths.

@@ -22,6 +22,68 @@ LibraryTest (
 #define PAGED_CODE()
 #endif
 
+static
+BOOL
+BuildTestDllPath (
+    _In_ LPCWSTR DllName,
+    _Out_writes_(BufferCch) LPWSTR Buffer,
+    _In_ DWORD BufferCch
+    )
+{
+    DWORD Length;
+    DWORD DirectoryLength = 0;
+    DWORD PrefixLength = 0;
+    DWORD DllNameLength = 0;
+
+    Length = GetModuleFileNameW( NULL,
+                                 Buffer,
+                                 BufferCch );
+    if (Length == 0 ||
+        Length >= BufferCch) {
+        return FALSE;
+    }
+
+    if (Buffer[0] == L'\\' &&
+        Buffer[1] == L'?' &&
+        Buffer[2] == L'?' &&
+        Buffer[3] == L'\\') {
+        PrefixLength = 4;
+    }
+
+    for (DWORD Index = Length; Index != PrefixLength; Index--) {
+        if (Buffer[Index - 1] == L'\\' ||
+            Buffer[Index - 1] == L'/') {
+            DirectoryLength = Index - 1;
+            break;
+        }
+    }
+
+    if (DirectoryLength == 0) {
+        return FALSE;
+    }
+
+    if (PrefixLength) {
+        DirectoryLength -= PrefixLength;
+        RtlMoveMemory( Buffer,
+                       Buffer + PrefixLength,
+                       (DirectoryLength + 1) * sizeof(WCHAR) );
+    }
+
+    while (DllName[DllNameLength]) {
+        DllNameLength++;
+    }
+
+    if (DirectoryLength + 1 + DllNameLength + 1 > BufferCch) {
+        return FALSE;
+    }
+
+    Buffer[DirectoryLength] = L'\\';
+    RtlCopyMemory( Buffer + DirectoryLength + 1,
+                   DllName,
+                   (DllNameLength + 1) * sizeof(WCHAR) );
+    return TRUE;
+}
+
 BOOLEAN
 LibraryTest (
     VOID
@@ -30,6 +92,7 @@ LibraryTest (
     PAGED_CODE();
 
     typedef LONG(__stdcall* TEST_FN)(LONG);
+    WCHAR DependencyOwnerPath[MAX_PATH];
 
     printf("Library Test\n");
 
@@ -202,6 +265,136 @@ LibraryTest (
                GetLastError());
        return FALSE;
     }
+    hModule = NULL;
+
+    if (LoadLibraryExW( L"DependencyOwner.dll",
+                        NULL,
+                        LOAD_LIBRARY_SEARCH_SYSTEM32 ) != NULL) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(DependencyOwner.dll, SEARCH_SYSTEM32) unexpectedly succeeded\n");
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryExW SEARCH_SYSTEM32 isolation\n");
+
+    HMODULE hDontResolve = LoadLibraryExW( L"DependencyOwner.dll",
+                                           NULL,
+                                           DONT_RESOLVE_DLL_REFERENCES );
+    if (!hDontResolve) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(DependencyOwner.dll, DONT_RESOLVE_DLL_REFERENCES) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] DONT_RESOLVE_DLL_REFERENCES loaded AutoDependency.dll ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDontResolve );
+       return FALSE;
+    }
+    if (!FreeLibrary( hDontResolve )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DependencyOwner.dll DONT_RESOLVE) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryExW DONT_RESOLVE_DLL_REFERENCES\n");
+
+    if (!BuildTestDllPath( L"DependencyOwner.dll",
+                           DependencyOwnerPath,
+                           RTL_NUMBER_OF(DependencyOwnerPath) )) {
+       fprintf(stderr,
+               "[Failed] BuildTestDllPath(DependencyOwner.dll) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    HMODULE hSearchLoadDir = LoadLibraryExW( DependencyOwnerPath,
+                                             NULL,
+                                             LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR );
+    if (!hSearchLoadDir) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(DependencyOwner.dll, SEARCH_DLL_LOAD_DIR) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    dependencyOwnerFn = (TEST_FN)GetProcAddress( hSearchLoadDir, "DependencyOwnerFunction" );
+    if (!dependencyOwnerFn ||
+        dependencyOwnerFn(10) != 34) {
+       fprintf(stderr,
+               "[Failed] SEARCH_DLL_LOAD_DIR DependencyOwnerFunction ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hSearchLoadDir );
+       return FALSE;
+    }
+    if (!FreeLibrary( hSearchLoadDir )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DependencyOwner.dll SEARCH_DLL_LOAD_DIR) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll stayed loaded after SEARCH_DLL_LOAD_DIR owner unload ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryExW SEARCH_DLL_LOAD_DIR\n");
+
+    HMODULE hAltered = LoadLibraryExW( DependencyOwnerPath,
+                                       NULL,
+                                       LOAD_WITH_ALTERED_SEARCH_PATH );
+    if (!hAltered) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(DependencyOwner.dll, LOAD_WITH_ALTERED_SEARCH_PATH) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    dependencyOwnerFn = (TEST_FN)GetProcAddress( hAltered, "DependencyOwnerFunction" );
+    if (!dependencyOwnerFn ||
+        dependencyOwnerFn(10) != 34) {
+       fprintf(stderr,
+               "[Failed] LOAD_WITH_ALTERED_SEARCH_PATH DependencyOwnerFunction ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hAltered );
+       return FALSE;
+    }
+    if (!FreeLibrary( hAltered )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DependencyOwner.dll ALTERED_SEARCH_PATH) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll stayed loaded after ALTERED_SEARCH_PATH owner unload ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryExW LOAD_WITH_ALTERED_SEARCH_PATH\n");
+
+    HMODULE hDataFile = LoadLibraryExW( L"Test.dll",
+                                        NULL,
+                                        LOAD_LIBRARY_AS_DATAFILE );
+    if (!hDataFile) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(Test.dll, LOAD_LIBRARY_AS_DATAFILE) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (GetProcAddress( hDataFile, "TestFunction" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] GetProcAddress unexpectedly succeeded for datafile handle\n");
+       FreeLibrary( hDataFile );
+       return FALSE;
+    }
+    if (!FreeLibrary( hDataFile )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(Test.dll datafile) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryExW LOAD_LIBRARY_AS_DATAFILE\n");
 
     printf("[Success] Library Test\n\n");
     return TRUE;
