@@ -207,6 +207,57 @@ FileTest (
         rv = FALSE;
         goto DeleteTest;
     }
+    printf("Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n");
+    FILE_COMPRESSION_INFO CompressionInfo;
+    RtlZeroMemory( &CompressionInfo,
+                   sizeof(CompressionInfo) );
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileCompressionInfo,
+                                        &CompressionInfo,
+                                        sizeof(CompressionInfo) )) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileCompressionInfo) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    if (CompressionInfo.CompressedFileSize.QuadPart < 0) {
+        fprintf(stderr,
+                "[Failed] FileCompressionInfo returned negative compressed size\n");
+        CloseHandle( hFile );
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FILE_ALIGNMENT_INFO AlignmentInfo;
+    RtlZeroMemory( &AlignmentInfo,
+                   sizeof(AlignmentInfo) );
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileAlignmentInfo,
+                                        &AlignmentInfo,
+                                        sizeof(AlignmentInfo) )) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileAlignmentInfo) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    if ((AlignmentInfo.AlignmentRequirement &
+         (AlignmentInfo.AlignmentRequirement + 1)) != 0) {
+        fprintf(stderr,
+                "[Failed] FileAlignmentInfo returned unexpected alignment mask = %lu\n",
+                AlignmentInfo.AlignmentRequirement);
+        CloseHandle( hFile );
+        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
     CloseHandle( hFile );
     if (!rv || HandleInfo.nNumberOfLinks < 2) {
         fprintf(stderr,
