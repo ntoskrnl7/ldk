@@ -100,8 +100,8 @@ find_package(ldk CONFIG REQUIRED PATHS "path/to/ldk-0.7.5" NO_DEFAULT_PATH)
 ldk_add_driver(MyDriver main.c)
 ```
 
-The prebuilt package contains `Ldk.lib` for x86/x64 Debug and Release builds,
-plus headers, docs, native MSBuild imports, and CMake helpers.
+The prebuilt package contains `Ldk.lib` for x86, x64, ARM, and ARM64 Debug and
+Release builds, plus headers, docs, native MSBuild imports, and CMake helpers.
 
 ### CMake / CPM
 
@@ -225,6 +225,8 @@ The helper script wraps the same flow:
 ```bat
 build.bat . x64 Release
 build.bat . x86 Release
+build.bat . ARM Release
+build.bat . ARM64 Release
 ```
 
 Release libraries are written under:
@@ -244,16 +246,16 @@ cd test
 
 The build output includes `LdkTest.sys`. Loading and unloading the driver must
 be done manually in an appropriate Windows driver test environment. GitHub
-Actions verifies the x64 test driver build, but it does not load kernel
-drivers.
+Actions verifies x64 and ARM64 test driver builds, plus x86 and ARM package
+layout checks, but it does not load kernel drivers.
 
 Additional implementation and test notes live under [`docs/`](docs/).
 
 ## NuGet and Releases
 
-The `Package` GitHub Actions workflow builds prebuilt x86/x64 Debug/Release
-libraries, packs the `ldk` NuGet package, validates the package with a minimal
-WDK consumer driver, and prepares GitHub Release assets.
+The `Package` GitHub Actions workflow builds prebuilt x86/x64/ARM/ARM64
+Debug/Release libraries, packs the `ldk` NuGet package, validates the package
+with a minimal WDK consumer driver, and prepares GitHub Release assets.
 
 The `Release` workflow is the publishing entry point. It updates
 `include/Ldk/internal/version.h`, creates a `v<version>` tag, then dispatches
@@ -263,8 +265,8 @@ requires the repository variable `NUGET_TRUSTED_PUBLISHING_USER`.
 ## Releases
 
 Tagged releases are built by GitHub Actions. Pushing a tag such as `v0.7.6`
-builds x86 and x64 package artifacts and can attach the generated NuGet package
-and prebuilt ZIP bundle to the GitHub Release.
+builds x86, x64, ARM, and ARM64 package artifacts and can attach the generated
+NuGet package and prebuilt ZIP bundle to the GitHub Release.
 
 The normal publishing path is to run the `Release` workflow manually with the
 target version. It creates the version commit and tag, then dispatches the

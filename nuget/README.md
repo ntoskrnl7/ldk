@@ -69,7 +69,7 @@ driver test environment.
 
 Prebuilt libraries currently target:
 
-- `x86` and `x64`
+- `x86`, `x64`, `ARM`, and `ARM64`
 - `Debug` and `Release`
 - Visual Studio 2022 with Windows SDK/WDK `10.0.22621.0`
 
@@ -96,8 +96,8 @@ its own entry point and calls `LdkInitialize` / `LdkTerminate` manually.
 
 ## CMake users
 
-The NuGet package is primarily for MSBuild. For CMake-based integrations, using
-the repository through CPM is still the most direct source-based path:
+The NuGet package is primarily for MSBuild. For CMake-based integrations, a
+driver project can consume LDK directly from GitHub through CPM:
 
 ```cmake
 CPMAddPackage("gh:ntoskrnl7/ldk@<version>")

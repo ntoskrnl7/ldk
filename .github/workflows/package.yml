@@ -93,7 +93,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86, x64]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
 
     steps:
@@ -192,6 +192,26 @@ jobs:
           name: ldk-nuget-libs-x64-Release
           path: artifacts/nuget-staging/lib/native/x64/Release
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-ARM-Debug
+          path: artifacts/nuget-staging/lib/native/ARM/Debug
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-ARM-Release
+          path: artifacts/nuget-staging/lib/native/ARM/Release
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-ARM64-Debug
+          path: artifacts/nuget-staging/lib/native/ARM64/Debug
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: ldk-nuget-libs-ARM64-Release
+          path: artifacts/nuget-staging/lib/native/ARM64/Release
+
       - name: Pack
         shell: pwsh
         run: ./scripts/nuget/Pack-LdkNuGet.ps1 -Version '${{ steps.version.outputs.package_version }}'
@@ -219,7 +239,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
+        arch: [x64, ARM64]
         config: [Debug, Release]
 
     steps:
@@ -249,7 +269,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86]
+        arch: [x86, ARM]
         config: [Debug, Release]
 
     steps:
@@ -279,7 +299,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
+        arch: [x64, ARM64]
         config: [Debug, Release]
 
     steps:
@@ -307,7 +327,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86]
+        arch: [x86, ARM]
         config: [Debug, Release]
 
     steps:
@@ -412,7 +432,7 @@ jobs:
               "LDK $version release assets."
               ""
               "- ldk.$version.nupkg: offline NuGet package"
-              "- ldk-$version-prebuilt.zip: headers, docs, CMake helpers/package config, native MSBuild imports, and prebuilt x86/x64 Debug/Release libraries"
+              "- ldk-$version-prebuilt.zip: headers, docs, CMake helpers/package config, native MSBuild imports, and prebuilt x86/x64/ARM/ARM64 Debug/Release libraries"
               "- ldk-$version-SHA256SUMS.txt: SHA-256 checksums"
             ) -join [Environment]::NewLine
             & gh release create $tagName @assets --repo $repo --target '${{ github.sha }}' --title "LDK $version" --notes $notes

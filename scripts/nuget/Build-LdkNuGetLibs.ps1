@@ -1,6 +1,6 @@
 param(
-  [ValidateSet('x86', 'x64')]
-  [string[]] $Architecture = @('x86', 'x64'),
+  [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
+  [string[]] $Architecture = @('x86', 'x64', 'ARM', 'ARM64'),
 
   [ValidateSet('Debug', 'Release')]
   [string[]] $Configuration = @('Debug', 'Release'),
@@ -21,11 +21,20 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
 $platformByArchitecture = @{
   x86 = 'Win32'
   x64 = 'x64'
+  ARM = 'ARM'
+  ARM64 = 'ARM64'
 }
 
 foreach ($arch in $Architecture) {
   foreach ($config in $Configuration) {
     $platform = $platformByArchitecture[$arch]
+    if ($arch -eq 'ARM') {
+      # Windows SDK 10.0.26100.0 no longer supports 32-bit ARM. Pin the
+      # Visual Studio generator to the older SDK while keeping ARM64 on the
+      # normal platform form.
+      $platform = "$platform,version=$WindowsSdkVersion"
+    }
+
     $buildDir = Join-Path $repoRoot "artifacts\build\ldk_${arch}_$config"
     $libOutputDir = Join-Path $OutputDirectory "lib\native\$arch\$config"
 
@@ -40,6 +49,7 @@ foreach ($arch in $Architecture) {
       '-T', 'host=x64',
       "-DCMAKE_SYSTEM_VERSION=$WindowsSdkVersion",
       "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$WindowsSdkVersion",
+      "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$WindowsSdkVersion",
       '-DCMAKE_C_FLAGS=/MP',
       '-DCMAKE_CXX_FLAGS=/MP'
     )

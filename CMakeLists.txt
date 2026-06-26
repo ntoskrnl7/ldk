@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
+if(POLICY CMP0149)
+    cmake_policy(SET CMP0149 OLD)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 include(pkg-utils)
 
@@ -18,7 +22,14 @@ else()
 endif()
 
 include(CPM)
+
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
+if(CMAKE_VS_PLATFORM_NAME AND CMAKE_GENERATOR_PLATFORM MATCHES ",")
+    # FindWDK derives library names from CMAKE_GENERATOR_PLATFORM and does not
+    # understand Visual Studio's ",version=..." platform option.
+    set(CMAKE_GENERATOR_PLATFORM "${CMAKE_VS_PLATFORM_NAME}")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
@@ -47,9 +58,18 @@ if (LDK_USE_RTL_RAISE_EXCEPTION)
     target_link_options(Ldk PUBLIC "/FORCE:MULTIPLE")
 endif()
 
-string( TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFROM_SHORT_NAME )
+set(LDK_PLATFORM_NAME "${CMAKE_VS_PLATFORM_NAME}")
+if("${LDK_PLATFORM_NAME}" STREQUAL "")
+    set(LDK_PLATFORM_NAME "${CMAKE_GENERATOR_PLATFORM}")
+endif()
+
+string( TOLOWER "${LDK_PLATFORM_NAME}" PLATFROM_SHORT_NAME )
 if( PLATFROM_SHORT_NAME STREQUAL "win32" )
     set(PLATFROM_SHORT_NAME "x86")
+elseif( PLATFROM_SHORT_NAME STREQUAL "arm" )
+    set(PLATFROM_SHORT_NAME "ARM")
+elseif( PLATFROM_SHORT_NAME STREQUAL "arm64" )
+    set(PLATFROM_SHORT_NAME "ARM64")
 endif()
 
 set_target_properties(Ldk PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/lib/${PLATFROM_SHORT_NAME})
@@ -65,8 +85,12 @@ target_link_options(Ldk PUBLIC "$<$<CONFIG:Release>:/DEBUG>")
 #
 # set library output path (release only)
 #
-string(TOLOWER "${CMAKE_VS_PLATFORM_NAME}" PLATFROM_SHORT_NAME)
+string(TOLOWER "${LDK_PLATFORM_NAME}" PLATFROM_SHORT_NAME)
 if(PLATFROM_SHORT_NAME STREQUAL "win32")
     set(PLATFROM_SHORT_NAME "x86")
+elseif(PLATFROM_SHORT_NAME STREQUAL "arm")
+    set(PLATFROM_SHORT_NAME "ARM")
+elseif(PLATFROM_SHORT_NAME STREQUAL "arm64")
+    set(PLATFROM_SHORT_NAME "ARM64")
 endif()
 set_target_properties(Ldk PROPERTIES ARCHIVE_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/lib/${PLATFROM_SHORT_NAME})

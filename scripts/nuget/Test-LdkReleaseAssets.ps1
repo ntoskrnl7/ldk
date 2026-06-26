@@ -4,7 +4,7 @@ param(
   [Parameter(Mandatory = $true)]
   [string] $Version,
 
-  [ValidateSet('x86', 'x64')]
+  [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
   [string] $Architecture = 'x64',
 
   [ValidateSet('Debug', 'Release')]
@@ -45,8 +45,15 @@ if (-not (Test-Path $prebuiltZipPath)) {
 $platformByArchitecture = @{
   x86 = 'Win32'
   x64 = 'x64'
+  ARM = 'ARM'
+  ARM64 = 'ARM64'
 }
 $platform = $platformByArchitecture[$Architecture]
+if ($Architecture -eq 'ARM') {
+  # Windows SDK 10.0.26100.0 no longer supports 32-bit ARM. Pin the Visual
+  # Studio generator to the older SDK for ARM consumer builds.
+  $platform = "$platform,version=$WindowsSdkVersion"
+}
 
 Remove-Item -Recurse -Force -Path $WorkDirectory -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $WorkDirectory | Out-Null
@@ -94,6 +101,10 @@ $cmakeBundleRoot = $bundleRoot.Replace('\', '/')
 $cmakeLists = @"
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
+if(POLICY CMP0149)
+  cmake_policy(SET CMP0149 OLD)
+endif()
+
 project(ldk_release_asset_smoke LANGUAGES C)
 
 find_package(ldk CONFIG REQUIRED PATHS "$cmakeBundleRoot" NO_DEFAULT_PATH)
@@ -138,7 +149,8 @@ $configureArgs = @(
   '-T', 'host=x64',
   "-DLDK_WDK_VERSION=$WindowsSdkVersion",
   "-DCMAKE_SYSTEM_VERSION=$WindowsSdkVersion",
-  "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$WindowsSdkVersion"
+  "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$WindowsSdkVersion",
+  "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$WindowsSdkVersion"
 )
 
 Write-Host "Configuring prebuilt release asset consumer for $Architecture $Configuration"

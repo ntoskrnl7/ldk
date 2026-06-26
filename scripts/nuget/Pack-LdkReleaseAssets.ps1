@@ -19,7 +19,7 @@ function Compress-DirectoryWithRetry {
 
   for ($attempt = 1; $attempt -le 5; $attempt++) {
     try {
-      Compress-Archive -Path $SourceDirectory -DestinationPath $DestinationPath -CompressionLevel Optimal
+      Compress-Archive -Path $SourceDirectory -DestinationPath $DestinationPath -CompressionLevel Optimal -Force
       return
     } catch {
       if ($attempt -eq 5) {
@@ -61,7 +61,7 @@ if (-not (Test-Path $packagePath)) {
   throw "NuGet package was not found: $packagePath. Run scripts\nuget\Pack-LdkNuGet.ps1 first."
 }
 
-foreach ($arch in @('x86', 'x64')) {
+foreach ($arch in @('x86', 'x64', 'ARM', 'ARM64')) {
   foreach ($config in @('Debug', 'Release')) {
     $requiredPath = Join-Path $stagingDirectory "lib\native\$arch\$config\Ldk.lib"
     if (-not (Test-Path $requiredPath)) {
@@ -125,7 +125,7 @@ Contents:
 - cmake/: CMake helpers
 - share/ldk/cmake/: CMake package config for find_package(ldk CONFIG)
 - build/native/: native MSBuild props and targets from the NuGet package
-- lib/native/: prebuilt Ldk.lib for x86 and x64, Debug and Release
+- lib/native/: prebuilt Ldk.lib for x86, x64, ARM, and ARM64, Debug and Release
 - docs/: repository documentation
 
 The prebuilt driver libraries target Visual Studio 2022 and Windows SDK/WDK

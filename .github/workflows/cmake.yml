@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86, x64]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
 
     steps:
@@ -29,7 +29,7 @@ jobs:
         run: build.bat . ${{ matrix.arch }} ${{ matrix.config }}
 
       - name: Build test driver
-        if: ${{ matrix.arch == 'x64' }}
+        if: ${{ matrix.arch == 'x64' || matrix.arch == 'ARM64' }}
         shell: cmd
         working-directory: test
         run: ..\build.bat . ${{ matrix.arch }} ${{ matrix.config }}

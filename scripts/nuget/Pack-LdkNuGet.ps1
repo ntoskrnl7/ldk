@@ -21,7 +21,7 @@ $manifest = Join-Path $repoRoot 'nuget\ldk.nuspec'
 $stagingDirectory = Join-Path $repoRoot 'artifacts\nuget-staging'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
-foreach ($arch in @('x86', 'x64')) {
+foreach ($arch in @('x86', 'x64', 'ARM', 'ARM64')) {
   foreach ($config in @('Debug', 'Release')) {
     $requiredPath = "lib\native\$arch\$config\Ldk.lib"
     $fullPath = Join-Path $stagingDirectory $requiredPath

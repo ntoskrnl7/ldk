@@ -47,6 +47,12 @@ else()
 endif()
 
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
+if(CMAKE_VS_PLATFORM_NAME AND CMAKE_GENERATOR_PLATFORM MATCHES ",")
+    # FindWDK derives library names from CMAKE_GENERATOR_PLATFORM and does not
+    # understand Visual Studio's ",version=..." platform option.
+    set(CMAKE_GENERATOR_PLATFORM "${CMAKE_VS_PLATFORM_NAME}")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
@@ -121,12 +127,23 @@ if(NOT TARGET WDK::NTOSKRNL)
 endif()
 
 function(ldk_get_prebuilt_arch _out_arch)
-    if("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
+    set(_ldk_platform_name "${CMAKE_VS_PLATFORM_NAME}")
+    if("${_ldk_platform_name}" STREQUAL "")
+        set(_ldk_platform_name "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+
+    string(TOLOWER "${_ldk_platform_name}" _ldk_platform_name_lower)
+
+    if("${_ldk_platform_name_lower}" STREQUAL "x64")
         set(_arch x64)
-    elseif("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "Win32")
+    elseif("${_ldk_platform_name_lower}" STREQUAL "win32")
         set(_arch x86)
+    elseif("${_ldk_platform_name_lower}" STREQUAL "arm")
+        set(_arch ARM)
+    elseif("${_ldk_platform_name_lower}" STREQUAL "arm64")
+        set(_arch ARM64)
     else()
-        message(FATAL_ERROR "Unsupported LDK prebuilt platform: ${CMAKE_VS_PLATFORM_NAME}")
+        message(FATAL_ERROR "Unsupported LDK prebuilt platform: ${_ldk_platform_name}")
     endif()
 
     set(${_out_arch} "${_arch}" PARENT_SCOPE)
