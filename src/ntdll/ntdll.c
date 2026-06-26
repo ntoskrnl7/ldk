@@ -117,25 +117,6 @@ LDK_MODULE LdkpNtdllModule = {
 };
 
 
-
-VOID
-RtlpInitializeKeyedEvent(
-    VOID
-    );
-
-VOID
-RtlpCloseKeyedEvent(
-    VOID
-    );
-
-VOID
-NTAPI
-RtlpInitDeferedCriticalSection(
-    VOID
-    );
-
-extern LARGE_INTEGER RtlpTimeout;
-
 VOID
 NTAPI
 RtlpDeleteDeferedCriticalSection(
@@ -205,10 +186,6 @@ LdkpNtdllInitialize (
         return Status;
     }
 
-    RtlpInitDeferedCriticalSection();
-    RtlpTimeout = NtCurrentPeb()->CriticalSectionTimeout;
-
-    RtlpInitializeKeyedEvent();
     return STATUS_SUCCESS;
 }
 
@@ -218,8 +195,6 @@ LdkpNtdllTerminate(
     )
 {
     LdkpTerminateCurDir();
-
-    RtlpCloseKeyedEvent();
 
     RtlpDeleteDeferedCriticalSection();
 

@@ -49,8 +49,6 @@ LdkpWakeAllAlertByThreadIdWaiters (
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeWaitOnAddressList)
-#pragma alloc_text(PAGE, LdkpTerminateWaitOnAddressList)
-#pragma alloc_text(PAGE, RtlWaitOnAddress)
 #pragma alloc_text(PAGE, RtlWakeAddressSingle)
 #pragma alloc_text(PAGE, RtlWakeAddressAll)
 #endif

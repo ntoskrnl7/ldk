@@ -28,7 +28,6 @@ LdkpInvokeFlsCallback (
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeTebMap)
-#pragma alloc_text(PAGE, LdkpInvokeFlsCallback)
 #endif
 
 

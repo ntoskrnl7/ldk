@@ -77,11 +77,7 @@ LdkpClearPendingAlertByThreadIdList (
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeAlertByThreadIdList)
-#pragma alloc_text(PAGE, LdkpTerminateAlertByThreadIdList)
 #pragma alloc_text(PAGE, LdkpWakeAllAlertByThreadIdWaiters)
-#pragma alloc_text(PAGE, LdkpClearPendingAlertByThreadIdList)
-#pragma alloc_text(PAGE, NtAlertThreadByThreadId)
-#pragma alloc_text(PAGE, NtWaitForAlertByThreadId)
 #endif
 
 

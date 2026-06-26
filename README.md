@@ -219,7 +219,5 @@ msvc/              Visual Studio solution and project files
 ## Notes
 
 - The API surface is intentionally incomplete.
-- Some implementation code is derived from ReactOS and should eventually be
-  replaced or audited case by case.
 - Treat DLL loading in kernel space as a last-resort technique, not as a normal
   driver architecture.

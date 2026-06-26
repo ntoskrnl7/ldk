@@ -37,7 +37,7 @@ Status guide:
 | Area | Representative APIs | Status | Notes |
 | --- | --- | --- | --- |
 | Loader | `LdrLoadDll`, `LdrUnloadDll`, `LdrGetProcedureAddress`, `LdrGetDllHandle` | Experimental | Wraps the LDK loader and module list. |
-| Synchronization | `RtlInitializeCriticalSection`, `RtlEnterCriticalSection`, `RtlLeaveCriticalSection`, condition-variable RTL APIs, SRW helpers | Partial | ReactOS-derived portions should be audited case by case. |
+| Synchronization | `RtlInitializeCriticalSection`, `RtlEnterCriticalSection`, `RtlLeaveCriticalSection`, condition-variable RTL APIs, SRW helpers | Partial | Implemented in LDK over kernel wait primitives and wait-on-address helpers. |
 | Wait-on-address | `RtlWaitOnAddress`, `RtlWakeAddressSingle`, `RtlWakeAddressAll` | Partial | Uses LDK alert-by-thread-id primitives internally. |
 | Native alert wait | `NtAlertThreadByThreadId`, `NtWaitForAlertByThreadId`, `Zw*` aliases | Partial | Pending alerts are keyed by the target `PETHREAD` object to avoid stale thread-id reuse. |
 | Keyed events | `NtCreateKeyedEvent`, `NtOpenKeyedEvent`, `NtWaitForKeyedEvent`, `NtReleaseKeyedEvent` | Partial | Implemented and tested, but currently not listed in the NTDLL pseudo-module registration table. |
