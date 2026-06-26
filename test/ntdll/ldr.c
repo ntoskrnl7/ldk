@@ -1,4 +1,5 @@
 ﻿#if _KERNEL_MODE
+#include <Ldk/Windows.h>
 #include <Ldk/ntdll.h>
 
 BOOLEAN
@@ -9,8 +10,15 @@ LdrTest (
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LdrTest)
 #endif
+
+#define stdout DPFLTR_INFO_LEVEL
+#define stderr DPFLTR_ERROR_LEVEL
+#define fprintf(_f_, ...)   (DbgPrintEx(DPFLTR_IHVDRIVER_ID, _f_, __VA_ARGS__))
+#define printf(...)         (fprintf(stdout, __VA_ARGS__))
+
 #else
 #include <Windows.h>
+#include <stdio.h>
 
 EXTERN_C_START
 
@@ -142,7 +150,6 @@ EXTERN_C_END
 
 #pragma comment(lib, "ntdll.lib")
 
-#define DbgPrint        printf
 #define PAGED_CODE()
 #endif
 
@@ -153,32 +160,191 @@ LdrTest (
 {
     PAGED_CODE();
 
-    // //
-    // // Create Test.dll with an exported TestFunction before enabling this block.
-    // //
+    typedef LONG(__stdcall* TEST_FN)(LONG);
 
-    // typedef LONG(__stdcall* TEST_FN)(LONG);
+    WCHAR DllPath[MAX_PATH];
+    DWORD Length;
+    NTSTATUS Status;
+    BOOLEAN Result = FALSE;
+    UNICODE_STRING DllName = RTL_CONSTANT_STRING(L"Test.dll");
+    UNICODE_STRING OrdinalImportName = RTL_CONSTANT_STRING(L"OrdinalImport.dll");
+    ANSI_STRING ProcName = RTL_CONSTANT_STRING("TestFunction");
+    ANSI_STRING OrdinalImportProcName = RTL_CONSTANT_STRING("TestOrdinalImportFunction");
+    PVOID DllHandle = NULL;
+    PVOID DllHandle2 = NULL;
+    PVOID LookupHandle = NULL;
+    PVOID OrdinalImportHandle = NULL;
+    TEST_FN TestFn = NULL;
+    TEST_FN OrdinalFn = NULL;
+    TEST_FN OrdinalImportFn = NULL;
 
-    // NTSTATUS Status;
-    // UNICODE_STRING dllName = RTL_CONSTANT_STRING(L"Test.dll");
-    // PVOID dllHandle;
-    // Status = LdrLoadDll(NULL, NULL, &dllName, &dllHandle);
-    // if (! NT_SUCCESS(Status)) {
-    //     return FALSE;
-    // }
+    printf("Ldr Test\n");
 
-    // ANSI_STRING procName = RTL_CONSTANT_STRING("TestFunction");
-    // TEST_FN testFn;
-    // Status = LdrGetProcedureAddress(dllHandle, &procName, 0, (PVOID*)&testFn);
-    // if (! NT_SUCCESS(Status)) {
-    //     LdrUnloadDll(dllHandle);
-    //     return FALSE;
-    // }
-    // if (testFn(10) != 10) {
-    //     LdrUnloadDll(dllHandle);
-    //     return FALSE;
-    // }
-    // return NT_SUCCESS(LdrUnloadDll(dllHandle));
+    Length = GetModuleFileNameW( NULL,
+                                 DllPath,
+                                 RTL_NUMBER_OF(DllPath) );
+    if (Length == 0 ||
+        Length >= RTL_NUMBER_OF(DllPath)) {
+        printf("[Failed] LdrTest GetModuleFileNameW ErrorCode = %lu\n",
+               GetLastError());
+        return FALSE;
+    }
 
-    return TRUE;
+    for (DWORD Index = Length; Index != 0; Index--) {
+        if (DllPath[Index - 1] == L'\\' ||
+            DllPath[Index - 1] == L'/') {
+            DllPath[Index - 1] = UNICODE_NULL;
+            break;
+        }
+    }
+
+    if (DllPath[0] == L'\\' &&
+        DllPath[1] == L'?' &&
+        DllPath[2] == L'?' &&
+        DllPath[3] == L'\\') {
+        SIZE_T CharacterCount = wcslen( DllPath + 4 ) + 1;
+        RtlMoveMemory( DllPath,
+                       DllPath + 4,
+                       CharacterCount * sizeof(WCHAR) );
+    }
+
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &DllName,
+                         &DllHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrLoadDll(Test.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &DllName,
+                         &DllHandle2 );
+    if (! NT_SUCCESS(Status) ||
+        DllHandle2 != DllHandle) {
+        printf("[Failed] LdrLoadDll(Test.dll) refcount Status = 0x%08x Handle = %p Handle2 = %p\n",
+               Status,
+               DllHandle,
+               DllHandle2);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( DllHandle,
+                                     &ProcName,
+                                     0,
+                                     (PVOID*)&TestFn );
+    if (! NT_SUCCESS(Status) ||
+        TestFn(10) != 10) {
+        printf("[Failed] LdrGetProcedureAddress(TestFunction) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( DllHandle,
+                                     NULL,
+                                     7,
+                                     (PVOID*)&OrdinalFn );
+    if (! NT_SUCCESS(Status) ||
+        OrdinalFn(10) != 17) {
+        printf("[Failed] LdrGetProcedureAddress(Test.dll, ordinal 7) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &DllName,
+                              &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrGetDllHandle(Test.dll) Status = 0x%08x Handle = %p Lookup = %p\n",
+               Status,
+               DllHandle,
+               LookupHandle);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( DllHandle2 );
+    DllHandle2 = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] first LdrUnloadDll(Test.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &DllName,
+                              &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrLoadDll refcount did not keep Test.dll loaded Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &OrdinalImportName,
+                         &OrdinalImportHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrLoadDll(OrdinalImport.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( OrdinalImportHandle,
+                                     &OrdinalImportProcName,
+                                     0,
+                                     (PVOID*)&OrdinalImportFn );
+    if (! NT_SUCCESS(Status) ||
+        OrdinalImportFn(10) != 17) {
+        printf("[Failed] LdrGetProcedureAddress(TestOrdinalImportFunction) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( OrdinalImportHandle );
+    OrdinalImportHandle = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(OrdinalImport.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( DllHandle );
+    DllHandle = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] second LdrUnloadDll(Test.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &DllName,
+                              &LookupHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] Test.dll is still loaded after balanced LdrUnloadDll calls\n");
+        goto Cleanup;
+    }
+
+    printf("[Success] Ldr Test\n\n");
+    Result = TRUE;
+
+Cleanup:
+    if (OrdinalImportHandle != NULL) {
+        LdrUnloadDll( OrdinalImportHandle );
+    }
+    if (DllHandle2 != NULL) {
+        LdrUnloadDll( DllHandle2 );
+    }
+    if (DllHandle != NULL) {
+        LdrUnloadDll( DllHandle );
+    }
+    return Result;
 }

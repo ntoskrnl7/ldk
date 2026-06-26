@@ -48,8 +48,9 @@ stored in the LDK process parameters and guarded with the PEB lock where needed.
 ## DLL search path
 
 The loader uses process-parameter path state when loading DLLs. `LoadLibraryExW`
-computes a DLL path from `PATH` and the current image directory before calling
-`LdrLoadDll`.
+computes a DLL path from the current image directory followed by `PATH` before
+calling `LdrLoadDll`. This keeps private DLLs beside the driver ahead of
+same-named DLLs in system directories.
 
 `LdkLoadDll` ultimately uses `RtlDosSearchPath_U` and DOS-to-NT path conversion
 before opening the target file.

@@ -30,6 +30,8 @@ add_executable(LdkWin32ApiTest
 )
 
 add_library(Test SHARED ../dll.c)
+add_library(OrdinalImport SHARED ../ordinalimport.c)
+target_link_libraries(OrdinalImport PRIVATE Test)
 
 target_compile_definitions(LdkWin32ApiTest PRIVATE
     WINVER=0x0A00
@@ -54,7 +56,7 @@ target_link_libraries(LdkWin32ApiTest PRIVATE
     Synchronization
 )
 
-foreach(target LdkWin32ApiTest Test)
+foreach(target LdkWin32ApiTest Test OrdinalImport)
     set_target_properties(${target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
@@ -64,4 +66,4 @@ foreach(target LdkWin32ApiTest Test)
     )
 endforeach()
 
-add_dependencies(LdkWin32ApiTest Test)
+add_dependencies(LdkWin32ApiTest Test OrdinalImport)

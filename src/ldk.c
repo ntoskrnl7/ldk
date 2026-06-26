@@ -73,6 +73,14 @@ LdkpUnloadDll (
 	_In_ PVOID ImageBase
 	);
 
+NTSTATUS
+LdkpLoadDll (
+	_In_ PUNICODE_STRING FileName,
+	_In_ BOOLEAN ResolveImports,
+	_Outptr_ PVOID *ImageBase,
+	_Out_opt_ PULONG ImageSize
+	);
+
 VOID
 LdkpUnregisterModule (
 	_In_ PLDK_MODULE Module
@@ -169,15 +177,22 @@ LdkTerminate (
 
 	SetFlag(LdkGlobalFlags, LDK_SHUTDOWN_IN_PROGRESS);
 
+	LIST_ENTRY UnloadList;
+	InitializeListHead( &UnloadList );
+
 	LdkpAcquireModuleListExclusive();
-	PLIST_ENTRY Entry = RemoveHeadList( &LdkCurrentPeb()->ModuleListHead );
-	PLDK_MODULE Module;
-	while (Entry != &LdkCurrentPeb()->ModuleListHead) {
-		Module = CONTAINING_RECORD(Entry, LDK_MODULE, ActiveLinks);
-		Entry = RemoveHeadList( &LdkCurrentPeb()->ModuleListHead );
-		LdkpUnregisterModule( Module );
+	while (! IsListEmpty(&LdkCurrentPeb()->ModuleListHead)) {
+		PLIST_ENTRY Entry = RemoveHeadList( &LdkCurrentPeb()->ModuleListHead );
+		InsertTailList( &UnloadList,
+						Entry );
 	}
 	LdkpReleaseModuleList();
+
+	while (! IsListEmpty(&UnloadList)) {
+		PLIST_ENTRY Entry = RemoveHeadList( &UnloadList );
+		PLDK_MODULE Module = CONTAINING_RECORD(Entry, LDK_MODULE, ActiveLinks);
+		LdkpUnregisterModule( Module );
+	}
 
 	LdkpKernel32Terminate();
 	LdkpNtdllTerminate();
@@ -232,6 +247,8 @@ LdkRegisterModule (
 	NewModule->Base = ImageBase;
 	NewModule->Size = ImageSize;
 	NewModule->FunctionTable = NULL;
+	NewModule->LoadCount = 1;
+	NewModule->Flags = 0;
 	
 	LdkpAcquireModuleListExclusive();
 	InsertTailList( &LdkCurrentPeb()->ModuleListHead,
@@ -258,6 +275,30 @@ LdkpUnregisterModule (
 		LdkFreeAnsiString( &Module->FullPathName );
 		ExFreeToNPagedLookasideList( &LdkCurrentPeb()->ModuleListLookaside,
 									 Module );
+	}
+}
+
+FORCEINLINE
+VOID
+LdkpReferenceModuleLocked (
+	_In_ PLDK_MODULE Module,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount
+	)
+{
+	if (! LDK_MODULE_HAS_UNREGISTRABLE(Module)) {
+		return;
+	}
+
+	if (Pin) {
+		SetFlag( Module->Flags,
+				 LDK_MODULE_FLAG_PINNED );
+	}
+
+	if (IncrementLoadCount &&
+		(! FlagOn(Module->Flags, LDK_MODULE_FLAG_PINNED)) &&
+		Module->LoadCount < MAXLONG) {
+		Module->LoadCount++;
 	}
 }
 
@@ -399,7 +440,7 @@ LdkpBuildImportDescriptors (
 	PIMAGE_IMPORT_BY_NAME ImportByName;
 	PLDK_MODULE Module;
 
-	for (; ImportDescriptors->Characteristics; ImportDescriptors++) {
+	for (; ImportDescriptors->Name || ImportDescriptors->FirstThunk; ImportDescriptors++) {
 	
 		Status = LdkGetModuleByName( (LPSTR)Add2Ptr(ImageBase, ImportDescriptors->Name),
 									  &Module );
@@ -415,15 +456,23 @@ LdkpBuildImportDescriptors (
 			return Status;
 		}
 
-		OriginalFirstThunk = (PIMAGE_THUNK_DATA)Add2Ptr(ImageBase, ImportDescriptors->OriginalFirstThunk);
+		OriginalFirstThunk = (PIMAGE_THUNK_DATA)Add2Ptr(ImageBase,
+														ImportDescriptors->OriginalFirstThunk ?
+														ImportDescriptors->OriginalFirstThunk :
+														ImportDescriptors->FirstThunk);
 		FirstThunk = (PIMAGE_THUNK_DATA)Add2Ptr(ImageBase, ImportDescriptors->FirstThunk);
 
 		for (; OriginalFirstThunk->u1.AddressOfData; ++OriginalFirstThunk, ++FirstThunk) {
 
 			if (IMAGE_SNAP_BY_ORDINAL(OriginalFirstThunk->u1.Ordinal)) {
 
-				LDK_DIAGNOSTIC_BREAK();
-				return STATUS_NOT_SUPPORTED;
+				FirstThunk->u1.Function = (ULONG_PTR)LdkGetRoutineAddress( Module,
+																		   NULL,
+																		   IMAGE_ORDINAL(OriginalFirstThunk->u1.Ordinal) );
+				if (! FirstThunk->u1.Function) {
+					LDK_DIAGNOSTIC_BREAK();
+					return STATUS_ORDINAL_NOT_FOUND;
+				}
 
 			} else {
 				ImportByName = (PIMAGE_IMPORT_BY_NAME)Add2Ptr(ImageBase, OriginalFirstThunk->u1.AddressOfData);
@@ -614,7 +663,7 @@ LdkpCallEntryPoint (
 {
 	PIMAGE_NT_HEADERS NtHeader = RtlImageNtHeader(Base);
 	if (! NtHeader->OptionalHeader.AddressOfEntryPoint) {
-		return FALSE;
+		return TRUE;
 	}
 	LDK_DLL_ENTRY_POINIT_CONTEXT Context;
 	Context.EntryPoint = (PDLL_MAIN)((ULONG_PTR)Add2Ptr(Base, NtHeader->OptionalHeader.AddressOfEntryPoint));
@@ -634,6 +683,7 @@ LdkpCallEntryPoint (
 NTSTATUS
 LdkpLoadDll (
 	_In_ PUNICODE_STRING FileName,
+	_In_ BOOLEAN ResolveImports,
 	_Outptr_ PVOID *ImageBase,
 	_Out_opt_ PULONG ImageSize
 	)
@@ -790,9 +840,11 @@ LdkpLoadDll (
 			leave;
 		}
 
-		Status = LdkpWalkImportDescriptors( Base );
-		if (! NT_SUCCESS(Status)) {
-			leave;
+		if (ResolveImports) {
+			Status = LdkpWalkImportDescriptors( Base );
+			if (! NT_SUCCESS(Status)) {
+				leave;
+			}
 		}
 
 		*ImageBase = Base;
@@ -895,6 +947,74 @@ LdkGetModuleByAddress (
 }
 
 NTSTATUS
+LdkReferenceModuleByAddress (
+	_In_ PVOID Address,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	NTSTATUS Status;
+	PLDK_MODULE FoundModule = NULL;
+	PLIST_ENTRY NextEntry;
+
+	LdkpAcquireModuleListExclusive();
+
+	Status = STATUS_NOT_FOUND;
+
+	for (NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+		 NextEntry != &LdkCurrentPeb()->ModuleListHead;
+		 NextEntry = NextEntry->Flink) {
+
+		FoundModule = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
+
+		if (FoundModule->Base) {
+			PVOID ImageBase = FoundModule->Base;
+			ULONG ImageSize = FoundModule->Size;
+
+			if (((ULONG_PTR)ImageBase <= (ULONG_PTR)Address) &&
+				((ULONG_PTR)Add2Ptr(ImageBase, ImageSize) > (ULONG_PTR)Address)) {
+				LdkpReferenceModuleLocked( FoundModule,
+										   Pin,
+										   IncrementLoadCount );
+				*Module = FoundModule;
+				Status = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+
+	LdkpReleaseModuleList();
+
+	return Status;
+}
+
+NTSTATUS
+LdkReferenceModuleByName (
+	_In_ PCSZ ModuleName,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	NTSTATUS Status;
+
+	LdkpAcquireModuleListExclusive();
+
+	Status = LdkpGetModuleByName( ModuleName,
+								  Module );
+	if (NT_SUCCESS(Status)) {
+		LdkpReferenceModuleLocked( *Module,
+								   Pin,
+								   IncrementLoadCount );
+	}
+
+	LdkpReleaseModuleList();
+
+	return Status;
+}
+
+NTSTATUS
 LdkGetModuleByName (
 	_In_ PCSZ ModuleName,
 	_Out_ PLDK_MODULE *Module
@@ -924,15 +1044,24 @@ LdkGetRoutineAddress (
 {
 	PVOID Address = NULL;
 	ANSI_STRING Name;
-	RtlInitAnsiString( &Name,
-					   ProcedureName );
+	PANSI_STRING NamePointer = NULL;
+
+	if (ProcedureName) {
+		RtlInitAnsiString( &Name,
+						   ProcedureName );
+		NamePointer = &Name;
+	}
 
 	if (Module->Base) {
 		LdkGetProcedureAddress( Module->Base,
-								&Name,
+								NamePointer,
 								ProcedureNumber,
 								&Address );
 	} else {
+		if (! ProcedureName) {
+			return NULL;
+		}
+
 		LdkpAcquireModuleListShared();
 		for (PLDK_FUNCTION_REGISTRATION Function = Module->FunctionTable; Function->Name; Function++) {
 			if (_stricmp( Function->Name,
@@ -992,10 +1121,14 @@ LdkLoadDll (
 	NTSTATUS Status;
 	ANSI_STRING DllNameAnsi;
 	ULONG ImageSize;
+	BOOLEAN ResolveImports = TRUE;
 
 	PAGED_CODE();
 
-	UNREFERENCED_PARAMETER(DllCharacteristics);
+	if (DllCharacteristics &&
+		FlagOn(*DllCharacteristics, IMAGE_FILE_EXECUTABLE_IMAGE)) {
+		ResolveImports = FALSE;
+	}
 
 	DllNameAnsi.MaximumLength = (USHORT)(RtlUnicodeStringToAnsiSize( DllName ) + (USHORT)sizeof(".dll"));
 	Status = LdkAllocateAnsiString( &DllNameAnsi );
@@ -1005,16 +1138,20 @@ LdkLoadDll (
 											   FALSE );
 		if (NT_SUCCESS(Status)) {
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByName( DllNameAnsi.Buffer,
-										 &Module );
+			Status = LdkReferenceModuleByName( DllNameAnsi.Buffer,
+											   FALSE,
+											   TRUE,
+											   &Module );
 			if (! NT_SUCCESS(Status)) {	
 				DllNameAnsi.Buffer[DllNameAnsi.Length] = '.';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 1] = 'd';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 2] = 'l';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 3] = 'l';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 4] = ANSI_NULL;
-				Status = LdkGetModuleByName( DllNameAnsi.Buffer,
-											 &Module );
+				Status = LdkReferenceModuleByName( DllNameAnsi.Buffer,
+												   FALSE,
+												   TRUE,
+												   &Module );
 			}
 			if (NT_SUCCESS(Status)) {
 				*DllHandle = Module->Base ? Module->Base : (PVOID)Module;
@@ -1076,6 +1213,7 @@ retry:
 	}
 
 	Status = LdkpLoadDll( &NtFileName,
+						  ResolveImports,
 						  DllHandle,
 						  &ImageSize );
 	if (NT_SUCCESS(Status)) {
@@ -1089,9 +1227,16 @@ retry:
 									ImageSize,
 									NULL );
 		if (NT_SUCCESS(Status)) {
-			LdkpCallEntryPoint( *DllHandle,
-								DLL_PROCESS_ATTACH,
-								NULL );
+			if (ResolveImports &&
+				(! LdkpCallEntryPoint( *DllHandle,
+										DLL_PROCESS_ATTACH,
+										NULL ))) {
+				LdkUnloadDll( *DllHandle );
+				RtlFreeHeap( RtlProcessHeap(),
+							 0,
+							 NtFileName.Buffer );
+				return STATUS_DLL_INIT_FAILED;
+			}
 			RtlFreeHeap( RtlProcessHeap(),
 						 0,
 						 NtFileName.Buffer );
@@ -1110,14 +1255,45 @@ LdkUnloadDll (
 	_In_ PVOID DllHandle
 	)
 {
+	NTSTATUS Status;
 	PLDK_MODULE Module;
+	BOOLEAN UnregisterModule = FALSE;
+
 	LdkpAcquireModuleListExclusive();
-	if (NT_SUCCESS(LdkpGetModuleByBase( DllHandle,
-										&Module ))) {
-		RemoveEntryList( &Module->ActiveLinks );
+
+	Status = LdkpGetModuleByBase( DllHandle,
+								  &Module );
+	if (! NT_SUCCESS(Status)) {
+		for (PLIST_ENTRY NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+			 NextEntry != &LdkCurrentPeb()->ModuleListHead;
+			 NextEntry = NextEntry->Flink) {
+			PLDK_MODULE FoundModule = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
+			if ((PVOID)FoundModule == DllHandle) {
+				Module = FoundModule;
+				Status = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+
+	if (NT_SUCCESS(Status) &&
+		LDK_MODULE_HAS_UNREGISTRABLE(Module) &&
+		(! FlagOn(Module->Flags, LDK_MODULE_FLAG_PINNED))) {
+
+		if (Module->LoadCount > 1) {
+			Module->LoadCount--;
+		} else {
+			Module->LoadCount = 0;
+			RemoveEntryList( &Module->ActiveLinks );
+			UnregisterModule = TRUE;
+		}
+	}
+
+	LdkpReleaseModuleList();
+
+	if (UnregisterModule) {
 		LdkpUnregisterModule( Module );
 	}
-	LdkpReleaseModuleList();
 
 	return STATUS_SUCCESS;
 }
@@ -1139,6 +1315,9 @@ LdkGetProcedureAddress (
 		if (!ARGUMENT_PRESENT(ProcedureAddress)) {
 			return STATUS_INVALID_PARAMETER;
 		}
+		if (! ARGUMENT_PRESENT(ProcedureName) || ! ProcedureName->Buffer) {
+			return STATUS_PROCEDURE_NOT_FOUND;
+		}
 		LdkpAcquireModuleListShared();
 		for (PLDK_FUNCTION_REGISTRATION Function = ((PLDK_MODULE)DllHandle)->FunctionTable; Function->Name; Function++) {
 			if (_stricmp( Function->Name,
@@ -1154,7 +1333,7 @@ LdkGetProcedureAddress (
 
     PIMAGE_EXPORT_DIRECTORY ExportDirectory;
     ULONG ExportSize;
-    USHORT Ordinal;
+    ULONG Ordinal;
     CHAR NameBuffer[64];
 
     if (! MmIsAddressValid( DllHandle )) {
@@ -1169,28 +1348,30 @@ LdkGetProcedureAddress (
         return STATUS_INVALID_PARAMETER;
     }
 
-    if (ARGUMENT_PRESENT(ProcedureNumber)) {
+    BOOLEAN LookupByOrdinal = FALSE;
+
+    if (ProcedureNumber != 0) {
 
         ULONG OrdinalBase = ExportDirectory->Base;
+		ULONG ExportOrdinal = IMAGE_ORDINAL((ULONG_PTR)ProcedureNumber);
 
-        LDK_DIAGNOSTIC_BREAK();
-
-        Ordinal = IMAGE_ORDINAL((ULONG_PTR)ProcedureNumber);
-
-        if (Ordinal < OrdinalBase || Ordinal >= OrdinalBase + ExportDirectory->NumberOfFunctions) {
-            return STATUS_PROCEDURE_NOT_FOUND;
+        if (ExportOrdinal < OrdinalBase || ExportOrdinal >= OrdinalBase + ExportDirectory->NumberOfFunctions) {
+            return STATUS_ORDINAL_NOT_FOUND;
         }
 
-        Ordinal -= (USHORT)OrdinalBase;
+        LookupByOrdinal = TRUE;
+        Ordinal = ExportOrdinal - OrdinalBase;
 
-    } else if (ARGUMENT_PRESENT(ProcedureName)) {
+    } else if (ARGUMENT_PRESENT(ProcedureName) && ProcedureName->Buffer) {
 
         if (ProcedureName->Length > sizeof(NameBuffer) - 2) {
             return STATUS_INVALID_PARAMETER;
         }
 
-        strcpy( NameBuffer,
-				ProcedureName->Buffer );
+        RtlCopyMemory( NameBuffer,
+					   ProcedureName->Buffer,
+					   ProcedureName->Length );
+		NameBuffer[ProcedureName->Length] = ANSI_NULL;
 
         Ordinal = LdkpNameToOrdinal( NameBuffer,
 									 DllHandle,
@@ -1198,7 +1379,7 @@ LdkGetProcedureAddress (
 									 Add2Ptr(DllHandle, ExportDirectory->AddressOfNames),
 									 Add2Ptr(DllHandle, ExportDirectory->AddressOfNameOrdinals) );
 
-        if ((ULONG)Ordinal >= ExportDirectory->NumberOfFunctions) {
+        if (Ordinal >= ExportDirectory->NumberOfFunctions) {
             return STATUS_PROCEDURE_NOT_FOUND;
         }
 
@@ -1207,11 +1388,20 @@ LdkGetProcedureAddress (
         return STATUS_INVALID_PARAMETER;
     }
 
-	PVOID Address = Add2Ptr(DllHandle, ((PULONG)Add2Ptr(DllHandle, ExportDirectory->AddressOfFunctions))[Ordinal]);
-	if (Address > (PVOID)ExportDirectory && Address < Add2Ptr(ExportDirectory, ExportSize)) {
+	ULONG FunctionRva = ((PULONG)Add2Ptr(DllHandle, ExportDirectory->AddressOfFunctions))[Ordinal];
+	if (! FunctionRva) {
+		return LookupByOrdinal ? STATUS_ORDINAL_NOT_FOUND : STATUS_PROCEDURE_NOT_FOUND;
+	}
+
+	PVOID Address = Add2Ptr(DllHandle, FunctionRva);
+	if (Address >= (PVOID)ExportDirectory && Address < Add2Ptr(ExportDirectory, ExportSize)) {
 		ANSI_STRING Ansi;
 		Ansi.Buffer = (PCHAR)Address;
-		Ansi.MaximumLength = Ansi.Length = (USHORT)(strchr((const char *)Address, '.') - (char *)Address);
+		PCHAR Separator = strchr((const char *)Address, '.');
+		if (! Separator) {
+			return STATUS_INVALID_IMAGE_FORMAT;
+		}
+		Ansi.MaximumLength = Ansi.Length = (USHORT)(Separator - (char *)Address);
 		UNICODE_STRING Unicode;
 		NTSTATUS Status = LdkAnsiStringToUnicodeString( &Unicode,
 														&Ansi,

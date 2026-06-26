@@ -39,4 +39,8 @@ foreach(flag
 endforeach()
 
 add_library(Test SHARED dll.c)
+add_library(OrdinalImport SHARED ordinalimport.c)
+target_link_libraries(OrdinalImport PRIVATE Test)
 set_property(TARGET Test APPEND_STRING PROPERTY LINK_FLAGS "/NOENTRY")
+set_property(TARGET OrdinalImport APPEND_STRING PROPERTY LINK_FLAGS "/NOENTRY")
+add_dependencies(LdkTest Test OrdinalImport)

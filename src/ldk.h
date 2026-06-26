@@ -26,6 +26,7 @@ typedef struct _LDK_FUNCTION_REGISTRATION {
 } LDK_FUNCTION_REGISTRATION, * PLDK_FUNCTION_REGISTRATION;
 
 #define LDK_MODULE_HAS_UNREGISTRABLE(m)		(! (m)->FunctionTable)
+#define LDK_MODULE_FLAG_PINNED				0x00000001
 
 typedef struct _LDK_MODULE {
 	ANSI_STRING ModuleName;
@@ -33,6 +34,8 @@ typedef struct _LDK_MODULE {
 	PLDK_FUNCTION_REGISTRATION FunctionTable;
 	PVOID Base;
 	ULONG Size;
+	LONG LoadCount;
+	ULONG Flags;
 	LIST_ENTRY ActiveLinks;
 } LDK_MODULE, * PLDK_MODULE;
 
@@ -132,6 +135,22 @@ LdkLoadDll (
 NTSTATUS
 LdkUnloadDll (
 	_In_ PVOID DllHandle
+	);
+
+NTSTATUS
+LdkReferenceModuleByAddress (
+	_In_ PVOID Address,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount,
+	_Out_ PLDK_MODULE *Module
+	);
+
+NTSTATUS
+LdkReferenceModuleByName (
+	_In_ PCSZ ModuleName,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount,
+	_Out_ PLDK_MODULE *Module
 	);
 
 NTSTATUS

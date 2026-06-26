@@ -1,4 +1,5 @@
 ﻿#include "winbase.h"
+#include "../ldk.h"
 #include "../ntdll/ntdll.h"
 #include <ntimage.h>
 
@@ -201,6 +202,15 @@ GetModuleHandleExA (
 {
 	PAGED_CODE();
 
+	if (FlagOn(dwFlags, ~(GET_MODULE_HANDLE_EX_FLAG_PIN |
+						  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT |
+						  GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)) ||
+		(FlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN) &&
+		 FlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT))) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
 	if (! ARGUMENT_PRESENT(phModule)) {
 		SetLastError( ERROR_INVALID_PARAMETER );
 		return FALSE;
@@ -214,8 +224,10 @@ GetModuleHandleExA (
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByAddress( (PVOID)lpModuleName,
-											&Module );
+			Status = LdkReferenceModuleByAddress( (PVOID)lpModuleName,
+												  BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN),
+												  ! BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT),
+												  &Module );
 
 			if (! NT_SUCCESS(Status)) {
 				LdkSetLastNTError( Status );
@@ -231,8 +243,10 @@ GetModuleHandleExA (
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByName( lpModuleName,
-										 &Module );
+			Status = LdkReferenceModuleByName( lpModuleName,
+											   BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN),
+											   ! BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT),
+											   &Module );
 			if (! NT_SUCCESS(Status)) {
 				LdkSetLastNTError( Status );
 				return FALSE;
@@ -423,43 +437,71 @@ LdkpComputeDllPath (
 		}
 	}
 
+	UNICODE_STRING EnvironmentPath;
+	EnvironmentPath.Length = 0;
+	EnvironmentPath.MaximumLength = 4096 * sizeof(WCHAR);
+	EnvironmentPath.Buffer = RtlAllocateHeap( RtlProcessHeap(),
+											  HEAP_ZERO_MEMORY,
+											  EnvironmentPath.MaximumLength );
+	if (! EnvironmentPath.Buffer) {
+		return NULL;
+	}
+
+	for (;;) {
+		DWORD EnvironmentPathLength = GetEnvironmentVariableW( L"PATH",
+															   EnvironmentPath.Buffer,
+															   EnvironmentPath.MaximumLength / sizeof(WCHAR) );
+		if (EnvironmentPathLength < EnvironmentPath.MaximumLength / sizeof(WCHAR)) {
+			EnvironmentPath.Length = (USHORT)(EnvironmentPathLength * sizeof(WCHAR));
+			break;
+		}
+
+		EnvironmentPath.MaximumLength = (USHORT)(EnvironmentPathLength * sizeof(WCHAR));
+		PVOID Buffer = RtlReAllocateHeap( RtlProcessHeap(),
+										  HEAP_ZERO_MEMORY,
+										  EnvironmentPath.Buffer,
+										  EnvironmentPath.MaximumLength );
+		if (! Buffer) {
+			RtlFreeHeap( RtlProcessHeap(),
+						 0,
+						 EnvironmentPath.Buffer );
+			return NULL;
+		}
+		EnvironmentPath.Buffer = Buffer;
+	}
+
 	UNICODE_STRING Value;
-	Value.MaximumLength = (4096 * sizeof(WCHAR)) + sizeof(WCHAR) + ImagePath.Length + sizeof(WCHAR);
+	Value.Length = 0;
+	Value.MaximumLength = ImagePath.Length + sizeof(WCHAR);
+	if (EnvironmentPath.Length) {
+		Value.MaximumLength += sizeof(WCHAR) + EnvironmentPath.Length;
+	}
+
 	Value.Buffer = RtlAllocateHeap( RtlProcessHeap(),
 									HEAP_ZERO_MEMORY,
 									Value.MaximumLength );
-retry:
 	if (! Value.Buffer) {
+		RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					 EnvironmentPath.Buffer );
 		return NULL;
 	}
-	Value.Length = (USHORT)GetEnvironmentVariableW( L"PATH",
-													Value.Buffer,
-													Value.MaximumLength / sizeof(WCHAR) ) * sizeof(WCHAR);
-	if (Value.Length == 0) {
-		RtlCopyMemory( Value.Buffer,
-					   ImagePath.Buffer,
-					   ImagePath.Length );
-		return Value.Buffer;
+
+	RtlCopyMemory( Value.Buffer,
+				   ImagePath.Buffer,
+				   ImagePath.Length );
+	Value.Length = ImagePath.Length;
+
+	if (EnvironmentPath.Length) {
+		RtlAppendUnicodeToString( &Value,
+								  L";" );
+		RtlAppendUnicodeStringToString( &Value,
+										&EnvironmentPath );
 	}
-	if (Value.MaximumLength - Value.Length < ImagePath.Length) {
-		Value.MaximumLength = Value.Length + sizeof(WCHAR) + ImagePath.Length;
-		PVOID Buffer = RtlReAllocateHeap( RtlProcessHeap(),
-										  HEAP_ZERO_MEMORY,
-										  Value.Buffer,
-										  Value.MaximumLength );
-		if (Buffer) {
-			Value.Buffer = Buffer;
-			goto retry;
-		}
-		RtlCopyMemory( Value.Buffer,
-					   ImagePath.Buffer,
-					   ImagePath.Length );
-		return Value.Buffer;
-	}
-	RtlAppendUnicodeToString( &Value,
-							  L";" );
-	RtlAppendUnicodeStringToString( &Value,
-									&ImagePath );
+
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 EnvironmentPath.Buffer );
 	return Value.Buffer;
 }
 
@@ -480,11 +522,6 @@ LoadLibraryExW (
 	
 	PAGED_CODE();
 	UNREFERENCED_PARAMETER(hFile);
-
-	hModule = GetModuleHandleW( lpLibFileName );
-	if (hModule) {
-		return hModule;
-	}
 
     if (dwFlags & DONT_RESOLVE_DLL_REFERENCES) {
 		DllCharacteristics |= IMAGE_FILE_EXECUTABLE_IMAGE;
