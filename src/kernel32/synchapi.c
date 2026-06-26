@@ -1,6 +1,14 @@
 ﻿#include "winbase.h"
 #include "../ntdll/ntdll.h"
 
+#ifndef MAXIMUM_WAIT_OBJECTS
+#define MAXIMUM_WAIT_OBJECTS 64
+#endif
+
+#ifndef THREAD_WAIT_OBJECTS
+#define THREAD_WAIT_OBJECTS 3
+#endif
+
 
 
 #ifdef ALLOC_PRAGMA
@@ -698,6 +706,34 @@ WaitForSingleObjectEx (
 	LARGE_INTEGER Timeout;
     PLARGE_INTEGER pTimeout = LdkFormatTimeout( &Timeout,
                                                 dwMilliseconds );
+    PVOID WaitObject;
+    BOOLEAN IsLdkObject;
+
+    Status = LdkReferenceProcessWaitObject( hHandle,
+                                            &WaitObject,
+                                            &IsLdkObject );
+    if (NT_SUCCESS(Status)) {
+        do {
+            Status = KeWaitForSingleObject( WaitObject,
+                                            Executive,
+                                            KernelMode,
+                                            (BOOLEAN)bAlertable,
+                                            pTimeout );
+            if (! NT_SUCCESS(Status)) {
+                LdkSetLastNTError( Status );
+                Status = WAIT_FAILED;
+            }
+        } while (bAlertable && (Status == STATUS_ALERTED));
+
+        LdkDereferenceProcessWaitObject( WaitObject,
+                                         IsLdkObject );
+        return (DWORD)Status;
+    }
+
+    if (Status != STATUS_OBJECT_TYPE_MISMATCH) {
+        LdkSetLastNTError( Status );
+        return WAIT_FAILED;
+    }
 
     do {
         Status = ZwWaitForSingleObject( hHandle,
@@ -725,9 +761,147 @@ WaitForMultipleObjectsEx (
 {
     PAGED_CODE();
 
+    if (nCount == 0 ||
+        nCount > MAXIMUM_WAIT_OBJECTS) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return WAIT_FAILED;
+    }
+
 	LARGE_INTEGER Timeout;
     PLARGE_INTEGER pTimeout = LdkFormatTimeout( &Timeout,
                                                 dwMilliseconds );
+    BOOLEAN HasLdkHandle = FALSE;
+
+    for (DWORD Index = 0; Index < nCount; Index++) {
+        if (LdkIsProcessHandleCandidate( lpHandles[Index] )) {
+            HasLdkHandle = TRUE;
+            break;
+        }
+    }
+
+    if (HasLdkHandle) {
+        PVOID ObjectsTmp[8];
+        BOOLEAN IsLdkObjectTmp[8];
+        KWAIT_BLOCK WaitBlocksTmp[THREAD_WAIT_OBJECTS];
+        PVOID *Objects = ObjectsTmp;
+        PBOOLEAN IsLdkObject = IsLdkObjectTmp;
+        PKWAIT_BLOCK WaitBlocks = WaitBlocksTmp;
+        ULONG ReferencedCount = 0;
+        NTSTATUS Status;
+
+        if (nCount > RTL_NUMBER_OF(ObjectsTmp)) {
+#pragma warning(disable:4996)
+            Objects = ExAllocatePoolWithTag( NonPagedPool,
+                                             sizeof(PVOID) * nCount,
+                                             TAG_TMP_POOL );
+            IsLdkObject = ExAllocatePoolWithTag( NonPagedPool,
+                                                 sizeof(BOOLEAN) * nCount,
+                                                 TAG_TMP_POOL );
+#pragma warning(default:4996)
+            if (Objects == NULL ||
+                IsLdkObject == NULL) {
+                if (Objects != NULL) {
+                    ExFreePoolWithTag( Objects,
+                                       TAG_TMP_POOL );
+                }
+                if (IsLdkObject != NULL) {
+                    ExFreePoolWithTag( IsLdkObject,
+                                       TAG_TMP_POOL );
+                }
+                LdkSetLastNTError( STATUS_NO_MEMORY );
+                return WAIT_FAILED;
+            }
+        }
+
+        if (nCount > THREAD_WAIT_OBJECTS) {
+#pragma warning(disable:4996)
+            WaitBlocks = ExAllocatePoolWithTag( NonPagedPool,
+                                                sizeof(KWAIT_BLOCK) * nCount,
+                                                TAG_TMP_POOL );
+#pragma warning(default:4996)
+            if (WaitBlocks == NULL) {
+                if (Objects != ObjectsTmp) {
+                    ExFreePoolWithTag( Objects,
+                                       TAG_TMP_POOL );
+                    ExFreePoolWithTag( IsLdkObject,
+                                       TAG_TMP_POOL );
+                }
+                LdkSetLastNTError( STATUS_NO_MEMORY );
+                return WAIT_FAILED;
+            }
+        }
+
+        for (DWORD Index = 0; Index < nCount; Index++) {
+            Status = LdkReferenceProcessWaitObject( lpHandles[Index],
+                                                    &Objects[Index],
+                                                    &IsLdkObject[Index] );
+            if (Status == STATUS_OBJECT_TYPE_MISMATCH) {
+                Status = ObReferenceObjectByHandle( lpHandles[Index],
+                                                    SYNCHRONIZE,
+                                                    NULL,
+                                                    KernelMode,
+                                                    &Objects[Index],
+                                                    NULL );
+                IsLdkObject[Index] = FALSE;
+            }
+
+            if (! NT_SUCCESS(Status)) {
+                for (ULONG CleanupIndex = 0;
+                     CleanupIndex < ReferencedCount;
+                     CleanupIndex++) {
+                    LdkDereferenceProcessWaitObject( Objects[CleanupIndex],
+                                                     IsLdkObject[CleanupIndex] );
+                }
+                if (WaitBlocks != WaitBlocksTmp) {
+                    ExFreePoolWithTag( WaitBlocks,
+                                       TAG_TMP_POOL );
+                }
+                if (Objects != ObjectsTmp) {
+                    ExFreePoolWithTag( Objects,
+                                       TAG_TMP_POOL );
+                    ExFreePoolWithTag( IsLdkObject,
+                                       TAG_TMP_POOL );
+                }
+                LdkSetLastNTError( Status );
+                return WAIT_FAILED;
+            }
+
+            ReferencedCount++;
+        }
+
+        do {
+            Status = KeWaitForMultipleObjects( nCount,
+                                               Objects,
+                                               bWaitAll ? WaitAll : WaitAny,
+                                               Executive,
+                                               KernelMode,
+                                               (BOOLEAN)bAlertable,
+                                               pTimeout,
+                                               WaitBlocks );
+            if (! NT_SUCCESS(Status)) {
+                LdkSetLastNTError( Status );
+                Status = WAIT_FAILED;
+            }
+        } while (bAlertable && (Status == STATUS_ALERTED));
+
+        for (ULONG Index = 0; Index < ReferencedCount; Index++) {
+            LdkDereferenceProcessWaitObject( Objects[Index],
+                                             IsLdkObject[Index] );
+        }
+        if (WaitBlocks != WaitBlocksTmp) {
+            ExFreePoolWithTag( WaitBlocks,
+                               TAG_TMP_POOL );
+        }
+        if (Objects != ObjectsTmp) {
+            ExFreePoolWithTag( Objects,
+                               TAG_TMP_POOL );
+            ExFreePoolWithTag( IsLdkObject,
+                               TAG_TMP_POOL );
+        }
+
+        return (DWORD)Status;
+    }
+
     HANDLE HandlesTmp[8];
     PHANDLE Handles;
     if (nCount > 8) {

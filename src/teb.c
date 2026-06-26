@@ -356,10 +356,11 @@ LdkpInitializeTeb (
 
 	Teb->AlertByThreadIdPending = FALSE;
 
-	Teb->ClientId.UniqueProcess = PsGetCurrentProcessId();
+	Teb->ClientId.UniqueProcess = (HANDLE)(ULONG_PTR)LdkCurrentPeb()->ProcessId;
 	Teb->ClientId.UniqueThread = PsGetThreadId( Thread );
 
-	Teb->RealClientId = Teb->ClientId;
+	Teb->RealClientId.UniqueProcess = PsGetCurrentProcessId();
+	Teb->RealClientId.UniqueThread = Teb->ClientId.UniqueThread;
 
     Teb->StaticUnicodeString.Buffer = Teb->StaticUnicodeBuffer;
     Teb->StaticUnicodeString.MaximumLength = (USHORT)sizeof(Teb->StaticUnicodeBuffer);

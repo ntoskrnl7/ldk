@@ -1,6 +1,7 @@
 ﻿#include "winbase.h"
 #include "../ldk.h"
 #include "../ntdll/ntdll.h"
+#include "../peb.h"
 
 
 
@@ -496,7 +497,7 @@ GetCurrentProcessId (
     VOID
     )
 {
-	return (DWORD)HandleToULong(PsGetCurrentProcessId());
+	return LdkCurrentPeb()->ProcessId;
 }
 
 WINBASEAPI
@@ -508,6 +509,16 @@ OpenProcess (
     _In_ DWORD dwProcessId
     )
 {
+	if (dwProcessId == 0) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return NULL;
+	}
+
+	if (dwProcessId == LdkCurrentPeb()->ProcessId) {
+		return LdkCreateCurrentProcessHandle( dwDesiredAccess,
+											  bInheritHandle );
+	}
+
     OBJECT_ATTRIBUTES ObjectAttributes;
     InitializeObjectAttributes( &ObjectAttributes,
 								NULL,
@@ -516,7 +527,7 @@ OpenProcess (
 								NULL );
     CLIENT_ID ClientId;
     ClientId.UniqueThread = (HANDLE)NULL;
-    ClientId.UniqueProcess = (HANDLE)LongToHandle(dwProcessId);
+    ClientId.UniqueProcess = (HANDLE)(ULONG_PTR)dwProcessId;
     HANDLE Handle;
     NTSTATUS Status = ZwOpenProcess( &Handle,
 									 (ACCESS_MASK)dwDesiredAccess,
@@ -539,11 +550,13 @@ ExitProcess (
 {
 	PAGED_CODE();
 
-	// :-(
-	LDK_DIAGNOSTIC_BREAK();
+	BOOL Handled;
 
-	TerminateProcess( NtCurrentProcess(),
-					  uExitCode );
+	LdkTerminateProcessHandle( NtCurrentProcess(),
+							   uExitCode,
+							   &Handled );
+
+	ExitThread( uExitCode );
 }
 
 WINBASEAPI
@@ -556,7 +569,16 @@ TerminateProcess (
 {
 	PAGED_CODE();
 
-	LDK_DIAGNOSTIC_BREAK(); // :-(
+	BOOL Handled;
+
+	if (LdkTerminateProcessHandle( hProcess,
+								   uExitCode,
+								   &Handled )) {
+		return TRUE;
+	}
+	if (Handled) {
+		return FALSE;
+	}
 
 	if (hProcess == NULL) {
 		SetLastError(ERROR_INVALID_HANDLE);
@@ -580,6 +602,17 @@ GetExitCodeProcess (
     )
 {
 	PAGED_CODE();
+
+	BOOL Handled;
+
+	if (LdkGetExitCodeProcessHandle( hProcess,
+									 lpExitCode,
+									 &Handled )) {
+		return TRUE;
+	}
+	if (Handled) {
+		return FALSE;
+	}
 
 	PROCESS_BASIC_INFORMATION BasicInformation;
 	NTSTATUS Status = ZwQueryInformationProcess( hProcess,

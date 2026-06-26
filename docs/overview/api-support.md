@@ -17,7 +17,7 @@ Status guide:
 | Area | Representative APIs | Status | Notes |
 | --- | --- | --- | --- |
 | Loader | `LoadLibraryA/W`, `LoadLibraryExA/W`, `FreeLibrary`, `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W` | Experimental | Kernel-space DLL loading is the project core, but loaded modules must be audited. See [Loader](../runtime/loader.md). |
-| Runtime state | `GetLastError`, `SetLastError`, `GetStartupInfoA/W`, `GetCurrentProcess`, `GetCurrentThread` | Partial | State is backed by LDK PEB/TEB records, not user-mode process state. |
+| Runtime state | `GetLastError`, `SetLastError`, `GetStartupInfoA/W`, `GetCurrentProcess`, `GetCurrentProcessId`, `OpenProcess`, `GetCurrentThread` | Partial | Process state is backed by the LDK runtime instance, while thread identity follows real kernel threads with LDK TEB sidecars. |
 | Environment and paths | `GetEnvironmentVariableA/W`, `SetEnvironmentVariableA/W`, `GetEnvironmentStringsA/W`, `GetCurrentDirectoryA/W`, `SetCurrentDirectoryA/W`, `GetCommandLineA/W` | Partial | Backed by `RTL_USER_PROCESS_PARAMETERS` inside the LDK PEB. See [Environment and paths](../runtime/environment-and-paths.md). |
 | Synchronization | Critical sections, condition variables, waits, `Sleep`, `WaitOnAddress`, `WakeByAddressSingle`, `WakeByAddressAll` | Partial | Common paths are tested, including multi-threaded wait-on-address stress. See [Synchronization](../runtime/synchronization.md). |
 | Threads | `CreateThread`, `OpenThread`, `ExitThread`, `GetExitCodeThread`, `GetThreadTimes`, priority helpers | Partial | Uses kernel system threads. `CREATE_SUSPENDED` is not supported. See [Threading and callbacks](../runtime/threading-and-callbacks.md). |

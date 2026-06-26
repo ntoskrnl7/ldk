@@ -65,6 +65,11 @@ typedef struct _LDK_PEB {
 	PDRIVER_OBJECT DriverObject;
 	UNICODE_STRING RegistryPath;
 
+	ULONG ProcessId;
+	HANDLE RealProcessId;
+	KEVENT ProcessExitEvent;
+	volatile LONG ProcessExitStatus;
+
 	RTL_BITMAP TlsBitmap;
 	ULONG TlsBitmapBits[32];
 

@@ -28,6 +28,23 @@ PDEVICE_OBJECT LdkpStdInDeviceObject = NULL;
 PDEVICE_OBJECT LdkpStdOutDeviceObject = NULL;
 PDEVICE_OBJECT LdkpStdErrorDeviceObject = NULL;
 
+#define LDK_SYNTHETIC_PROCESS_ID_BASE 0x4C000001u
+
+ULONG
+LdkpCreateSyntheticProcessId (
+    _In_ PDRIVER_OBJECT DriverObject
+    )
+{
+    ULONG Hash;
+
+    Hash = (ULONG)((ULONG_PTR)DriverObject >> 4);
+    Hash ^= (ULONG)((ULONG_PTR)DriverObject >> 20);
+    Hash ^= (ULONG)((ULONG_PTR)LdkpPeb.ImageBaseAddress >> 12);
+    Hash ^= (ULONG)((ULONG_PTR)LdkpPeb.ImageBaseAddress >> 28);
+
+    return LDK_SYNTHETIC_PROCESS_ID_BASE | (Hash & 0x00FFFFFEu);
+}
+
 _Function_class_(DRIVER_DISPATCH)
 _IRQL_requires_max_(DISPATCH_LEVEL)
 _IRQL_requires_same_
@@ -417,6 +434,12 @@ LdkpInitializePeb (
     LdkpPeb.DriverObject = DriverObject;
 	LdkpPeb.ImageBaseAddress = moduleInfo.ImageBase;
 	LdkpPeb.ImageBaseSize = moduleInfo.ImageSize;
+    LdkpPeb.ProcessId = LdkpCreateSyntheticProcessId( DriverObject );
+    LdkpPeb.RealProcessId = PsGetCurrentProcessId();
+    LdkpPeb.ProcessExitStatus = STATUS_PENDING;
+    KeInitializeEvent( &LdkpPeb.ProcessExitEvent,
+                       NotificationEvent,
+                       FALSE );
 	LdkpPeb.CriticalSectionTimeout.QuadPart = Int32x32To64(2592000, -10000000);
 
 	Status = LdkDuplicateUnicodeString( RegistryPath,
@@ -547,6 +570,14 @@ LdkpTerminatePeb (
 
 	if (! LdkPebInitialized) {
         return;
+    }
+
+    if (InterlockedCompareExchange( &LdkpPeb.ProcessExitStatus,
+                                    STATUS_SUCCESS,
+                                    STATUS_PENDING ) == STATUS_PENDING) {
+        KeSetEvent( &LdkpPeb.ProcessExitEvent,
+                    IO_NO_INCREMENT,
+                    FALSE );
     }
 
 	ExDeleteResourceLite( &LdkpPeb.ModuleListResource );

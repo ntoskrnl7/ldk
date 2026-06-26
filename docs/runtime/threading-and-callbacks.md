@@ -40,8 +40,11 @@ runs.
 uses `PsGetCurrentThreadId`. `OpenThread`, priority helpers, `GetThreadTimes`,
 and `GetExitCodeThread` are thin wrappers over native thread information calls.
 
-The LDK TEB stores client-id values for APIs that need process/thread identity,
-but this is LDK-maintained state, not a user-mode TEB.
+The thread itself is a real kernel thread. The LDK TEB is a sidecar attached to
+the participating `PETHREAD`, so TLS/FLS, last-error, keyed-event, and
+alert-by-thread-id state can follow that kernel execution context. The process
+half of the client id is different: it identifies the synthetic LDK process
+runtime, while `RealClientId` keeps the host kernel process id.
 
 ## Threadpool
 

@@ -14,6 +14,9 @@ LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
 LDK_INITIALIZE_COMPONENT LdkpInitializeNls;
 LDK_TERMINATE_COMPONENT LdkpTerminateNls;
 
+LDK_INITIALIZE_COMPONENT LdkpInitializeProcessHandles;
+LDK_TERMINATE_COMPONENT LdkpTerminateProcessHandles;
+
 LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
 LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
 
@@ -921,18 +924,33 @@ LdkpKernel32Initialize (
 	SetFileApisToANSI();
 	LdkpInitializeWinBaseMessageResources();
 
-	NTSTATUS Status = LdkpInitializeThreadpoolApiset();
+	NTSTATUS Status = LdkpInitializeProcessHandles();
 	if (! NT_SUCCESS(Status)) {
+		return Status;
+	}
+
+	Status = LdkpInitializeThreadpoolApiset();
+	if (! NT_SUCCESS(Status)) {
+		LdkpTerminateProcessHandles();
 		return Status;
 	}
 
 	Status = LdkpInitializeThreadContexts();
 	if (! NT_SUCCESS(Status)) {
 		LdkpTerminateThreadpoolApiset();
+		LdkpTerminateProcessHandles();
 		return Status;
 	}
 
-	return LdkpInitializeNls();
+	Status = LdkpInitializeNls();
+	if (! NT_SUCCESS(Status)) {
+		LdkpTerminateThreadContexts();
+		LdkpTerminateThreadpoolApiset();
+		LdkpTerminateProcessHandles();
+		return Status;
+	}
+
+	return STATUS_SUCCESS;
 }
 
 VOID
@@ -945,5 +963,6 @@ LdkpKernel32Terminate (
 	LdkpTerminateNls();
 	LdkpTerminateThreadContexts();
 	LdkpTerminateThreadpoolApiset();
+	LdkpTerminateProcessHandles();
 	LdkpTerminateWinBaseMessageResources();
 }

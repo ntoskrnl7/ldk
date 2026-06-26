@@ -14,6 +14,76 @@ LdkFormatTimeout (
 	_In_ DWORD Milliseconds
 	);
 
+NTSTATUS
+LdkpInitializeProcessHandles (
+	VOID
+	);
+
+VOID
+LdkpTerminateProcessHandles (
+	VOID
+	);
+
+HANDLE
+LdkCreateCurrentProcessHandle (
+	_In_ DWORD DesiredAccess,
+	_In_ BOOL InheritHandle
+	);
+
+BOOL
+LdkCloseProcessHandle (
+	_In_ HANDLE Handle,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
+LdkDuplicateProcessHandle (
+	_In_ HANDLE SourceHandle,
+	_Outptr_ LPHANDLE TargetHandle,
+	_In_ DWORD DesiredAccess,
+	_In_ BOOL InheritHandle,
+	_In_ DWORD Options,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
+LdkResolveProcessHandleForNativeDuplicate (
+	_In_ HANDLE ProcessHandle,
+	_Out_ PHANDLE NativeProcessHandle
+	);
+
+BOOL
+LdkGetExitCodeProcessHandle (
+	_In_ HANDLE ProcessHandle,
+	_Out_ LPDWORD ExitCode,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
+LdkTerminateProcessHandle (
+	_In_ HANDLE ProcessHandle,
+	_In_ UINT ExitCode,
+	_Out_ PBOOL Handled
+	);
+
+BOOLEAN
+LdkIsProcessHandleCandidate (
+	_In_ HANDLE Handle
+	);
+
+NTSTATUS
+LdkReferenceProcessWaitObject (
+	_In_ HANDLE Handle,
+	_Outptr_ PVOID *Object,
+	_Out_ PBOOLEAN IsLdkObject
+	);
+
+VOID
+LdkDereferenceProcessWaitObject (
+	_In_ PVOID Object,
+	_In_ BOOLEAN IsLdkObject
+	);
+
 VOID
 LdkpInitializeWinBaseMessageResources (
 	VOID

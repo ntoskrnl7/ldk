@@ -15,6 +15,23 @@ CloseHandle (
     _In_ HANDLE hObject
     )
 {
+	BOOL Handled;
+
+	if (LdkCloseProcessHandle( hObject,
+							   &Handled )) {
+		return TRUE;
+	}
+	if (Handled) {
+		return FALSE;
+	}
+
+	if (hObject == NULL ||
+		hObject == INVALID_HANDLE_VALUE ||
+		hObject == ZwCurrentThread()) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
 	ASSERT(ObIsKernelHandle( hObject ));
 
 	NTSTATUS Status = ZwClose( hObject );
@@ -41,9 +58,32 @@ DuplicateHandle (
 {
     PAGED_CODE();
 
-    NTSTATUS Status = ZwDuplicateObject( hSourceProcessHandle,
+	BOOL Handled;
+	HANDLE NativeSourceProcessHandle;
+	HANDLE NativeTargetProcessHandle;
+
+	if (! LdkResolveProcessHandleForNativeDuplicate( hSourceProcessHandle,
+													 &NativeSourceProcessHandle ) ||
+		! LdkResolveProcessHandleForNativeDuplicate( hTargetProcessHandle,
+													 &NativeTargetProcessHandle )) {
+		return FALSE;
+	}
+
+	if (LdkDuplicateProcessHandle( hSourceHandle,
+								   lpTargetHandle,
+								   dwDesiredAccess,
+								   bInheritHandle,
+								   dwOptions,
+								   &Handled )) {
+		return TRUE;
+	}
+	if (Handled) {
+		return FALSE;
+	}
+
+    NTSTATUS Status = ZwDuplicateObject( NativeSourceProcessHandle,
                                          hSourceHandle,
-                                         hTargetProcessHandle,
+                                         NativeTargetProcessHandle,
                                          lpTargetHandle,
                                          (ACCESS_MASK)dwDesiredAccess,
                                          bInheritHandle ? OBJ_INHERIT | OBJ_KERNEL_HANDLE : OBJ_KERNEL_HANDLE,

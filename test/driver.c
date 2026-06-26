@@ -71,6 +71,11 @@ ConsoleTest (
     );
 
 BOOLEAN
+ProcessApiTest (
+    VOID
+    );
+
+BOOLEAN
 NtdllCurrentDirectoryTest (
     VOID
     );
@@ -141,6 +146,7 @@ DriverEntry (
         { "WaitOnAddressTest", WaitOnAddressTest },
         { "LibraryTest", LibraryTest },
         { "ConsoleTest", ConsoleTest },
+        { "ProcessApiTest", ProcessApiTest },
         { NULL, NULL }
     };
 

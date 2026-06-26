@@ -91,6 +91,11 @@ LibraryTest (
     VOID
     );
 
+BOOLEAN
+ProcessApiTest (
+    VOID
+    );
+
 static
 BOOL
 LdkpConfigureTestDirectories (
@@ -198,6 +203,7 @@ main (
         { "ConditionVariableTest", ConditionVariableTest },
         { "WaitOnAddressTest", WaitOnAddressTest },
         { "LibraryTest", LibraryTest },
+        { "ProcessApiTest", ProcessApiTest },
         { NULL, NULL }
     };
 
