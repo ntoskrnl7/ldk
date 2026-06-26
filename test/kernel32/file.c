@@ -273,6 +273,54 @@ FileTest (
     }
     printf("[Success] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
 
+    printf("Test FindFirstFileExW flags\n");
+    WIN32_FIND_DATAW FindFlagsData;
+    DWORD FindFirstFlags = FIND_FIRST_EX_CASE_SENSITIVE | FIND_FIRST_EX_LARGE_FETCH;
+#ifdef FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY
+    FindFirstFlags |= FIND_FIRST_EX_ON_DISK_ENTRIES_ONLY;
+#endif
+    HANDLE hFindFlags = FindFirstFileExW( L"Test.tmp",
+                                          FindExInfoBasic,
+                                          &FindFlagsData,
+                                          FindExSearchNameMatch,
+                                          NULL,
+                                          FindFirstFlags );
+    if (hFindFlags == INVALID_HANDLE_VALUE ||
+        wcscmp( FindFlagsData.cFileName,
+                L"Test.tmp" ) != 0) {
+        fprintf(stderr,
+                "[Failed] FindFirstFileExW supported flags ErrorCode = %d\n",
+                GetLastError());
+        if (hFindFlags != INVALID_HANDLE_VALUE) {
+            FindClose( hFindFlags );
+        }
+        printf("[Failed] Test FindFirstFileExW flags\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    FindClose( hFindFlags );
+
+    SetLastError( ERROR_SUCCESS );
+    hFindFlags = FindFirstFileExW( L"Test.tmp",
+                                   FindExInfoBasic,
+                                   &FindFlagsData,
+                                   FindExSearchNameMatch,
+                                   NULL,
+                                   0x80000000u );
+    if (hFindFlags != INVALID_HANDLE_VALUE ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+        fprintf(stderr,
+                "[Failed] FindFirstFileExW invalid flags ErrorCode = %d\n",
+                GetLastError());
+        if (hFindFlags != INVALID_HANDLE_VALUE) {
+            FindClose( hFindFlags );
+        }
+        printf("[Failed] Test FindFirstFileExW flags\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test FindFirstFileExW flags\n\n");
+
     printf("Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n");
     DeleteFileW( L"TestSymlink.tmp" );
     rv = CreateSymbolicLinkW( L"TestSymlink.tmp",
@@ -543,6 +591,135 @@ AfterSymlinkTest:
     }
     printf("[Success] Test SetFileInformationByHandle(FileAllocationInfo)\n\n");
 
+    printf("Test SetFileInformationByHandle(FileRenameInfo)\n");
+    DeleteFileW( L"TestRenameSource.tmp" );
+    DeleteFileW( L"TestRenameTarget.tmp" );
+    hFile = CreateFileW( L"TestRenameSource.tmp",
+                         GENERIC_READ | GENERIC_WRITE | DELETE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    WCHAR RenameTargetPath[MAX_PATH];
+    DWORD RenameTargetPathLength = GetFullPathNameW( L"TestRenameTarget.tmp",
+                                                     RTL_NUMBER_OF(RenameTargetPath),
+                                                     RenameTargetPath,
+                                                     NULL );
+    if (RenameTargetPathLength == 0 ||
+        RenameTargetPathLength >= RTL_NUMBER_OF(RenameTargetPath)) {
+        fprintf(stderr, "[Failed] GetFullPathNameW(TestRenameTarget.tmp) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    UCHAR RenameInfoBuffer[FIELD_OFFSET(FILE_RENAME_INFO, FileName) + MAX_PATH * sizeof(WCHAR)];
+    PFILE_RENAME_INFO RenameInfo = (PFILE_RENAME_INFO)RenameInfoBuffer;
+    RtlZeroMemory( RenameInfoBuffer,
+                   sizeof(RenameInfoBuffer) );
+    RenameInfo->ReplaceIfExists = FALSE;
+    RenameInfo->RootDirectory = NULL;
+    RenameInfo->FileNameLength = RenameTargetPathLength * sizeof(WCHAR);
+    RtlCopyMemory( RenameInfo->FileName,
+                   RenameTargetPath,
+                   RenameInfo->FileNameLength );
+    rv = SetFileInformationByHandle( hFile,
+                                     FileRenameInfo,
+                                     RenameInfo,
+                                     FIELD_OFFSET(FILE_RENAME_INFO, FileName) +
+                                     RenameInfo->FileNameLength );
+    CloseHandle( hFile );
+    if (!rv ||
+        GetFileAttributesW( L"TestRenameSource.tmp" ) != INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW( L"TestRenameTarget.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test SetFileInformationByHandle(FileRenameInfo)\n\n");
+
+    printf("Test SetFileInformationByHandle(FileRenameInfoEx)\n");
+    DeleteFileW( L"TestRenameExSource.tmp" );
+    DeleteFileW( L"TestRenameExTarget.tmp" );
+    hFile = CreateFileW( L"TestRenameExSource.tmp",
+                         GENERIC_READ | GENERIC_WRITE | DELETE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfoEx)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    HANDLE hRenameTarget = CreateFileW( L"TestRenameExTarget.tmp",
+                                        GENERIC_READ | GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        NULL,
+                                        CREATE_ALWAYS,
+                                        FILE_ATTRIBUTE_NORMAL,
+                                        NULL );
+    if (hRenameTarget == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] Create target ErrorCode = %d\n", GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfoEx)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    CloseHandle( hRenameTarget );
+
+    RenameTargetPathLength = GetFullPathNameW( L"TestRenameExTarget.tmp",
+                                               RTL_NUMBER_OF(RenameTargetPath),
+                                               RenameTargetPath,
+                                               NULL );
+    if (RenameTargetPathLength == 0 ||
+        RenameTargetPathLength >= RTL_NUMBER_OF(RenameTargetPath)) {
+        fprintf(stderr, "[Failed] GetFullPathNameW(TestRenameExTarget.tmp) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfoEx)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( RenameInfoBuffer,
+                   sizeof(RenameInfoBuffer) );
+    RenameInfo->Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS;
+    RenameInfo->RootDirectory = NULL;
+    RenameInfo->FileNameLength = RenameTargetPathLength * sizeof(WCHAR);
+    RtlCopyMemory( RenameInfo->FileName,
+                   RenameTargetPath,
+                   RenameInfo->FileNameLength );
+    rv = SetFileInformationByHandle( hFile,
+                                     FileRenameInfoEx,
+                                     RenameInfo,
+                                     FIELD_OFFSET(FILE_RENAME_INFO, FileName) +
+                                     RenameInfo->FileNameLength );
+    CloseHandle( hFile );
+    if (!rv ||
+        GetFileAttributesW( L"TestRenameExSource.tmp" ) != INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW( L"TestRenameExTarget.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileRenameInfoEx)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test SetFileInformationByHandle(FileRenameInfoEx)\n\n");
+
     printf("Test SetFileInformationByHandle(FileDispositionInfoEx)\n");
     DeleteFileW( L"TestDisposition.tmp" );
     hFile = CreateFileW( L"TestDisposition.tmp",
@@ -592,6 +769,10 @@ AfterSymlinkTest:
 
 DeleteTest:
     DeleteFileW( L"TestAllocation.tmp" );
+    DeleteFileW( L"TestRenameSource.tmp" );
+    DeleteFileW( L"TestRenameTarget.tmp" );
+    DeleteFileW( L"TestRenameExSource.tmp" );
+    DeleteFileW( L"TestRenameExTarget.tmp" );
     DeleteFileW( L"TestDisposition.tmp" );
     DeleteFileW( L"TestMoved.tmp" );
     DeleteFileW( L"TestCopy.tmp" );

@@ -152,6 +152,12 @@ EXTERN_C_START
 #define FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE 0x00000010
 #endif
 
+#ifndef FILE_RENAME_FLAG_REPLACE_IF_EXISTS
+#define FILE_RENAME_FLAG_REPLACE_IF_EXISTS 0x00000001
+#define FILE_RENAME_FLAG_POSIX_SEMANTICS 0x00000002
+#define FILE_RENAME_FLAG_SUPPRESS_PIN_STATE_INHERITANCE 0x00000004
+#endif
+
 #ifndef SYMBOLIC_LINK_FLAG_DIRECTORY
 #define SYMBOLIC_LINK_FLAG_DIRECTORY 0x1
 #endif
@@ -185,6 +191,23 @@ typedef struct _FILE_DISPOSITION_INFO {
     BOOLEAN DeleteFile;
 } FILE_DISPOSITION_INFO, *PFILE_DISPOSITION_INFO;
 
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4201)
+#endif
+typedef struct _FILE_RENAME_INFO {
+    union {
+        BOOLEAN ReplaceIfExists;
+        DWORD Flags;
+    } DUMMYUNIONNAME;
+    HANDLE RootDirectory;
+    DWORD FileNameLength;
+    WCHAR FileName[1];
+} FILE_RENAME_INFO, *PFILE_RENAME_INFO;
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+
 typedef struct _FILE_ALLOCATION_INFO {
     LARGE_INTEGER AllocationSize;
 } FILE_ALLOCATION_INFO, *PFILE_ALLOCATION_INFO;
@@ -216,6 +239,9 @@ typedef struct _FILE_ID_INFO {
 #ifndef FileNameInfo
 #define FileNameInfo ((FILE_INFO_BY_HANDLE_CLASS)2)
 #endif
+#ifndef FileRenameInfo
+#define FileRenameInfo ((FILE_INFO_BY_HANDLE_CLASS)3)
+#endif
 #ifndef FileDispositionInfo
 #define FileDispositionInfo ((FILE_INFO_BY_HANDLE_CLASS)4)
 #endif
@@ -233,6 +259,9 @@ typedef struct _FILE_ID_INFO {
 #endif
 #ifndef FileDispositionInfoEx
 #define FileDispositionInfoEx ((FILE_INFO_BY_HANDLE_CLASS)21)
+#endif
+#ifndef FileRenameInfoEx
+#define FileRenameInfoEx ((FILE_INFO_BY_HANDLE_CLASS)22)
 #endif
 
 #define LDK_HAS_WINBASE_FILE_INFO_TYPES 1
