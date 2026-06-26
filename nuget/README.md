@@ -73,6 +73,11 @@ Prebuilt libraries currently target:
 - `Debug` and `Release`
 - Visual Studio 2022 with Windows SDK/WDK `10.0.22621.0`
 
+Package CI builds minimal WDK consumer drivers for `x64` and `ARM64`. The
+`x86` and `ARM` package entries are layout-validated in GitHub-hosted CI, but
+their driver builds should be validated in the target driver lab or a
+self-hosted runner configured for those toolchains.
+
 ## MSBuild usage
 
 Visual Studio NuGet package restore imports `build/native/ldk.props` and

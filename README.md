@@ -246,16 +246,19 @@ cd test
 
 The build output includes `LdkTest.sys`. Loading and unloading the driver must
 be done manually in an appropriate Windows driver test environment. GitHub
-Actions verifies x64 and ARM64 test driver builds, plus x86 and ARM package
-layout checks, but it does not load kernel drivers.
+Actions builds the test driver for x64 and ARM64, and validates x86 and ARM
+package layout without building x86/ARM test drivers. It does not load kernel
+drivers. See the [testing notes](docs/testing/testing.md) for the CI
+architecture matrix.
 
 Additional implementation and test notes live under [`docs/`](docs/).
 
 ## NuGet and Releases
 
 The `Package` GitHub Actions workflow builds prebuilt x86/x64/ARM/ARM64
-Debug/Release libraries, packs the `ldk` NuGet package, validates the package
-with a minimal WDK consumer driver, and prepares GitHub Release assets.
+Debug/Release libraries, packs the `ldk` NuGet package, validates x64/ARM64
+consumer driver builds, checks x86/ARM package layout, and prepares GitHub
+Release assets.
 
 The `Release` workflow is the publishing entry point. It updates
 `include/Ldk/internal/version.h`, creates a `v<version>` tag, then dispatches

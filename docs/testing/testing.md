@@ -6,6 +6,25 @@ LDK and exercises the runtime from `DriverEntry`.
 GitHub Actions verifies that the test driver builds, but kernel driver loading
 must be done manually in an isolated Windows driver test environment.
 
+## CI architecture matrix
+
+GitHub-hosted CI builds prebuilt `Ldk.lib` artifacts for every packaged
+architecture, but driver-build coverage is intentionally narrower:
+
+| Architecture | `Ldk.lib` | `LdkTest.sys` build | NuGet consumer driver | Release prebuilt consumer | Package layout | Native Win32 baseline |
+| --- | --- | --- | --- | --- | --- | --- |
+| x86 | Debug/Release | Not built in hosted CI | Layout only | Layout only | Checked | Debug user-mode baseline |
+| x64 | Debug/Release | Debug/Release | Debug/Release | Debug/Release | Covered by consumer build | Debug user-mode baseline |
+| ARM | Debug/Release | Not built in hosted CI | Layout only | Layout only | Checked | Not run |
+| ARM64 | Debug/Release | Debug/Release | Debug/Release | Debug/Release | Covered by consumer build | Not run |
+
+The package and release workflows therefore prove that x86/x64/ARM/ARM64
+libraries are present in the NuGet package and prebuilt release bundle. They
+also prove that x64 and ARM64 consumers can link a minimal WDK driver from
+those artifacts. Final driver loading, Driver Verifier runs, and x86/ARM driver
+build validation should be done in the target driver lab or a self-hosted
+runner configured for those toolchains.
+
 ## Native Win32 baseline
 
 `test/win32` builds a user-mode console executable from the same test sources
