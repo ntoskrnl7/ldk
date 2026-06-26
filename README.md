@@ -43,23 +43,95 @@ CPM, so the WDK must be installed and discoverable on the build machine.
 
 ## Quick Start
 
-The recommended integration path is CMake.
+Choose the integration path that matches your driver project:
+
+| Path | Use when | Start here |
+| --- | --- | --- |
+| NuGet / MSBuild | Visual Studio or Build Tools WDK driver project | `Install-Package ldk` or `PackageReference` |
+| CMake prebuilt | Offline, cached, or pinned release dependency | `find_package(ldk CONFIG REQUIRED)` |
+| CMake / CPM | CMake-based driver project that wants to consume LDK from GitHub | `CPMAddPackage("gh:ntoskrnl7/ldk@0.7.5")` |
+
+### NuGet / MSBuild
+
+For a Visual Studio WDK driver project, install the NuGet package:
+
+```powershell
+Install-Package ldk
+```
+
+PackageReference-style projects can reference the package directly:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="ldk" Version="0.7.5" />
+</ItemGroup>
+```
+
+Then restore and build with MSBuild:
+
+```powershell
+msbuild .\MyDriver.vcxproj /restore /p:Configuration=Debug /p:Platform=x64
+```
+
+The package imports native MSBuild props/targets automatically for normal
+Visual Studio NuGet restore. It adds LDK headers, links the matching `Ldk.lib`,
+defines `_KERNEL32_`, and uses `LdkDriverEntry` as the default driver entry
+point. Your driver should still implement the normal WDK `DriverEntry`;
+`LdkDriverEntry` initializes LDK, calls your `DriverEntry`, and terminates LDK
+on unload.
+
+Set `LdkUseDriverEntry=false` before importing `ldk.targets` if your driver
+uses its own PE entry point and calls `LdkInitialize` / `LdkTerminate`
+manually.
+
+### CMake Prebuilt Bundle
+
+GitHub Releases include `ldk-<version>-prebuilt.zip`, which is useful for
+offline builds or CI systems that cache third-party dependencies. Unpack the
+bundle and point CMake at it:
 
 ```cmake
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
 project(MyDriver C)
 
-include(cmake/CPM.cmake)
+find_package(ldk CONFIG REQUIRED PATHS "path/to/ldk-0.7.5" NO_DEFAULT_PATH)
+
+ldk_add_driver(MyDriver main.c)
+```
+
+The prebuilt package contains `Ldk.lib` for x86/x64 Debug and Release builds,
+plus headers, docs, native MSBuild imports, and CMake helpers.
+
+### CMake / CPM
+
+Use this in a third-party driver project's `CMakeLists.txt` when you want to
+consume LDK directly from GitHub. `CPMAddPackage` makes LDK's CMake helpers and
+targets available to that project. To clone and build the LDK repository itself,
+use the [Build From Source](#build-from-source) section.
+
+First add CPM.cmake to your own driver project:
+
+```powershell
+New-Item -ItemType Directory -Force cmake
+Invoke-WebRequest `
+  https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.32.0/CPM.cmake `
+  -OutFile cmake/CPM.cmake
+```
+
+Then consume LDK from that project:
+
+```cmake
+cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
+
+project(MyDriver C)
+
+include("${CMAKE_CURRENT_LIST_DIR}/cmake/CPM.cmake")
 
 CPMAddPackage("gh:ntoskrnl7/ldk@0.7.5")
-CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
+include(${ldk_SOURCE_DIR}/cmake/Ldk.cmake)
 
-list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
-find_package(WDK REQUIRED)
-
-wdk_add_driver(MyDriver CUSTOM_ENTRY_POINT "LdkDriverEntry" main.c)
-target_link_libraries(MyDriver Ldk)
+ldk_add_driver(MyDriver main.c)
 ```
 
 Using `LdkDriverEntry` as the custom entry point lets LDK run its initialization
@@ -137,7 +209,7 @@ DriverUnload(
 }
 ```
 
-## Build
+## Build From Source
 
 Clone the repository and build with CMake:
 
