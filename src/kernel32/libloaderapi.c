@@ -1,12 +1,33 @@
 ﻿#include "winbase.h"
+#include "../ldk.h"
 #include "../ntdll/ntdll.h"
 #include <ntimage.h>
 
 
 
-LPWSTR
+#define LDK_LOAD_LIBRARY_RESOURCE_FLAGS \
+	(LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE)
+
+#define LDK_LOAD_LIBRARY_SEARCH_FLAGS \
+	(LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_APPLICATION_DIR | \
+	 LOAD_LIBRARY_SEARCH_USER_DIRS | LOAD_LIBRARY_SEARCH_SYSTEM32 | \
+	 LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_SYSTEM32_NO_FORWARDER)
+
+#define LDK_LOAD_LIBRARY_SUPPORTED_FLAGS \
+	(DONT_RESOLVE_DLL_REFERENCES | LOAD_LIBRARY_AS_DATAFILE | \
+	 LOAD_WITH_ALTERED_SEARCH_PATH | LOAD_IGNORE_CODE_AUTHZ_LEVEL | \
+	 LOAD_LIBRARY_AS_IMAGE_RESOURCE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | \
+	 LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_APPLICATION_DIR | \
+	 LOAD_LIBRARY_SEARCH_USER_DIRS | LOAD_LIBRARY_SEARCH_SYSTEM32 | \
+	 LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_SYSTEM32_NO_FORWARDER)
+
+#define LDK_RESOURCE_MODULE_HANDLE_TAG ((ULONG_PTR)1)
+
+NTSTATUS
 LdkpComputeDllPath (
-	VOID
+	_In_ LPCWSTR lpLibFileName,
+	_In_ DWORD dwFlags,
+	_Outptr_ LPWSTR *DllPath
 	);
 
 
@@ -37,8 +58,8 @@ LdkpMapModuleHandle (
     )
 {
 	if (ARGUMENT_PRESENT(hModule)) {
-		if ((ULONG_PTR)hModule & 0x00000001) {
-			return (bResourcesOnly) ? (PVOID)hModule : NULL;
+		if ((ULONG_PTR)hModule & LDK_RESOURCE_MODULE_HANDLE_TAG) {
+			return (bResourcesOnly) ? (PVOID)((ULONG_PTR)hModule & ~LDK_RESOURCE_MODULE_HANDLE_TAG) : NULL;
 		} else {
 			return (PVOID)hModule;
 		}
@@ -67,7 +88,10 @@ GetModuleFileNameA (
 
 	if (ARGUMENT_PRESENT(hModule)) {
 		PLDK_MODULE Module;
-		if (NT_SUCCESS(LdkGetModuleByBase( (PVOID)hModule,
+		PVOID ModuleBase = LdkpMapModuleHandle( hModule,
+												TRUE );
+		if (ModuleBase &&
+			NT_SUCCESS(LdkGetModuleByBase( ModuleBase,
 										   &Module ))) {
 			FileName = Module->FullPathName.Buffer;
 			FileNameLength = Module->FullPathName.Length;
@@ -201,6 +225,15 @@ GetModuleHandleExA (
 {
 	PAGED_CODE();
 
+	if (FlagOn(dwFlags, ~(GET_MODULE_HANDLE_EX_FLAG_PIN |
+						  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT |
+						  GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS)) ||
+		(FlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN) &&
+		 FlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT))) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
 	if (! ARGUMENT_PRESENT(phModule)) {
 		SetLastError( ERROR_INVALID_PARAMETER );
 		return FALSE;
@@ -214,8 +247,10 @@ GetModuleHandleExA (
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByAddress( (PVOID)lpModuleName,
-											&Module );
+			Status = LdkReferenceModuleByAddress( (PVOID)lpModuleName,
+												  BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN),
+												  ! BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT),
+												  &Module );
 
 			if (! NT_SUCCESS(Status)) {
 				LdkSetLastNTError( Status );
@@ -231,8 +266,10 @@ GetModuleHandleExA (
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
-			Status = LdkGetModuleByName( lpModuleName,
-										 &Module );
+			Status = LdkReferenceModuleByName( lpModuleName,
+											   BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN),
+											   ! BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT),
+											   &Module );
 			if (! NT_SUCCESS(Status)) {
 				LdkSetLastNTError( Status );
 				return FALSE;
@@ -317,27 +354,32 @@ GetProcAddress (
 {
     NTSTATUS Status;
 	PVOID ProcedureAddress = NULL;
+	PVOID DllHandle;
     STRING ProcedureName;
 
 	PAGED_CODE();
 
+	DllHandle = LdkpMapModuleHandle( hModule,
+									 FALSE );
+	if (ARGUMENT_PRESENT(hModule) && !ARGUMENT_PRESENT(DllHandle)) {
+		LdkSetLastNTError( STATUS_PROCEDURE_NOT_FOUND );
+		return NULL;
+	}
+
     if ((ULONG_PTR)lpProcName > 0xffff) {
         RtlInitString(&ProcedureName, lpProcName);
-        Status = LdrGetProcedureAddress( LdkpMapModuleHandle( hModule,
-															  FALSE ),
+        Status = LdrGetProcedureAddress( DllHandle,
 										 &ProcedureName,
 										 0L,
 										 &ProcedureAddress);
     } else {
-        Status = LdrGetProcedureAddress( LdkpMapModuleHandle( hModule,
-															  FALSE),
+        Status = LdrGetProcedureAddress( DllHandle,
 										 NULL,
 										 PtrToUlong( (PVOID)lpProcName ),
 										 &ProcedureAddress );
     }
     if (NT_SUCCESS(Status)) {
-        if (ProcedureAddress == LdkpMapModuleHandle( hModule,
-													 FALSE )) {
+        if (ProcedureAddress == DllHandle) {
             Status = ((ULONG_PTR)lpProcName > 0xffff) ? STATUS_ENTRYPOINT_NOT_FOUND : STATUS_ORDINAL_NOT_FOUND;
         } else {
             return (FARPROC)ProcedureAddress;
@@ -407,60 +449,372 @@ LoadLibraryExA (
 						   dwFlags );
 }
 
-LPWSTR
-LdkpComputeDllPath (
-	VOID
+BOOLEAN
+LdkpIsPathSeparator (
+	_In_ WCHAR Character
 	)
 {
-	PAGED_CODE();
+	return Character == L'\\' || Character == L'/';
+}
 
+BOOLEAN
+LdkpIsFullyQualifiedDllPath (
+	_In_ LPCWSTR Path
+	)
+{
+	if (! Path || ! *Path) {
+		return FALSE;
+	}
+
+	if ((Path[0] == L'\\') &&
+		Path[1] &&
+		Path[2] &&
+		Path[3] &&
+		(Path[1] == L'?') &&
+		(Path[2] == L'?') &&
+		(Path[3] == L'\\')) {
+		Path += 4;
+	}
+
+	if (LdkpIsPathSeparator(Path[0]) &&
+		Path[1] &&
+		LdkpIsPathSeparator(Path[1])) {
+		return TRUE;
+	}
+
+	if (LdkpIsPathSeparator(Path[0])) {
+		return TRUE;
+	}
+
+	return Path[0] &&
+		   Path[1] &&
+		   Path[2] &&
+		   Path[1] == L':' &&
+		   LdkpIsPathSeparator(Path[2]);
+}
+
+NTSTATUS
+LdkpDuplicateDirectoryFromPath (
+	_In_ LPCWSTR Path,
+	_Out_ PUNICODE_STRING Directory
+	)
+{
+	PCWSTR LastSeparator = NULL;
+	PCWSTR Current;
+	USHORT Length;
+
+	Directory->Length = 0;
+	Directory->MaximumLength = 0;
+	Directory->Buffer = NULL;
+
+	if (! Path) {
+		return STATUS_SUCCESS;
+	}
+
+	for (Current = Path; *Current; Current++) {
+		if (LdkpIsPathSeparator(*Current)) {
+			LastSeparator = Current;
+		}
+	}
+
+	if (! LastSeparator) {
+		return STATUS_SUCCESS;
+	}
+
+	Length = (USHORT)((LastSeparator - Path) * sizeof(WCHAR));
+	if (LastSeparator == Path + 2 &&
+		Path[1] == L':') {
+		Length += sizeof(WCHAR);
+	}
+
+	if (! Length) {
+		return STATUS_SUCCESS;
+	}
+
+	Directory->MaximumLength = Length + sizeof(UNICODE_NULL);
+	Directory->Buffer = RtlAllocateHeap( RtlProcessHeap(),
+										 HEAP_ZERO_MEMORY,
+										 Directory->MaximumLength );
+	if (! Directory->Buffer) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	RtlCopyMemory( Directory->Buffer,
+				   Path,
+				   Length );
+	Directory->Length = Length;
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS
+LdkpDuplicateImageDirectory (
+	_Out_ PUNICODE_STRING Directory
+	)
+{
 	UNICODE_STRING ImagePath = NtCurrentPeb()->ProcessParameters->ImagePathName;
-	PWSTR p = (PWSTR)Add2Ptr(ImagePath.Buffer, ImagePath.Length);
-	while (p > ImagePath.Buffer) {
-		if (*(--p) == OBJ_NAME_PATH_SEPARATOR) {
-			ImagePath.Length = (USHORT)((p - ImagePath.Buffer) * sizeof(WCHAR));
+	PWSTR End = (PWSTR)Add2Ptr(ImagePath.Buffer, ImagePath.Length);
+
+	Directory->Length = 0;
+	Directory->MaximumLength = 0;
+	Directory->Buffer = NULL;
+
+	while (End > ImagePath.Buffer) {
+		End--;
+		if (*End == OBJ_NAME_PATH_SEPARATOR) {
+			ImagePath.Length = (USHORT)((End - ImagePath.Buffer) * sizeof(WCHAR));
 			break;
 		}
 	}
 
-	UNICODE_STRING Value;
-	Value.MaximumLength = (4096 * sizeof(WCHAR)) + sizeof(WCHAR) + ImagePath.Length + sizeof(WCHAR);
-	Value.Buffer = RtlAllocateHeap( RtlProcessHeap(),
-									HEAP_ZERO_MEMORY,
-									Value.MaximumLength );
-retry:
-	if (! Value.Buffer) {
-		return NULL;
+	if (! ImagePath.Length) {
+		return STATUS_SUCCESS;
 	}
-	Value.Length = (USHORT)GetEnvironmentVariableW( L"PATH",
-													Value.Buffer,
-													Value.MaximumLength / sizeof(WCHAR) ) * sizeof(WCHAR);
-	if (Value.Length == 0) {
-		RtlCopyMemory( Value.Buffer,
-					   ImagePath.Buffer,
-					   ImagePath.Length );
-		return Value.Buffer;
+
+	Directory->MaximumLength = ImagePath.Length + sizeof(UNICODE_NULL);
+	Directory->Buffer = RtlAllocateHeap( RtlProcessHeap(),
+										 HEAP_ZERO_MEMORY,
+										 Directory->MaximumLength );
+	if (! Directory->Buffer) {
+		return STATUS_INSUFFICIENT_RESOURCES;
 	}
-	if (Value.MaximumLength - Value.Length < ImagePath.Length) {
-		Value.MaximumLength = Value.Length + sizeof(WCHAR) + ImagePath.Length;
+
+	RtlCopyMemory( Directory->Buffer,
+				   ImagePath.Buffer,
+				   ImagePath.Length );
+	Directory->Length = ImagePath.Length;
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS
+LdkpDuplicateEnvironmentPath (
+	_Out_ PUNICODE_STRING EnvironmentPath
+	)
+{
+	EnvironmentPath->Length = 0;
+	EnvironmentPath->MaximumLength = 4096 * sizeof(WCHAR);
+	EnvironmentPath->Buffer = RtlAllocateHeap( RtlProcessHeap(),
+											   HEAP_ZERO_MEMORY,
+											   EnvironmentPath->MaximumLength );
+	if (! EnvironmentPath->Buffer) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	for (;;) {
+		DWORD EnvironmentPathLength = GetEnvironmentVariableW( L"PATH",
+															   EnvironmentPath->Buffer,
+															   EnvironmentPath->MaximumLength / sizeof(WCHAR) );
+		if (EnvironmentPathLength < EnvironmentPath->MaximumLength / sizeof(WCHAR)) {
+			EnvironmentPath->Length = (USHORT)(EnvironmentPathLength * sizeof(WCHAR));
+			return STATUS_SUCCESS;
+		}
+
+		EnvironmentPath->MaximumLength = (USHORT)((EnvironmentPathLength + 1) * sizeof(WCHAR));
 		PVOID Buffer = RtlReAllocateHeap( RtlProcessHeap(),
 										  HEAP_ZERO_MEMORY,
-										  Value.Buffer,
-										  Value.MaximumLength );
-		if (Buffer) {
-			Value.Buffer = Buffer;
-			goto retry;
+										  EnvironmentPath->Buffer,
+										  EnvironmentPath->MaximumLength );
+		if (! Buffer) {
+			RtlFreeHeap( RtlProcessHeap(),
+						 0,
+						 EnvironmentPath->Buffer );
+			EnvironmentPath->Buffer = NULL;
+			EnvironmentPath->MaximumLength = 0;
+			return STATUS_INSUFFICIENT_RESOURCES;
 		}
-		RtlCopyMemory( Value.Buffer,
-					   ImagePath.Buffer,
-					   ImagePath.Length );
-		return Value.Buffer;
+		EnvironmentPath->Buffer = Buffer;
 	}
-	RtlAppendUnicodeToString( &Value,
-							  L";" );
-	RtlAppendUnicodeStringToString( &Value,
-									&ImagePath );
-	return Value.Buffer;
+}
+
+VOID
+LdkpFreeHeapUnicodeString (
+	_Inout_ PUNICODE_STRING String
+	)
+{
+	if (String->Buffer) {
+		RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					 String->Buffer );
+	}
+	String->Buffer = NULL;
+	String->Length = 0;
+	String->MaximumLength = 0;
+}
+
+NTSTATUS
+LdkpAppendDllPathElement (
+	_Inout_ PUNICODE_STRING SearchPath,
+	_In_ PCUNICODE_STRING Element
+	)
+{
+	NTSTATUS Status;
+
+	if (! Element->Length) {
+		return STATUS_SUCCESS;
+	}
+
+	if (SearchPath->Length) {
+		Status = RtlAppendUnicodeToString( SearchPath,
+										   L";" );
+		if (! NT_SUCCESS(Status)) {
+			return Status;
+		}
+	}
+
+	return RtlAppendUnicodeStringToString( SearchPath,
+										   Element );
+}
+
+NTSTATUS
+LdkpComputeDllPath (
+	_In_ LPCWSTR lpLibFileName,
+	_In_ DWORD dwFlags,
+	_Outptr_ LPWSTR *DllPath
+	)
+{
+	NTSTATUS Status;
+	UNICODE_STRING LoadDirectory;
+	UNICODE_STRING ImageDirectory;
+	UNICODE_STRING SystemDirectory;
+	UNICODE_STRING EnvironmentPath;
+	UNICODE_STRING SearchPath;
+	DWORD SearchFlags;
+
+	PAGED_CODE();
+
+	*DllPath = NULL;
+
+	LoadDirectory.Buffer = NULL;
+	ImageDirectory.Buffer = NULL;
+	SystemDirectory.Buffer = NULL;
+	EnvironmentPath.Buffer = NULL;
+
+	Status = LdkpDuplicateDirectoryFromPath( lpLibFileName,
+											 &LoadDirectory );
+	if (! NT_SUCCESS(Status)) {
+		goto Cleanup;
+	}
+
+	Status = LdkpDuplicateImageDirectory( &ImageDirectory );
+	if (! NT_SUCCESS(Status)) {
+		goto Cleanup;
+	}
+
+	SystemDirectory = NtCurrentPeb()->ProcessParameters->DllPath;
+
+	Status = LdkpDuplicateEnvironmentPath( &EnvironmentPath );
+	if (! NT_SUCCESS(Status)) {
+		goto Cleanup;
+	}
+
+	SearchPath.Length = 0;
+	SearchPath.MaximumLength = LoadDirectory.Length +
+							   ImageDirectory.Length +
+							   SystemDirectory.Length +
+							   EnvironmentPath.Length +
+							   (4 * sizeof(WCHAR)) +
+							   sizeof(UNICODE_NULL);
+	SearchPath.Buffer = RtlAllocateHeap( RtlProcessHeap(),
+										 HEAP_ZERO_MEMORY,
+										 SearchPath.MaximumLength );
+	if (! SearchPath.Buffer) {
+		Status = STATUS_INSUFFICIENT_RESOURCES;
+		goto Cleanup;
+	}
+
+	SearchFlags = dwFlags & LDK_LOAD_LIBRARY_SEARCH_FLAGS;
+	if (dwFlags & LOAD_WITH_ALTERED_SEARCH_PATH) {
+		Status = LdkpAppendDllPathElement( &SearchPath,
+										   &LoadDirectory );
+		if (! NT_SUCCESS(Status)) {
+			goto CleanupSearchPath;
+		}
+		Status = LdkpAppendDllPathElement( &SearchPath,
+										   &ImageDirectory );
+		if (! NT_SUCCESS(Status)) {
+			goto CleanupSearchPath;
+		}
+		Status = LdkpAppendDllPathElement( &SearchPath,
+										   &EnvironmentPath );
+		if (! NT_SUCCESS(Status)) {
+			goto CleanupSearchPath;
+		}
+	} else if (SearchFlags) {
+		if (SearchFlags & LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR) {
+			Status = LdkpAppendDllPathElement( &SearchPath,
+											   &LoadDirectory );
+			if (! NT_SUCCESS(Status)) {
+				goto CleanupSearchPath;
+			}
+		}
+
+		if (SearchFlags & LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) {
+			Status = LdkpAppendDllPathElement( &SearchPath,
+											   &ImageDirectory );
+			if (! NT_SUCCESS(Status)) {
+				goto CleanupSearchPath;
+			}
+			Status = LdkpAppendDllPathElement( &SearchPath,
+											   &SystemDirectory );
+			if (! NT_SUCCESS(Status)) {
+				goto CleanupSearchPath;
+			}
+			Status = LdkpAppendDllPathElement( &SearchPath,
+											   &EnvironmentPath );
+			if (! NT_SUCCESS(Status)) {
+				goto CleanupSearchPath;
+			}
+		} else {
+			if (SearchFlags & LOAD_LIBRARY_SEARCH_APPLICATION_DIR) {
+				Status = LdkpAppendDllPathElement( &SearchPath,
+												   &ImageDirectory );
+				if (! NT_SUCCESS(Status)) {
+					goto CleanupSearchPath;
+				}
+			}
+			if (SearchFlags & (LOAD_LIBRARY_SEARCH_SYSTEM32 | LOAD_LIBRARY_SEARCH_SYSTEM32_NO_FORWARDER)) {
+				Status = LdkpAppendDllPathElement( &SearchPath,
+												   &SystemDirectory );
+				if (! NT_SUCCESS(Status)) {
+					goto CleanupSearchPath;
+				}
+			}
+			if (SearchFlags & LOAD_LIBRARY_SEARCH_USER_DIRS) {
+				Status = LdkpAppendDllPathElement( &SearchPath,
+												   &EnvironmentPath );
+				if (! NT_SUCCESS(Status)) {
+					goto CleanupSearchPath;
+				}
+			}
+		}
+	} else {
+		Status = LdkpAppendDllPathElement( &SearchPath,
+										   &ImageDirectory );
+		if (! NT_SUCCESS(Status)) {
+			goto CleanupSearchPath;
+		}
+		Status = LdkpAppendDllPathElement( &SearchPath,
+										   &EnvironmentPath );
+		if (! NT_SUCCESS(Status)) {
+			goto CleanupSearchPath;
+		}
+	}
+
+	*DllPath = SearchPath.Buffer;
+	SearchPath.Buffer = NULL;
+	Status = STATUS_SUCCESS;
+
+CleanupSearchPath:
+	if (SearchPath.Buffer) {
+		RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					 SearchPath.Buffer );
+	}
+
+Cleanup:
+	LdkpFreeHeapUnicodeString( &LoadDirectory );
+	LdkpFreeHeapUnicodeString( &ImageDirectory );
+	LdkpFreeHeapUnicodeString( &EnvironmentPath );
+	return Status;
 }
 
 WINBASEAPI
@@ -476,25 +830,46 @@ LoadLibraryExW (
 	NTSTATUS Status;
 	HMODULE hModule;
 	UNICODE_STRING DllName;
-	ULONG DllCharacteristics = 0;
+	ULONG LoadFlags = 0;
+	BOOL ResourceOnly;
+	DWORD SearchFlags;
 	
 	PAGED_CODE();
-	UNREFERENCED_PARAMETER(hFile);
 
-	hModule = GetModuleHandleW( lpLibFileName );
-	if (hModule) {
-		return hModule;
+	if (! lpLibFileName ||
+		hFile ||
+		FlagOn(dwFlags, ~LDK_LOAD_LIBRARY_SUPPORTED_FLAGS)) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return NULL;
 	}
 
-    if (dwFlags & DONT_RESOLVE_DLL_REFERENCES) {
-		DllCharacteristics |= IMAGE_FILE_EXECUTABLE_IMAGE;
+	SearchFlags = dwFlags & LDK_LOAD_LIBRARY_SEARCH_FLAGS;
+	if ((dwFlags & LOAD_WITH_ALTERED_SEARCH_PATH) &&
+		SearchFlags) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return NULL;
+	}
+
+	if ((dwFlags & LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR) &&
+		(! LdkpIsFullyQualifiedDllPath(lpLibFileName))) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return NULL;
+	}
+
+	ResourceOnly = BooleanFlagOn(dwFlags, LDK_LOAD_LIBRARY_RESOURCE_FLAGS);
+	if (dwFlags & DONT_RESOLVE_DLL_REFERENCES) {
+		LoadFlags |= LDK_LOAD_DLL_DONT_RESOLVE_IMPORTS;
+	}
+	if (ResourceOnly) {
+		LoadFlags |= LDK_LOAD_DLL_RESOURCE_ONLY;
 	}
 
 	RtlInitUnicodeString( &DllName,
 						  lpLibFileName );
 
 	PPEB Peb = NtCurrentPeb();
-	if (! (dwFlags & LOAD_LIBRARY_AS_DATAFILE) && (DllName.Length == Peb->ProcessParameters->ImagePathName.Length)) {
+	if ((! ResourceOnly) &&
+		(DllName.Length == Peb->ProcessParameters->ImagePathName.Length)) {
 		if (RtlEqualUnicodeString( &DllName,
 								   &Peb->ProcessParameters->ImagePathName,
 								   TRUE )) {
@@ -502,9 +877,17 @@ LoadLibraryExW (
 		}
 	}
 
-	PWSTR DllPath = LdkpComputeDllPath();
+	PWSTR DllPath;
+	Status = LdkpComputeDllPath( lpLibFileName,
+								 dwFlags,
+								 &DllPath );
+	if (! NT_SUCCESS(Status)) {
+		LdkSetLastNTError( Status );
+		return NULL;
+	}
+
 	Status = LdrLoadDll( DllPath,
-						 &DllCharacteristics,
+						 &LoadFlags,
 						 &DllName,
 						 (PVOID *)&hModule );
 	RtlFreeHeap( RtlProcessHeap(),
@@ -514,6 +897,9 @@ LoadLibraryExW (
 		LdkSetLastNTError( Status );
 		return NULL;
 	} else {
+		if (ResourceOnly) {
+			hModule = (HMODULE)((ULONG_PTR)hModule | LDK_RESOURCE_MODULE_HANDLE_TAG);
+		}
 		return hModule;
 	}
 }
@@ -526,10 +912,18 @@ FreeLibrary (
     )
 {
 	NTSTATUS Status;
+	PVOID ModuleHandle;
 
 	PAGED_CODE()
 
-	Status = LdrUnloadDll( hLibModule );
+	ModuleHandle = LdkpMapModuleHandle( hLibModule,
+										 TRUE );
+	if (! ModuleHandle) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	Status = LdrUnloadDll( ModuleHandle );
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
 	}

@@ -23,6 +23,8 @@ heap list.
 `LdkCurrentPeb()` returns the global LDK PEB record. It owns:
 
 - Driver object and image information.
+- The synthetic LDK process id, real host process id, and LDK process exit
+  event/status.
 - Process heap.
 - Module list and module-list resource.
 - Process parameters.
@@ -31,6 +33,14 @@ heap list.
 
 The initial module list contains LDK's Kernel32 and NTDLL pseudo modules. DLLs
 loaded through the loader are added to the same list.
+
+LDK's Win32 process identity is runtime-local. `GetCurrentProcessId` returns a
+synthetic id owned by the current LDK runtime instance, not
+`PsGetCurrentProcessId`. `OpenProcess` returns an LDK process handle for that
+synthetic id and falls back to native process opening for other process ids.
+That handle is understood by LDK handle, wait, exit-code, and terminate helpers.
+The real host process id is still kept separately for diagnostics and native
+thread client-id bookkeeping.
 
 ## Process parameters
 
@@ -57,7 +67,8 @@ Each LDK TEB stores:
 
 - A pointer back to the LDK PEB.
 - The owning `PETHREAD`.
-- Client id values.
+- Client id values. `ClientId.UniqueProcess` uses the synthetic LDK process id;
+  `RealClientId.UniqueProcess` keeps the actual host process id.
 - Last-error and status-related state.
 - Static string conversion buffers.
 - TLS/FLS slots.

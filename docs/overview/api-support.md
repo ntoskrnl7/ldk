@@ -16,8 +16,8 @@ Status guide:
 
 | Area | Representative APIs | Status | Notes |
 | --- | --- | --- | --- |
-| Loader | `LoadLibraryA/W`, `LoadLibraryExA/W`, `FreeLibrary`, `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W` | Experimental | Kernel-space DLL loading is the project core, but loaded modules must be audited. See [Loader](../runtime/loader.md). |
-| Runtime state | `GetLastError`, `SetLastError`, `GetStartupInfoA/W`, `GetCurrentProcess`, `GetCurrentThread` | Partial | State is backed by LDK PEB/TEB records, not user-mode process state. |
+| Loader | `LoadLibraryA/W`, `LoadLibraryExA/W`, `FreeLibrary`, `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W` | Experimental | Supports tested name/ordinal export lookup, import-by-ordinal, load counts, pinning, basic acyclic import dependency ownership, selected `LoadLibraryExW` search flags, `DONT_RESOLVE_DLL_REFERENCES`, and resource/datafile handles. Complex dependency graphs still need workload validation. See [Loader](../runtime/loader.md). |
+| Runtime state | `GetLastError`, `SetLastError`, `GetStartupInfoA/W`, `GetCurrentProcess`, `GetCurrentProcessId`, `OpenProcess`, `GetCurrentThread` | Partial | Process state is backed by the LDK runtime instance, while thread identity follows real kernel threads with LDK TEB sidecars. |
 | Environment and paths | `GetEnvironmentVariableA/W`, `SetEnvironmentVariableA/W`, `GetEnvironmentStringsA/W`, `GetCurrentDirectoryA/W`, `SetCurrentDirectoryA/W`, `GetCommandLineA/W` | Partial | Backed by `RTL_USER_PROCESS_PARAMETERS` inside the LDK PEB. See [Environment and paths](../runtime/environment-and-paths.md). |
 | Synchronization | Critical sections, condition variables, waits, `Sleep`, `WaitOnAddress`, `WakeByAddressSingle`, `WakeByAddressAll` | Partial | Common paths are tested, including multi-threaded wait-on-address stress. See [Synchronization](../runtime/synchronization.md). |
 | Threads | `CreateThread`, `OpenThread`, `ExitThread`, `GetExitCodeThread`, `GetThreadTimes`, priority helpers | Partial | Uses kernel system threads. `CREATE_SUSPENDED` is not supported. See [Threading and callbacks](../runtime/threading-and-callbacks.md). |
@@ -37,7 +37,7 @@ Status guide:
 | Area | Representative APIs | Status | Notes |
 | --- | --- | --- | --- |
 | Loader | `LdrLoadDll`, `LdrUnloadDll`, `LdrGetProcedureAddress`, `LdrGetDllHandle` | Experimental | Wraps the LDK loader and module list. |
-| Synchronization | `RtlInitializeCriticalSection`, `RtlEnterCriticalSection`, `RtlLeaveCriticalSection`, condition-variable RTL APIs, SRW helpers | Partial | ReactOS-derived portions should be audited case by case. |
+| Synchronization | `RtlInitializeCriticalSection`, `RtlEnterCriticalSection`, `RtlLeaveCriticalSection`, condition-variable RTL APIs, SRW helpers | Partial | Implemented in LDK over kernel wait primitives and wait-on-address helpers. |
 | Wait-on-address | `RtlWaitOnAddress`, `RtlWakeAddressSingle`, `RtlWakeAddressAll` | Partial | Uses LDK alert-by-thread-id primitives internally. |
 | Native alert wait | `NtAlertThreadByThreadId`, `NtWaitForAlertByThreadId`, `Zw*` aliases | Partial | Pending alerts are keyed by the target `PETHREAD` object to avoid stale thread-id reuse. |
 | Keyed events | `NtCreateKeyedEvent`, `NtOpenKeyedEvent`, `NtWaitForKeyedEvent`, `NtReleaseKeyedEvent` | Partial | Implemented and tested, but currently not listed in the NTDLL pseudo-module registration table. |

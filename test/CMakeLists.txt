@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
+if(POLICY CMP0149)
+    cmake_policy(SET CMP0149 OLD)
+endif()
+
 project(LdkTest LANGUAGES C)
 
 include(../cmake/CPM.cmake)
@@ -9,6 +13,12 @@ set(LDK_USE_RTL_RAISE_EXCEPTION ON)
 CPMAddPackage(NAME Ldk SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
 
 CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
+if(CMAKE_VS_PLATFORM_NAME AND CMAKE_GENERATOR_PLATFORM MATCHES ",")
+    # FindWDK derives library names from CMAKE_GENERATOR_PLATFORM and does not
+    # understand Visual Studio's ",version=..." platform option.
+    set(CMAKE_GENERATOR_PLATFORM "${CMAKE_VS_PLATFORM_NAME}")
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
@@ -39,4 +49,13 @@ foreach(flag
 endforeach()
 
 add_library(Test SHARED dll.c)
+add_library(OrdinalImport SHARED ordinalimport.c)
+add_library(AutoDependency SHARED autodependency.c)
+add_library(DependencyOwner SHARED dependencyowner.c)
+target_link_libraries(OrdinalImport PRIVATE Test)
+target_link_libraries(DependencyOwner PRIVATE AutoDependency)
 set_property(TARGET Test APPEND_STRING PROPERTY LINK_FLAGS "/NOENTRY")
+set_property(TARGET OrdinalImport APPEND_STRING PROPERTY LINK_FLAGS "/NOENTRY")
+set_property(TARGET AutoDependency APPEND_STRING PROPERTY LINK_FLAGS "/NOENTRY")
+set_property(TARGET DependencyOwner APPEND_STRING PROPERTY LINK_FLAGS "/NOENTRY")
+add_dependencies(LdkTest Test OrdinalImport AutoDependency DependencyOwner)

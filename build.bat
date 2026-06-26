@@ -91,14 +91,23 @@ IF EXIST "%1/CMakeLists.txt" (
     )
 
     IF NOT "!ARCH!" == "" (
+        SET CMAKE_ARCH=!ARCH!
+        SET CMAKE_SDK_ARGS=-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=10.0.22621.0
+        IF /I "!ARCH!" == "ARM" (
+            SET CMAKE_ARCH=ARM,version=10.0.22621.0
+            SET CMAKE_SDK_ARGS=-DCMAKE_SYSTEM_VERSION=10.0.22621.0 -DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=10.0.22621.0 -DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=10.0.22621.0
+        )
         IF "!GENERATOR!" == "" (
             ECHO Unsupported Visual Studio.
             ECHO Use Visual Studio set as CMake default generator.
-            ECHO cmake -S !WORK_PATH! -B !BUILD_PATH! -A !ARCH! -DCMAKE_CXX_FLAGS=/MP
-            cmake -S !WORK_PATH! -B !BUILD_PATH! -A !ARCH! -DCMAKE_CXX_FLAGS=/MP
+            ECHO cmake -S !WORK_PATH! -B !BUILD_PATH! -A !CMAKE_ARCH! -DCMAKE_CXX_FLAGS=/MP !CMAKE_SDK_ARGS!
+            cmake -S !WORK_PATH! -B !BUILD_PATH! -A !CMAKE_ARCH! -DCMAKE_CXX_FLAGS=/MP !CMAKE_SDK_ARGS!
         ) ELSE (
-            ECHO cmake -S !WORK_PATH! -B !BUILD_PATH! -A !ARCH! -DCMAKE_CXX_FLAGS=/MP -G !GENERATOR!
-            cmake -S !WORK_PATH! -B !BUILD_PATH! -A !ARCH! -DCMAKE_CXX_FLAGS=/MP -G !GENERATOR!
+            ECHO cmake -S !WORK_PATH! -B !BUILD_PATH! -A !CMAKE_ARCH! -DCMAKE_CXX_FLAGS=/MP !CMAKE_SDK_ARGS! -G !GENERATOR!
+            cmake -S !WORK_PATH! -B !BUILD_PATH! -A !CMAKE_ARCH! -DCMAKE_CXX_FLAGS=/MP !CMAKE_SDK_ARGS! -G !GENERATOR!
+        )
+        IF ERRORLEVEL 1 (
+            EXIT /B !ERRORLEVEL!
         )
         IF "!CONFIG!" == "" (
             ECHO cmake --build !BUILD_PATH!

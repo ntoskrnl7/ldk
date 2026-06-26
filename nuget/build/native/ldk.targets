@@ -17,8 +17,8 @@
 
   <Target Name="LdkValidateNativePackage" BeforeTargets="PrepareForBuild">
     <Error
-      Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkLibPlatform)' != 'x86' and '$(LdkLibPlatform)' != 'x64'"
-      Text="LDK NuGet package contains prebuilt driver libraries for x86 and x64 only. Current platform is '$(Platform)'." />
+      Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkLibPlatform)' != 'x86' and '$(LdkLibPlatform)' != 'x64' and '$(LdkLibPlatform)' != 'ARM' and '$(LdkLibPlatform)' != 'ARM64'"
+      Text="LDK NuGet package contains prebuilt driver libraries for x86, x64, ARM, and ARM64 only. Current platform is '$(Platform)'." />
     <Error
       Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkLibDir)Ldk.lib')"
       Text="Ldk.lib was not found under '$(LdkLibDir)'." />
