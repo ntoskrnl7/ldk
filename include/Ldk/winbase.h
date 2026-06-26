@@ -220,6 +220,19 @@ typedef struct _FILE_END_OF_FILE_INFO {
     LARGE_INTEGER EndOfFile;
 } FILE_END_OF_FILE_INFO, *PFILE_END_OF_FILE_INFO;
 
+#ifndef COMPRESSION_FORMAT_NONE
+#define COMPRESSION_FORMAT_NONE 0x0000
+#endif
+
+typedef struct _FILE_COMPRESSION_INFO {
+    LARGE_INTEGER CompressedFileSize;
+    WORD CompressionFormat;
+    UCHAR CompressionUnitShift;
+    UCHAR ChunkShift;
+    UCHAR ClusterShift;
+    UCHAR Reserved[3];
+} FILE_COMPRESSION_INFO, *PFILE_COMPRESSION_INFO;
+
 typedef struct _FILE_ATTRIBUTE_TAG_INFO {
     DWORD FileAttributes;
     DWORD ReparseTag;
@@ -229,6 +242,10 @@ typedef struct _FILE_ID_INFO {
     ULONGLONG VolumeSerialNumber;
     FILE_ID_128 FileId;
 } FILE_ID_INFO, *PFILE_ID_INFO;
+
+typedef struct _FILE_ALIGNMENT_INFO {
+    ULONG AlignmentRequirement;
+} FILE_ALIGNMENT_INFO, *PFILE_ALIGNMENT_INFO;
 
 #ifndef FileBasicInfo
 #define FileBasicInfo ((FILE_INFO_BY_HANDLE_CLASS)0)
@@ -251,8 +268,14 @@ typedef struct _FILE_ID_INFO {
 #ifndef FileEndOfFileInfo
 #define FileEndOfFileInfo ((FILE_INFO_BY_HANDLE_CLASS)6)
 #endif
+#ifndef FileCompressionInfo
+#define FileCompressionInfo ((FILE_INFO_BY_HANDLE_CLASS)8)
+#endif
 #ifndef FileAttributeTagInfo
 #define FileAttributeTagInfo ((FILE_INFO_BY_HANDLE_CLASS)9)
+#endif
+#ifndef FileAlignmentInfo
+#define FileAlignmentInfo ((FILE_INFO_BY_HANDLE_CLASS)17)
 #endif
 #ifndef FileIdInfo
 #define FileIdInfo ((FILE_INFO_BY_HANDLE_CLASS)18)

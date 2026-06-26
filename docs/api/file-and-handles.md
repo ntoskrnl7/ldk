@@ -27,7 +27,9 @@ attribute helpers are backed by native file information queries and setters.
 - `FileBasicInfo`
 - `FileStandardInfo`
 - `FileNameInfo`
+- `FileCompressionInfo`
 - `FileAttributeTagInfo`
+- `FileAlignmentInfo`
 - `FileIdInfo`
 
 `SetFileInformationByHandle` currently supports:
@@ -95,5 +97,6 @@ completion semantics rather than a synchronous approximation.
 
 `FileTest` covers the common file path, copy, move, hard-link, symbolic-link,
 final-path, temp-path, temp-file, `FileNameInfo`, `FindFirstFileExW` flags,
-`FileAllocationInfo`, rename, and disposition paths. Runtime validation still
-requires loading `LdkTest.sys` in a driver test VM.
+selected `GetFileInformationByHandleEx` query classes, `FileAllocationInfo`,
+rename, and disposition paths. Runtime validation still requires loading
+`LdkTest.sys` in a driver test VM.

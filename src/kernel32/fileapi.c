@@ -2602,6 +2602,65 @@ GetFileInformationByHandleEx (
         return TRUE;
     }
 
+    if (FileInformationClass == FileCompressionInfo) {
+        PFILE_COMPRESSION_INFO CompressionInfo;
+        FILE_COMPRESSION_INFORMATION NativeCompressionInfo;
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        if (dwBufferSize < sizeof(FILE_COMPRESSION_INFO)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        Status = ZwQueryInformationFile( hFile,
+                                         &IoStatus,
+                                         &NativeCompressionInfo,
+                                         sizeof(NativeCompressionInfo),
+                                         FileCompressionInformation );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        CompressionInfo = (PFILE_COMPRESSION_INFO)lpFileInformation;
+        CompressionInfo->CompressedFileSize = NativeCompressionInfo.CompressedFileSize;
+        CompressionInfo->CompressionFormat = NativeCompressionInfo.CompressionFormat;
+        CompressionInfo->CompressionUnitShift = NativeCompressionInfo.CompressionUnitShift;
+        CompressionInfo->ChunkShift = NativeCompressionInfo.ChunkShift;
+        CompressionInfo->ClusterShift = NativeCompressionInfo.ClusterShift;
+        RtlCopyMemory( CompressionInfo->Reserved,
+                       NativeCompressionInfo.Reserved,
+                       sizeof(CompressionInfo->Reserved) );
+        return TRUE;
+    }
+
+    if (FileInformationClass == FileAlignmentInfo) {
+        PFILE_ALIGNMENT_INFO AlignmentInfo;
+        FILE_ALIGNMENT_INFORMATION NativeAlignmentInfo;
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        if (dwBufferSize < sizeof(FILE_ALIGNMENT_INFO)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        Status = ZwQueryInformationFile( hFile,
+                                         &IoStatus,
+                                         &NativeAlignmentInfo,
+                                         sizeof(NativeAlignmentInfo),
+                                         FileAlignmentInformation );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        AlignmentInfo = (PFILE_ALIGNMENT_INFO)lpFileInformation;
+        AlignmentInfo->AlignmentRequirement = NativeAlignmentInfo.AlignmentRequirement;
+        return TRUE;
+    }
+
     if (! GetFileInformationByHandle( hFile,
                                       &HandleInfo )) {
         return FALSE;
