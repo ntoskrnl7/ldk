@@ -220,6 +220,14 @@ typedef struct _FILE_END_OF_FILE_INFO {
     LARGE_INTEGER EndOfFile;
 } FILE_END_OF_FILE_INFO, *PFILE_END_OF_FILE_INFO;
 
+typedef struct _FILE_STREAM_INFO {
+    DWORD NextEntryOffset;
+    DWORD StreamNameLength;
+    LARGE_INTEGER StreamSize;
+    LARGE_INTEGER StreamAllocationSize;
+    WCHAR StreamName[1];
+} FILE_STREAM_INFO, *PFILE_STREAM_INFO;
+
 #ifndef COMPRESSION_FORMAT_NONE
 #define COMPRESSION_FORMAT_NONE 0x0000
 #endif
@@ -267,6 +275,9 @@ typedef struct _FILE_ALIGNMENT_INFO {
 #endif
 #ifndef FileEndOfFileInfo
 #define FileEndOfFileInfo ((FILE_INFO_BY_HANDLE_CLASS)6)
+#endif
+#ifndef FileStreamInfo
+#define FileStreamInfo ((FILE_INFO_BY_HANDLE_CLASS)7)
 #endif
 #ifndef FileCompressionInfo
 #define FileCompressionInfo ((FILE_INFO_BY_HANDLE_CLASS)8)

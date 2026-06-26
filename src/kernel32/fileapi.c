@@ -2602,6 +2602,28 @@ GetFileInformationByHandleEx (
         return TRUE;
     }
 
+    if (FileInformationClass == FileStreamInfo) {
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        if (dwBufferSize < (DWORD)FIELD_OFFSET(FILE_STREAM_INFO, StreamName)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        Status = ZwQueryInformationFile( hFile,
+                                         &IoStatus,
+                                         lpFileInformation,
+                                         dwBufferSize,
+                                         FileStreamInformation );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
     if (FileInformationClass == FileCompressionInfo) {
         PFILE_COMPRESSION_INFO CompressionInfo;
         FILE_COMPRESSION_INFORMATION NativeCompressionInfo;

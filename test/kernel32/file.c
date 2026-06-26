@@ -174,6 +174,39 @@ FileTest (
         goto DeleteTest;
     }
 
+    printf("Test CreateFileW(Test.tmp:LdkStream)\n");
+    BOOL StreamCreated = FALSE;
+    HANDLE hStream = CreateFileW( L"Test.tmp:LdkStream",
+                                  GENERIC_WRITE,
+                                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                  NULL,
+                                  CREATE_ALWAYS,
+                                  FILE_ATTRIBUTE_NORMAL,
+                                  NULL );
+    if (hStream == INVALID_HANDLE_VALUE) {
+        printf("[Skipped] Test CreateFileW(Test.tmp:LdkStream) ErrorCode = %d\n\n",
+               GetLastError());
+    } else {
+        DWORD StreamBytes;
+        rv = WriteFile( hStream,
+                        "ads",
+                        3,
+                        &StreamBytes,
+                        NULL );
+        CloseHandle( hStream );
+        if (!rv || StreamBytes != 3) {
+            fprintf(stderr,
+                    "[Failed] Test CreateFileW(Test.tmp:LdkStream) ErrorCode = %d StreamBytes = %lu\n",
+                    GetLastError(),
+                    rv ? StreamBytes : 0);
+            printf("[Failed] Test CreateFileW(Test.tmp:LdkStream)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+        StreamCreated = TRUE;
+        printf("[Success] Test CreateFileW(Test.tmp:LdkStream)\n\n");
+    }
+
     hFile = CreateFileW( L"Test.tmp",
                          GENERIC_READ,
                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
@@ -207,6 +240,127 @@ FileTest (
         rv = FALSE;
         goto DeleteTest;
     }
+    printf("Test GetFileInformationByHandleEx(FileStreamInfo)\n");
+    UCHAR FileStreamInfoBuffer[4096];
+    ULONG FileStreamInfoBufferSize = (ULONG)sizeof(FileStreamInfoBuffer);
+    ULONG FileStreamInfoHeaderSize = (ULONG)FIELD_OFFSET(FILE_STREAM_INFO, StreamName);
+    PFILE_STREAM_INFO StreamInfo = (PFILE_STREAM_INFO)FileStreamInfoBuffer;
+    RtlZeroMemory( FileStreamInfoBuffer,
+                   sizeof(FileStreamInfoBuffer) );
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileStreamInfo,
+                                        StreamInfo,
+                                        FileStreamInfoBufferSize )) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileStreamInfo) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    static const WCHAR DefaultStreamName[] = L"::$DATA";
+    static const WCHAR TestStreamName[] = L":LdkStream:$DATA";
+    ULONG DefaultStreamNameLength = (RTL_NUMBER_OF(DefaultStreamName) - 1) * sizeof(WCHAR);
+    ULONG TestStreamNameLength = (RTL_NUMBER_OF(TestStreamName) - 1) * sizeof(WCHAR);
+    ULONG StreamInfoOffset = 0;
+    ULONG StreamCount = 0;
+    BOOL FoundDefaultStream = FALSE;
+    BOOL FoundTestStream = FALSE;
+    for (;;) {
+        PFILE_STREAM_INFO Entry;
+        ULONG EntrySize;
+
+        if (StreamInfoOffset > FileStreamInfoBufferSize -
+            FileStreamInfoHeaderSize) {
+            fprintf(stderr,
+                    "[Failed] FileStreamInfo entry offset is outside the buffer\n");
+            CloseHandle( hFile );
+            printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+
+        Entry = (PFILE_STREAM_INFO)(FileStreamInfoBuffer + StreamInfoOffset);
+        if (Entry->StreamNameLength == 0 ||
+            (Entry->StreamNameLength % sizeof(WCHAR)) != 0) {
+            fprintf(stderr,
+                    "[Failed] FileStreamInfo returned invalid stream name length = %lu\n",
+                    Entry->StreamNameLength);
+            CloseHandle( hFile );
+            printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+
+        EntrySize = FileStreamInfoHeaderSize + Entry->StreamNameLength;
+        if (EntrySize > FileStreamInfoBufferSize - StreamInfoOffset) {
+            fprintf(stderr,
+                    "[Failed] FileStreamInfo entry extends past the buffer\n");
+            CloseHandle( hFile );
+            printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+        if (Entry->StreamSize.QuadPart < 0 ||
+            Entry->StreamAllocationSize.QuadPart < 0) {
+            fprintf(stderr,
+                    "[Failed] FileStreamInfo returned negative stream sizes\n");
+            CloseHandle( hFile );
+            printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+
+        StreamCount++;
+        if (Entry->StreamNameLength == DefaultStreamNameLength &&
+            RtlCompareMemory( Entry->StreamName,
+                              DefaultStreamName,
+                              DefaultStreamNameLength ) ==
+                              DefaultStreamNameLength) {
+            FoundDefaultStream = TRUE;
+        }
+        if (Entry->StreamNameLength == TestStreamNameLength &&
+            RtlCompareMemory( Entry->StreamName,
+                              TestStreamName,
+                              TestStreamNameLength ) ==
+                              TestStreamNameLength) {
+            FoundTestStream = TRUE;
+        }
+
+        if (Entry->NextEntryOffset == 0) {
+            break;
+        }
+        if (Entry->NextEntryOffset < EntrySize ||
+            Entry->NextEntryOffset > FileStreamInfoBufferSize - StreamInfoOffset) {
+            fprintf(stderr,
+                    "[Failed] FileStreamInfo returned invalid next offset = %lu\n",
+                    Entry->NextEntryOffset);
+            CloseHandle( hFile );
+            printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+        StreamInfoOffset += Entry->NextEntryOffset;
+    }
+
+    if (StreamCount == 0 ||
+        !FoundDefaultStream ||
+        (StreamCreated && !FoundTestStream)) {
+        fprintf(stderr,
+                "[Failed] FileStreamInfo streams Count = %lu Default = %d Test = %d ExpectedTest = %d\n",
+                StreamCount,
+                FoundDefaultStream,
+                FoundTestStream,
+                StreamCreated);
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
+
     printf("Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n");
     FILE_COMPRESSION_INFO CompressionInfo;
     RtlZeroMemory( &CompressionInfo,
@@ -219,7 +373,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileCompressionInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -227,7 +381,7 @@ FileTest (
         fprintf(stderr,
                 "[Failed] FileCompressionInfo returned negative compressed size\n");
         CloseHandle( hFile );
-        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -243,7 +397,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileAlignmentInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -253,7 +407,7 @@ FileTest (
                 "[Failed] FileAlignmentInfo returned unexpected alignment mask = %lu\n",
                 AlignmentInfo.AlignmentRequirement);
         CloseHandle( hFile );
-        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
