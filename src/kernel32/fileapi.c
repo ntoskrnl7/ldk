@@ -2820,7 +2820,9 @@ SetFileInformationByHandle (
         RtlZeroMemory( NativeRenameInfo,
                        NativeRenameInfoSize );
         if (FileInformationClass == FileRenameInfoEx) {
-            NativeRenameInfo->Flags = RenameInfo->Flags;
+            RtlCopyMemory( NativeRenameInfo,
+                           &RenameInfo->Flags,
+                           sizeof(RenameInfo->Flags) );
             NativeInformationClass = LDK_FILE_RENAME_INFORMATION_EX_CLASS;
         } else {
             NativeRenameInfo->ReplaceIfExists = RenameInfo->ReplaceIfExists;
