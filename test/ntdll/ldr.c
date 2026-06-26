@@ -168,15 +168,21 @@ LdrTest (
     BOOLEAN Result = FALSE;
     UNICODE_STRING DllName = RTL_CONSTANT_STRING(L"Test.dll");
     UNICODE_STRING OrdinalImportName = RTL_CONSTANT_STRING(L"OrdinalImport.dll");
+    UNICODE_STRING AutoDependencyName = RTL_CONSTANT_STRING(L"AutoDependency.dll");
+    UNICODE_STRING DependencyOwnerName = RTL_CONSTANT_STRING(L"DependencyOwner.dll");
     ANSI_STRING ProcName = RTL_CONSTANT_STRING("TestFunction");
     ANSI_STRING OrdinalImportProcName = RTL_CONSTANT_STRING("TestOrdinalImportFunction");
+    ANSI_STRING DependencyOwnerProcName = RTL_CONSTANT_STRING("DependencyOwnerFunction");
     PVOID DllHandle = NULL;
     PVOID DllHandle2 = NULL;
     PVOID LookupHandle = NULL;
     PVOID OrdinalImportHandle = NULL;
+    PVOID AutoDependencyLookupHandle = NULL;
+    PVOID DependencyOwnerHandle = NULL;
     TEST_FN TestFn = NULL;
     TEST_FN OrdinalFn = NULL;
     TEST_FN OrdinalImportFn = NULL;
+    TEST_FN DependencyOwnerFn = NULL;
 
     printf("Ldr Test\n");
 
@@ -315,6 +321,64 @@ LdrTest (
         goto Cleanup;
     }
 
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &AutoDependencyName,
+                              &AutoDependencyLookupHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] AutoDependency.dll was loaded before dependency-owner test\n");
+        goto Cleanup;
+    }
+
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &DependencyOwnerName,
+                         &DependencyOwnerHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrLoadDll(DependencyOwner.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &AutoDependencyName,
+                              &AutoDependencyLookupHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] AutoDependency.dll was not retained for DependencyOwner.dll Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( DependencyOwnerHandle,
+                                     &DependencyOwnerProcName,
+                                     0,
+                                     (PVOID*)&DependencyOwnerFn );
+    if (! NT_SUCCESS(Status) ||
+        DependencyOwnerFn(10) != 34) {
+        printf("[Failed] LdrGetProcedureAddress(DependencyOwnerFunction) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( DependencyOwnerHandle );
+    DependencyOwnerHandle = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(DependencyOwner.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    AutoDependencyLookupHandle = NULL;
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &AutoDependencyName,
+                              &AutoDependencyLookupHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] AutoDependency.dll stayed loaded after DependencyOwner.dll unload\n");
+        goto Cleanup;
+    }
+
     Status = LdrUnloadDll( DllHandle );
     DllHandle = NULL;
     if (! NT_SUCCESS(Status)) {
@@ -337,6 +401,9 @@ LdrTest (
     Result = TRUE;
 
 Cleanup:
+    if (DependencyOwnerHandle != NULL) {
+        LdrUnloadDll( DependencyOwnerHandle );
+    }
     if (OrdinalImportHandle != NULL) {
         LdrUnloadDll( OrdinalImportHandle );
     }

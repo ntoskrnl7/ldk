@@ -31,7 +31,10 @@ add_executable(LdkWin32ApiTest
 
 add_library(Test SHARED ../dll.c)
 add_library(OrdinalImport SHARED ../ordinalimport.c)
+add_library(AutoDependency SHARED ../autodependency.c)
+add_library(DependencyOwner SHARED ../dependencyowner.c)
 target_link_libraries(OrdinalImport PRIVATE Test)
+target_link_libraries(DependencyOwner PRIVATE AutoDependency)
 
 target_compile_definitions(LdkWin32ApiTest PRIVATE
     WINVER=0x0A00
@@ -47,16 +50,18 @@ target_compile_options(LdkWin32ApiTest PRIVATE
     /FI"${CMAKE_CURRENT_LIST_DIR}/compat.h"
 )
 
-target_compile_options(Test PRIVATE
-    /W4
-    /WX
-)
+foreach(target Test OrdinalImport AutoDependency DependencyOwner)
+    target_compile_options(${target} PRIVATE
+        /W4
+        /WX
+    )
+endforeach()
 
 target_link_libraries(LdkWin32ApiTest PRIVATE
     Synchronization
 )
 
-foreach(target LdkWin32ApiTest Test OrdinalImport)
+foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner)
     set_target_properties(${target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
@@ -66,4 +71,4 @@ foreach(target LdkWin32ApiTest Test OrdinalImport)
     )
 endforeach()
 
-add_dependencies(LdkWin32ApiTest Test OrdinalImport)
+add_dependencies(LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner)

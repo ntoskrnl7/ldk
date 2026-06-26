@@ -48,6 +48,11 @@ module increment the module load count and return the existing module handle.
 `DONT_RESOLVE_DLL_REFERENCES` loads the image without walking imports or calling
 the entry point, matching the limited behavior needed by LDK loader tests.
 
+When import resolution loads or references another dynamic module, LDK records
+that relationship as a module dependency. The dependent module keeps one
+ownership reference to each imported dynamic module, so the imported module
+stays loaded while the dependent module is loaded.
+
 ## Import and export resolution
 
 Imports are resolved by module name and either imported function name or ordinal.
@@ -69,6 +74,11 @@ are reference-counted. A balanced unload decrements the count; when it reaches
 zero, the module is removed from the module list, called with
 `DLL_PROCESS_DETACH`, and freed.
 
+After the dependent module has run detach and its image has been freed, its
+recorded dependency references are released. This keeps imported modules alive
+during the dependent module's detach callback, then lets automatically loaded
+dependencies unload when no other direct or dependency reference remains.
+
 `GetModuleHandleEx` supports the tested name/address lookup paths. Passing
 `GET_MODULE_HANDLE_EX_FLAG_PIN` marks a dynamic module as pinned so later
 `FreeLibrary` calls do not unload it. Pseudo modules registered by LDK itself,
@@ -86,8 +96,9 @@ callbacks, user-mode APC assumptions, or unsupported imports. Treat import
 failures and debugger breaks in loader paths as compatibility bugs to audit, not
 as recoverable normal behavior.
 
-The current reference-counting model tracks direct public load/unload calls,
-but it is not yet a full Windows loader dependency graph. Imported modules can
-be loaded during import resolution, but dependency ownership and unload ordering
-are still intentionally narrow. Drivers that rely on complex DLL dependency
-trees should add workload-specific load/unload tests before using that pattern.
+The current dependency model covers tested acyclic import ownership and unload
+ordering. It is still not a full Windows loader implementation: circular import
+graphs, advanced side-by-side activation behavior, delay-load ownership, and
+arbitrary loader callback interactions are outside the current contract.
+Drivers that rely on complex DLL dependency trees should add workload-specific
+load/unload tests before using that pattern.

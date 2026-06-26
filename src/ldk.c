@@ -16,6 +16,11 @@ extern HANDLE LdrpShutdownThreadId;
 
 ULONG LdkGlobalFlags = 0;
 
+typedef struct _LDK_MODULE_DEPENDENCY {
+	PLDK_MODULE Module;
+	LIST_ENTRY Links;
+} LDK_MODULE_DEPENDENCY, *PLDK_MODULE_DEPENDENCY;
+
 
 
 LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
@@ -77,6 +82,7 @@ NTSTATUS
 LdkpLoadDll (
 	_In_ PUNICODE_STRING FileName,
 	_In_ BOOLEAN ResolveImports,
+	_Inout_opt_ PLIST_ENTRY DependencyList,
 	_Outptr_ PVOID *ImageBase,
 	_Out_opt_ PULONG ImageSize
 	);
@@ -84,6 +90,17 @@ LdkpLoadDll (
 VOID
 LdkpUnregisterModule (
 	_In_ PLDK_MODULE Module
+	);
+
+VOID
+LdkpReleaseModuleDependencies (
+	_Inout_ PLIST_ENTRY DependencyList
+	);
+
+VOID
+LdkpMoveModuleDependencies (
+	_Inout_ PLIST_ENTRY DestinationList,
+	_Inout_ PLIST_ENTRY SourceList
 	);
 
 
@@ -177,20 +194,18 @@ LdkTerminate (
 
 	SetFlag(LdkGlobalFlags, LDK_SHUTDOWN_IN_PROGRESS);
 
-	LIST_ENTRY UnloadList;
-	InitializeListHead( &UnloadList );
+	for (;;) {
+		PLDK_MODULE Module;
 
-	LdkpAcquireModuleListExclusive();
-	while (! IsListEmpty(&LdkCurrentPeb()->ModuleListHead)) {
-		PLIST_ENTRY Entry = RemoveHeadList( &LdkCurrentPeb()->ModuleListHead );
-		InsertTailList( &UnloadList,
-						Entry );
-	}
-	LdkpReleaseModuleList();
+		LdkpAcquireModuleListExclusive();
+		if (IsListEmpty(&LdkCurrentPeb()->ModuleListHead)) {
+			LdkpReleaseModuleList();
+			break;
+		}
+		PLIST_ENTRY Entry = RemoveTailList( &LdkCurrentPeb()->ModuleListHead );
+		Module = CONTAINING_RECORD(Entry, LDK_MODULE, ActiveLinks);
+		LdkpReleaseModuleList();
 
-	while (! IsListEmpty(&UnloadList)) {
-		PLIST_ENTRY Entry = RemoveHeadList( &UnloadList );
-		PLDK_MODULE Module = CONTAINING_RECORD(Entry, LDK_MODULE, ActiveLinks);
 		LdkpUnregisterModule( Module );
 	}
 
@@ -249,6 +264,7 @@ LdkRegisterModule (
 	NewModule->FunctionTable = NULL;
 	NewModule->LoadCount = 1;
 	NewModule->Flags = 0;
+	InitializeListHead( &NewModule->DependencyList );
 	
 	LdkpAcquireModuleListExclusive();
 	InsertTailList( &LdkCurrentPeb()->ModuleListHead,
@@ -271,6 +287,7 @@ LdkpUnregisterModule (
 		if (Module->Base) {
 			LdkpUnloadDll( Module->Base );
 		}
+		LdkpReleaseModuleDependencies( &Module->DependencyList );
 		LdkFreeAnsiString( &Module->ModuleName );
 		LdkFreeAnsiString( &Module->FullPathName );
 		ExFreeToNPagedLookasideList( &LdkCurrentPeb()->ModuleListLookaside,
@@ -300,6 +317,98 @@ LdkpReferenceModuleLocked (
 		Module->LoadCount < MAXLONG) {
 		Module->LoadCount++;
 	}
+}
+
+VOID
+LdkpReleaseModuleDependencies (
+	_Inout_ PLIST_ENTRY DependencyList
+	)
+{
+	while (! IsListEmpty(DependencyList)) {
+		PLIST_ENTRY Entry = RemoveTailList( DependencyList );
+		PLDK_MODULE_DEPENDENCY Dependency = CONTAINING_RECORD(Entry,
+															  LDK_MODULE_DEPENDENCY,
+															  Links);
+		PVOID Handle = Dependency->Module->Base ? Dependency->Module->Base : (PVOID)Dependency->Module;
+
+		LdkUnloadDll( Handle );
+		ExFreePoolWithTag( Dependency,
+						   TAG_MODULE_DEPENDENCY_POOL );
+	}
+}
+
+VOID
+LdkpMoveModuleDependencies (
+	_Inout_ PLIST_ENTRY DestinationList,
+	_Inout_ PLIST_ENTRY SourceList
+	)
+{
+	while (! IsListEmpty(SourceList)) {
+		PLIST_ENTRY Entry = RemoveHeadList( SourceList );
+		InsertTailList( DestinationList,
+						Entry );
+	}
+}
+
+BOOLEAN
+LdkpModuleDependencyExists (
+	_In_ PLIST_ENTRY DependencyList,
+	_In_ PLDK_MODULE Module
+	)
+{
+	for (PLIST_ENTRY Entry = DependencyList->Flink;
+		 Entry != DependencyList;
+		 Entry = Entry->Flink) {
+		PLDK_MODULE_DEPENDENCY Dependency = CONTAINING_RECORD(Entry,
+															  LDK_MODULE_DEPENDENCY,
+															  Links);
+		if (Dependency->Module == Module) {
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+NTSTATUS
+LdkpAddModuleDependency (
+	_Inout_opt_ PLIST_ENTRY DependencyList,
+	_In_ PLDK_MODULE Module,
+	_In_ BOOLEAN IncrementLoadCount
+	)
+{
+	PLDK_MODULE_DEPENDENCY Dependency;
+
+	if (! DependencyList ||
+		! LDK_MODULE_HAS_UNREGISTRABLE(Module) ||
+		LdkpModuleDependencyExists( DependencyList,
+									Module )) {
+		return STATUS_SUCCESS;
+	}
+
+#pragma warning(disable:4996)
+	Dependency = ExAllocatePoolWithTag( LdkpDefaultPoolType,
+										sizeof(*Dependency),
+										TAG_MODULE_DEPENDENCY_POOL );
+#pragma warning(default:4996)
+	if (! Dependency) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	Dependency->Module = Module;
+	InitializeListHead( &Dependency->Links );
+
+	if (IncrementLoadCount) {
+		LdkpAcquireModuleListExclusive();
+		LdkpReferenceModuleLocked( Module,
+								   FALSE,
+								   TRUE );
+		LdkpReleaseModuleList();
+	}
+
+	InsertTailList( DependencyList,
+					&Dependency->Links );
+	return STATUS_SUCCESS;
 }
 
 
@@ -429,9 +538,56 @@ LdkpNotImplemented (
 }
 
 NTSTATUS
+LdkpResolveImportModule (
+	_In_ PCSZ ModuleName,
+	_Inout_opt_ PLIST_ENTRY DependencyList,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	NTSTATUS Status;
+	BOOLEAN IncrementLoadCount;
+
+	Status = LdkGetModuleByName( ModuleName,
+								 Module );
+	IncrementLoadCount = TRUE;
+
+	if (! NT_SUCCESS(Status)) {
+		HMODULE hModule = LoadLibraryA( ModuleName );
+		if (! hModule) {
+			return Status;
+		}
+
+		Status = LdkGetModuleByBase( hModule,
+									 Module );
+		if (! NT_SUCCESS(Status)) {
+			Status = LdkGetModuleByName( ModuleName,
+										 Module );
+		}
+		if (! NT_SUCCESS(Status)) {
+			LdkUnloadDll( hModule );
+			return Status;
+		}
+
+		IncrementLoadCount = FALSE;
+	}
+
+	Status = LdkpAddModuleDependency( DependencyList,
+									  *Module,
+									  IncrementLoadCount );
+	if (! NT_SUCCESS(Status) &&
+		! IncrementLoadCount) {
+		PVOID Handle = (*Module)->Base ? (*Module)->Base : (PVOID)(*Module);
+		LdkUnloadDll( Handle );
+	}
+
+	return Status;
+}
+
+NTSTATUS
 LdkpBuildImportDescriptors (
 	_In_ PVOID ImageBase,
-	_In_ PIMAGE_IMPORT_DESCRIPTOR ImportDescriptors
+	_In_ PIMAGE_IMPORT_DESCRIPTOR ImportDescriptors,
+	_Inout_opt_ PLIST_ENTRY DependencyList
 	)
 {
 	NTSTATUS Status;
@@ -442,15 +598,9 @@ LdkpBuildImportDescriptors (
 
 	for (; ImportDescriptors->Name || ImportDescriptors->FirstThunk; ImportDescriptors++) {
 	
-		Status = LdkGetModuleByName( (LPSTR)Add2Ptr(ImageBase, ImportDescriptors->Name),
-									  &Module );
-		if (! NT_SUCCESS(Status)) {
-			HMODULE hModule = LoadLibraryA( (LPSTR)Add2Ptr(ImageBase, ImportDescriptors->Name) );
-			if (hModule) {
-				Status = LdkGetModuleByName( (LPSTR)Add2Ptr(ImageBase, ImportDescriptors->Name),
-											 &Module );
-			}
-		}
+		Status = LdkpResolveImportModule( (LPSTR)Add2Ptr(ImageBase, ImportDescriptors->Name),
+										  DependencyList,
+										  &Module );
 		if (! NT_SUCCESS(Status)) {
 			LDK_DIAGNOSTIC_BREAK();
 			return Status;
@@ -492,7 +642,8 @@ LdkpBuildImportDescriptors (
 NTSTATUS
 LdkpBuildBoundImportDescriptors (
 	_In_ PVOID ImageBase,
-	_In_ PIMAGE_BOUND_IMPORT_DESCRIPTOR BoundImportDescriptors
+	_In_ PIMAGE_BOUND_IMPORT_DESCRIPTOR BoundImportDescriptors,
+	_Inout_opt_ PLIST_ENTRY DependencyList
 	)
 {
 	ULONG ImportSize;
@@ -507,15 +658,9 @@ LdkpBuildBoundImportDescriptors (
 		
 		ForwarderModuleName = (PSTR)Add2Ptr(BoundImportDescriptors, BoundImportDescriptors->OffsetModuleName);
 
-		Status = LdkGetModuleByName( ForwarderModuleName,
-									 &Module );
-		if (! NT_SUCCESS(Status)) {
-			HMODULE hModule = LoadLibraryA( ForwarderModuleName );
-			if (hModule) {
-				Status = LdkGetModuleByName( ForwarderModuleName,
-											 &Module );
-			}
-		}
+		Status = LdkpResolveImportModule( ForwarderModuleName,
+										  DependencyList,
+										  &Module );
 		if (! NT_SUCCESS(Status)) {
 			return Status;
 		}
@@ -545,7 +690,8 @@ LdkpBuildBoundImportDescriptors (
 			return STATUS_OBJECT_NAME_INVALID;
 		}
 		Status = LdkpBuildImportDescriptors( ImageBase,
-											 ImportDescriptor );
+											 ImportDescriptor,
+											 DependencyList );
 		if (! NT_SUCCESS(Status)) {
 			return Status;
 		}
@@ -556,7 +702,8 @@ LdkpBuildBoundImportDescriptors (
 
 NTSTATUS
 LdkpWalkImportDescriptors (
-	_In_ PVOID ImageBase
+	_In_ PVOID ImageBase,
+	_Inout_opt_ PLIST_ENTRY DependencyList
 	)
 {
 	ULONG BoundImportSize;
@@ -572,10 +719,12 @@ LdkpWalkImportDescriptors (
 
 	if (BoundImportDescriptors) {
 		return LdkpBuildBoundImportDescriptors( ImageBase,
-												BoundImportDescriptors );
+												BoundImportDescriptors,
+												DependencyList );
 	} else if (ImportDescriptors) {
 		return LdkpBuildImportDescriptors( ImageBase,
-										   ImportDescriptors );
+										   ImportDescriptors,
+										   DependencyList );
 	}
 	return STATUS_SUCCESS;
 }
@@ -684,6 +833,7 @@ NTSTATUS
 LdkpLoadDll (
 	_In_ PUNICODE_STRING FileName,
 	_In_ BOOLEAN ResolveImports,
+	_Inout_opt_ PLIST_ENTRY DependencyList,
 	_Outptr_ PVOID *ImageBase,
 	_Out_opt_ PULONG ImageSize
 	)
@@ -841,7 +991,8 @@ LdkpLoadDll (
 		}
 
 		if (ResolveImports) {
-			Status = LdkpWalkImportDescriptors( Base );
+			Status = LdkpWalkImportDescriptors( Base,
+												DependencyList );
 			if (! NT_SUCCESS(Status)) {
 				leave;
 			}
@@ -1122,8 +1273,11 @@ LdkLoadDll (
 	ANSI_STRING DllNameAnsi;
 	ULONG ImageSize;
 	BOOLEAN ResolveImports = TRUE;
+	LIST_ENTRY LoadDependencyList;
+	PLDK_MODULE RegisteredModule;
 
 	PAGED_CODE();
+	InitializeListHead( &LoadDependencyList );
 
 	if (DllCharacteristics &&
 		FlagOn(*DllCharacteristics, IMAGE_FILE_EXECUTABLE_IMAGE)) {
@@ -1214,6 +1368,7 @@ retry:
 
 	Status = LdkpLoadDll( &NtFileName,
 						  ResolveImports,
+						  &LoadDependencyList,
 						  DllHandle,
 						  &ImageSize );
 	if (NT_SUCCESS(Status)) {
@@ -1225,8 +1380,10 @@ retry:
 									DllName,
 									*DllHandle,
 									ImageSize,
-									NULL );
+									&RegisteredModule );
 		if (NT_SUCCESS(Status)) {
+			LdkpMoveModuleDependencies( &RegisteredModule->DependencyList,
+										&LoadDependencyList );
 			if (ResolveImports &&
 				(! LdkpCallEntryPoint( *DllHandle,
 										DLL_PROCESS_ATTACH,
@@ -1242,8 +1399,10 @@ retry:
 						 NtFileName.Buffer );
 			return Status;
 		}
+		LdkpReleaseModuleDependencies( &LoadDependencyList );
 		LdkpUnloadDll( *DllHandle );
 	}
+	LdkpReleaseModuleDependencies( &LoadDependencyList );
 	RtlFreeHeap( RtlProcessHeap(),
 				 0,
 				 NtFileName.Buffer );

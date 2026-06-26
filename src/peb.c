@@ -521,12 +521,15 @@ LdkpInitializePeb (
 	InitializeListHead(&LdkpPeb.ModuleListHead);
 
 	extern LDK_MODULE LdkpKernel32Module;
+	InitializeListHead(&LdkpKernel32Module.DependencyList);
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpKernel32Module.ActiveLinks);
 
 	extern LDK_MODULE LdkpNtdllModule;
+	InitializeListHead(&LdkpNtdllModule.DependencyList);
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpNtdllModule.ActiveLinks);
 
 	extern LDK_MODULE LdkpIcuModule;
+	InitializeListHead(&LdkpIcuModule.DependencyList);
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpIcuModule.ActiveLinks);
 
 	Status = ExInitializeResourceLite( &LdkpPeb.ModuleListResource );

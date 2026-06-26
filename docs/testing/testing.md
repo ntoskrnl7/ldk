@@ -49,8 +49,9 @@ The current test suite covers:
 
 - NTDLL current-directory and environment helpers.
 - Keyed events.
-- Loader helpers, including name and ordinal lookup, import-by-ordinal, and
-  balanced load/unload reference-count behavior.
+- Loader helpers, including name and ordinal lookup, import-by-ordinal,
+  balanced load/unload reference-count behavior, and basic imported-dependency
+  unload behavior.
 - Fibers and FLS callbacks.
 - File helpers, including selected `GetFileInformationByHandleEx`,
   `SetFileInformationByHandle`, temporary-file, link, and final-path paths.

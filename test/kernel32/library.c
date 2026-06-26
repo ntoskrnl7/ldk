@@ -135,6 +135,67 @@ LibraryTest (
        return FALSE;
     }
 
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll was loaded before dependency-owner test ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    HMODULE hDependencyOwner = LoadLibraryW( L"DependencyOwner.dll" );
+    if (!hDependencyOwner) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(DependencyOwner.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryW(DependencyOwner.dll)\n");
+
+    if (GetModuleHandleW( L"AutoDependency.dll" ) == NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll was not retained for DependencyOwner.dll ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDependencyOwner );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    TEST_FN dependencyOwnerFn = (TEST_FN)GetProcAddress( hDependencyOwner, "DependencyOwnerFunction" );
+    if (!dependencyOwnerFn) {
+       fprintf(stderr,
+               "[Failed] GetProcAddress(DependencyOwnerFunction) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDependencyOwner );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    if (dependencyOwnerFn(10) != 34) {
+       fprintf(stderr,
+               "[Failed] DependencyOwnerFunction returned unexpected value\n");
+       FreeLibrary( hDependencyOwner );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    printf("[Success] DependencyOwnerFunction\n");
+
+    if (!FreeLibrary( hDependencyOwner )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DependencyOwner.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll stayed loaded after DependencyOwner.dll unload ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    printf("[Success] DependencyOwner.dll dependency unload\n");
+
     if (!FreeLibrary( hModule )) {
        fprintf(stderr,
                "[Failed] FreeLibrary(Test.dll) ErrorCode = %lu\n",

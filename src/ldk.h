@@ -16,6 +16,7 @@
 #define TAG_ANSI_POOL					'bAdL'
 #define TAG_TMP_POOL                    'bTdL'
 #define TAG_DLL_POOL                    'lDdL'
+#define TAG_MODULE_DEPENDENCY_POOL      'dMdL'
 #define TAG_HEAP_POOL                   'pHdL'
 
 
@@ -36,6 +37,7 @@ typedef struct _LDK_MODULE {
 	ULONG Size;
 	LONG LoadCount;
 	ULONG Flags;
+	LIST_ENTRY DependencyList;
 	LIST_ENTRY ActiveLinks;
 } LDK_MODULE, * PLDK_MODULE;
 
