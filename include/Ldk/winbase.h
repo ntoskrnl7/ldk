@@ -255,6 +255,25 @@ typedef struct _FILE_ALIGNMENT_INFO {
     ULONG AlignmentRequirement;
 } FILE_ALIGNMENT_INFO, *PFILE_ALIGNMENT_INFO;
 
+#ifndef STORAGE_INFO_FLAGS_ALIGNED_DEVICE
+#define STORAGE_INFO_FLAGS_ALIGNED_DEVICE                 0x00000001
+#define STORAGE_INFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE    0x00000002
+#endif
+
+#ifndef STORAGE_INFO_OFFSET_UNKNOWN
+#define STORAGE_INFO_OFFSET_UNKNOWN 0xffffffff
+#endif
+
+typedef struct _FILE_STORAGE_INFO {
+    ULONG LogicalBytesPerSector;
+    ULONG PhysicalBytesPerSectorForAtomicity;
+    ULONG PhysicalBytesPerSectorForPerformance;
+    ULONG FileSystemEffectivePhysicalBytesPerSectorForAtomicity;
+    ULONG Flags;
+    ULONG ByteOffsetForSectorAlignment;
+    ULONG ByteOffsetForPartitionAlignment;
+} FILE_STORAGE_INFO, *PFILE_STORAGE_INFO;
+
 #ifndef FileBasicInfo
 #define FileBasicInfo ((FILE_INFO_BY_HANDLE_CLASS)0)
 #endif
@@ -284,6 +303,9 @@ typedef struct _FILE_ALIGNMENT_INFO {
 #endif
 #ifndef FileAttributeTagInfo
 #define FileAttributeTagInfo ((FILE_INFO_BY_HANDLE_CLASS)9)
+#endif
+#ifndef FileStorageInfo
+#define FileStorageInfo ((FILE_INFO_BY_HANDLE_CLASS)16)
 #endif
 #ifndef FileAlignmentInfo
 #define FileAlignmentInfo ((FILE_INFO_BY_HANDLE_CLASS)17)
