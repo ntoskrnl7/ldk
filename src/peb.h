@@ -64,6 +64,7 @@ typedef struct _LDK_PEB {
 
 	PDRIVER_OBJECT DriverObject;
 	UNICODE_STRING RegistryPath;
+	UNICODE_STRING DllDirectory;
 
 	ULONG ProcessId;
 	HANDLE RealProcessId;

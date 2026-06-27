@@ -31,6 +31,10 @@ The tested `LoadLibraryExW` search subset includes
 `LOAD_WITH_ALTERED_SEARCH_PATH`. When a DLL is loaded from a specific directory,
 imports discovered while loading that DLL inherit the same search context where
 applicable, which lets private dependency DLLs live beside their owner DLL.
+`LOAD_LIBRARY_SEARCH_USER_DIRS` uses the single process-wide directory set by
+`SetDllDirectoryA/W`. Invalid combinations such as
+`LOAD_WITH_ALTERED_SEARCH_PATH` mixed with `LOAD_LIBRARY_SEARCH_*` flags are
+rejected before the load reaches the native loader.
 
 `LdrLoadDll` forwards to `LdkLoadDll`, unless loader initialization is already
 in progress. The core load path:
@@ -118,7 +122,8 @@ Drivers that rely on complex DLL dependency trees should add workload-specific
 load/unload tests before using that pattern.
 
 The `LoadLibraryExW` flag model is also intentionally narrower than Windows:
-LDK does not implement `AddDllDirectory`, per-thread default DLL directories,
+LDK supports `SetDllDirectoryA/W` as one process-wide user DLL directory, but it
+does not implement `AddDllDirectory`, per-thread default DLL directories,
 activation contexts, signed-target enforcement, or the full safe search mode
 policy. Unsupported flag combinations fail early instead of being silently
 treated as normal loads.

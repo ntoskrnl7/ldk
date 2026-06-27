@@ -405,6 +405,7 @@ LdkpUninitializeProcessParameters (
     }
 
     LdkFreeUnicodeString( &LdkpProcessParameters.DllPath );
+    LdkFreeUnicodeString( &LdkpPeb.DllDirectory );
     LdkFreeUnicodeString( &LdkpProcessParameters.CurrentDirectory.DosPath );
     LdkFreeUnicodeString( &LdkpProcessParameters.ImagePathName );
     RtlFreeHeap( RtlProcessHeap(),
