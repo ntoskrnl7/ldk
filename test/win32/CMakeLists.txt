@@ -15,6 +15,7 @@ set(LDK_WIN32_TEST_SOURCES
     ../kernel32/heap.c
     ../kernel32/library.c
     ../kernel32/nls.c
+    ../kernel32/pipe.c
     ../kernel32/process.c
     ../kernel32/synchapi.c
     ../kernel32/threadpool.c

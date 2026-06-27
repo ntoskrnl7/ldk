@@ -11,6 +11,11 @@ FileTest (
     );
 
 BOOLEAN
+PipeTest (
+    VOID
+    );
+
+BOOLEAN
 HeapApiTest (
     VOID
     );
@@ -134,6 +139,7 @@ DriverEntry (
         { "LdrTest", LdrTest },
         { "FibersTest", FibersTest },
         { "FileTest", FileTest },
+        { "PipeTest", PipeTest },
         { "HeapApiTest", HeapApiTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
