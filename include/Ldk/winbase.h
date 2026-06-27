@@ -319,6 +319,9 @@ typedef struct _FILE_STORAGE_INFO {
 #ifndef FileRenameInfoEx
 #define FileRenameInfoEx ((FILE_INFO_BY_HANDLE_CLASS)22)
 #endif
+#ifndef FileNormalizedNameInfo
+#define FileNormalizedNameInfo ((FILE_INFO_BY_HANDLE_CLASS)24)
+#endif
 
 #define LDK_HAS_WINBASE_FILE_INFO_TYPES 1
 
