@@ -1314,6 +1314,7 @@ LdkLoadDll (
 
 	PAGED_CODE();
 	InitializeListHead( &LoadDependencyList );
+	*DllHandle = NULL;
 
 	if (DllCharacteristics) {
 		if (FlagOn(*DllCharacteristics, LDK_LOAD_DLL_DONT_RESOLVE_IMPORTS)) {
@@ -1433,7 +1434,9 @@ retry:
 				if (! LdkpCallEntryPoint( *DllHandle,
 										  DLL_PROCESS_ATTACH,
 										  NULL )) {
-					LdkUnloadDll( *DllHandle );
+					PVOID FailedHandle = *DllHandle;
+					*DllHandle = NULL;
+					LdkUnloadDll( FailedHandle );
 					RtlFreeHeap( RtlProcessHeap(),
 								 0,
 								 NtFileName.Buffer );
@@ -1448,8 +1451,10 @@ retry:
 		LdkpReleaseModuleDependencies( &LoadDependencyList );
 		LdkpUnloadDll( *DllHandle,
 					   FALSE );
+		*DllHandle = NULL;
 	}
 	LdkpReleaseModuleDependencies( &LoadDependencyList );
+	*DllHandle = NULL;
 	RtlFreeHeap( RtlProcessHeap(),
 				 0,
 				 NtFileName.Buffer );

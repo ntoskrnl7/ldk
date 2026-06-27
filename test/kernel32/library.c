@@ -93,6 +93,7 @@ LibraryTest (
 
     typedef LONG(__stdcall* TEST_FN)(LONG);
     WCHAR DependencyOwnerPath[MAX_PATH];
+    HMODULE hFailAttach;
 
     printf("Library Test\n");
 
@@ -258,6 +259,30 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] DependencyOwner.dll dependency unload\n");
+
+    hFailAttach = LoadLibraryW( L"FailAttach.dll" );
+    if (hFailAttach != NULL) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(FailAttach.dll) unexpectedly succeeded\n");
+       FreeLibrary( hFailAttach );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"FailAttach.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] FailAttach.dll stayed loaded after DllMain failure ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll stayed loaded after FailAttach.dll failure ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    printf("[Success] LoadLibraryW(FailAttach.dll) DllMain failure cleanup\n");
 
     if (!FreeLibrary( hModule )) {
        fprintf(stderr,

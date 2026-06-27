@@ -33,8 +33,10 @@ add_library(Test SHARED ../dll.c)
 add_library(OrdinalImport SHARED ../ordinalimport.c)
 add_library(AutoDependency SHARED ../autodependency.c)
 add_library(DependencyOwner SHARED ../dependencyowner.c)
+add_library(FailAttach SHARED ../failattach.c)
 target_link_libraries(OrdinalImport PRIVATE Test)
 target_link_libraries(DependencyOwner PRIVATE AutoDependency)
+target_link_libraries(FailAttach PRIVATE AutoDependency)
 
 target_compile_definitions(LdkWin32ApiTest PRIVATE
     WINVER=0x0A00
@@ -50,18 +52,25 @@ target_compile_options(LdkWin32ApiTest PRIVATE
     /FI"${CMAKE_CURRENT_LIST_DIR}/compat.h"
 )
 
-foreach(target Test OrdinalImport AutoDependency DependencyOwner)
+foreach(target Test OrdinalImport AutoDependency DependencyOwner FailAttach)
     target_compile_options(${target} PRIVATE
         /W4
         /WX
     )
 endforeach()
 
+if(CMAKE_VS_PLATFORM_NAME STREQUAL "Win32" OR CMAKE_GENERATOR_PLATFORM STREQUAL "Win32")
+    target_link_options(FailAttach PRIVATE /ENTRY:FailAttachDllMain@12 /NODEFAULTLIB)
+else()
+    target_link_options(FailAttach PRIVATE /ENTRY:FailAttachDllMain /NODEFAULTLIB)
+endif()
+target_compile_options(FailAttach PRIVATE /GS-)
+
 target_link_libraries(LdkWin32ApiTest PRIVATE
     Synchronization
 )
 
-foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner)
+foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner FailAttach)
     set_target_properties(${target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
@@ -71,4 +80,4 @@ foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner
     )
 endforeach()
 
-add_dependencies(LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner)
+add_dependencies(LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner FailAttach)
