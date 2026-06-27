@@ -30,8 +30,14 @@ attribute helpers are backed by native file information queries and setters.
 - `FileStreamInfo`
 - `FileCompressionInfo`
 - `FileAttributeTagInfo`
+- `FileStorageInfo`
 - `FileAlignmentInfo`
 - `FileIdInfo`
+
+`FileStorageInfo` is backed by the native
+`FileFsSectorSizeInformation` volume query and reports the logical sector,
+physical sector, effective physical sector, alignment offsets, and storage
+alignment flags exposed by the underlying file system stack.
 
 `SetFileInformationByHandle` currently supports:
 

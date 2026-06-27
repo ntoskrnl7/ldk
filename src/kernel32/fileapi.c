@@ -2683,6 +2683,44 @@ GetFileInformationByHandleEx (
         return TRUE;
     }
 
+    if (FileInformationClass == FileStorageInfo) {
+        PFILE_STORAGE_INFO StorageInfo;
+        FILE_FS_SECTOR_SIZE_INFORMATION NativeStorageInfo;
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        if (dwBufferSize < sizeof(FILE_STORAGE_INFO)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        Status = ZwQueryVolumeInformationFile( hFile,
+                                               &IoStatus,
+                                               &NativeStorageInfo,
+                                               sizeof(NativeStorageInfo),
+                                               FileFsSectorSizeInformation );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        StorageInfo = (PFILE_STORAGE_INFO)lpFileInformation;
+        StorageInfo->LogicalBytesPerSector =
+            NativeStorageInfo.LogicalBytesPerSector;
+        StorageInfo->PhysicalBytesPerSectorForAtomicity =
+            NativeStorageInfo.PhysicalBytesPerSectorForAtomicity;
+        StorageInfo->PhysicalBytesPerSectorForPerformance =
+            NativeStorageInfo.PhysicalBytesPerSectorForPerformance;
+        StorageInfo->FileSystemEffectivePhysicalBytesPerSectorForAtomicity =
+            NativeStorageInfo.FileSystemEffectivePhysicalBytesPerSectorForAtomicity;
+        StorageInfo->Flags = NativeStorageInfo.Flags;
+        StorageInfo->ByteOffsetForSectorAlignment =
+            NativeStorageInfo.ByteOffsetForSectorAlignment;
+        StorageInfo->ByteOffsetForPartitionAlignment =
+            NativeStorageInfo.ByteOffsetForPartitionAlignment;
+        return TRUE;
+    }
+
     if (! GetFileInformationByHandle( hFile,
                                       &HandleInfo )) {
         return FALSE;

@@ -361,7 +361,7 @@ FileTest (
     }
     printf("[Success] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
 
-    printf("Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n");
+    printf("Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n");
     FILE_COMPRESSION_INFO CompressionInfo;
     RtlZeroMemory( &CompressionInfo,
                    sizeof(CompressionInfo) );
@@ -373,7 +373,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileCompressionInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -381,7 +381,7 @@ FileTest (
         fprintf(stderr,
                 "[Failed] FileCompressionInfo returned negative compressed size\n");
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -397,7 +397,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileAlignmentInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -407,11 +407,42 @@ FileTest (
                 "[Failed] FileAlignmentInfo returned unexpected alignment mask = %lu\n",
                 AlignmentInfo.AlignmentRequirement);
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
-    printf("[Success] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo)\n\n");
+
+    FILE_STORAGE_INFO StorageInfo;
+    RtlZeroMemory( &StorageInfo,
+                   sizeof(StorageInfo) );
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileStorageInfo,
+                                        &StorageInfo,
+                                        sizeof(StorageInfo) )) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileStorageInfo) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    if (StorageInfo.LogicalBytesPerSector == 0 ||
+        StorageInfo.PhysicalBytesPerSectorForAtomicity == 0 ||
+        StorageInfo.PhysicalBytesPerSectorForPerformance == 0 ||
+        StorageInfo.FileSystemEffectivePhysicalBytesPerSectorForAtomicity == 0) {
+        fprintf(stderr,
+                "[Failed] FileStorageInfo returned invalid sector sizes Logical = %lu Atomic = %lu Performance = %lu Effective = %lu\n",
+                StorageInfo.LogicalBytesPerSector,
+                StorageInfo.PhysicalBytesPerSectorForAtomicity,
+                StorageInfo.PhysicalBytesPerSectorForPerformance,
+                StorageInfo.FileSystemEffectivePhysicalBytesPerSectorForAtomicity);
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
     CloseHandle( hFile );
     if (!rv || HandleInfo.nNumberOfLinks < 2) {
         fprintf(stderr,
