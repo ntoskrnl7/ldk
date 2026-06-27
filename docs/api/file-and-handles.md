@@ -27,6 +27,7 @@ attribute helpers are backed by native file information queries and setters.
 - `FileBasicInfo`
 - `FileStandardInfo`
 - `FileNameInfo`
+- `FileNormalizedNameInfo`
 - `FileStreamInfo`
 - `FileCompressionInfo`
 - `FileAttributeTagInfo`

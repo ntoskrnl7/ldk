@@ -224,8 +224,11 @@ FileTest (
     BY_HANDLE_FILE_INFORMATION HandleInfo;
     rv = GetFileInformationByHandle( hFile,
                                      &HandleInfo );
+    printf("Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n");
     UCHAR FileNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
     PFILE_NAME_INFO NameInfo = (PFILE_NAME_INFO)FileNameInfoBuffer;
+    UCHAR FileNormalizedNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
+    PFILE_NAME_INFO NormalizedNameInfo = (PFILE_NAME_INFO)FileNormalizedNameInfoBuffer;
     RtlZeroMemory( FileNameInfoBuffer,
                    sizeof(FileNameInfoBuffer) );
     if (! GetFileInformationByHandleEx( hFile,
@@ -236,7 +239,21 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileNameInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    RtlZeroMemory( FileNormalizedNameInfoBuffer,
+                   sizeof(FileNormalizedNameInfoBuffer) );
+    if (! GetFileInformationByHandleEx( hFile,
+                                        FileNormalizedNameInfo,
+                                        NormalizedNameInfo,
+                                        sizeof(FileNormalizedNameInfoBuffer) )) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileNormalizedNameInfo) ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -462,10 +479,23 @@ FileTest (
                           ExpectedFileNameChars * sizeof(WCHAR) ) !=
                           ExpectedFileNameChars * sizeof(WCHAR)) {
         fprintf(stderr, "[Failed] GetFileInformationByHandleEx(FileNameInfo) returned unexpected name\n");
-        printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
+    ULONG NormalizedFileNameChars = NormalizedNameInfo->FileNameLength / sizeof(WCHAR);
+    if (NormalizedFileNameChars < ExpectedFileNameChars ||
+        RtlCompareMemory( NormalizedNameInfo->FileName + NormalizedFileNameChars - ExpectedFileNameChars,
+                          ExpectedFileName,
+                          ExpectedFileNameChars * sizeof(WCHAR) ) !=
+                          ExpectedFileNameChars * sizeof(WCHAR)) {
+        fprintf(stderr,
+                "[Failed] GetFileInformationByHandleEx(FileNormalizedNameInfo) returned unexpected name\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n\n");
 
     if (!DeleteFileW( L"Test.tmp" )) {
         fprintf(stderr, "[Failed] DeleteFileW(Test.tmp) ErrorCode = %d\n", GetLastError());

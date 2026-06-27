@@ -2602,6 +2602,28 @@ GetFileInformationByHandleEx (
         return TRUE;
     }
 
+    if (FileInformationClass == FileNormalizedNameInfo) {
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        if (dwBufferSize < (DWORD)FIELD_OFFSET(FILE_NAME_INFO, FileName)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        Status = ZwQueryInformationFile( hFile,
+                                         &IoStatus,
+                                         lpFileInformation,
+                                         dwBufferSize,
+                                         FileNormalizedNameInformation );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
     if (FileInformationClass == FileStreamInfo) {
         IO_STATUS_BLOCK IoStatus;
         NTSTATUS Status;
