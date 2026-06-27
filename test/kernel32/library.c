@@ -121,6 +121,60 @@ LibraryTest (
     }
     printf("[Success] GetProcAddress(TestFunction)\n");
 
+    HMODULE hUnchanged = NULL;
+    if (!GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                             L"Test.dll",
+                             &hUnchanged ) ||
+        hUnchanged != hModule) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW(Test.dll, UNCHANGED_REFCOUNT) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    HMODULE hFromAddress = NULL;
+    if (!GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                             (LPCSTR)testFn,
+                             &hFromAddress ) ||
+        hFromAddress != hModule) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExA(TestFunction, FROM_ADDRESS) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    HMODULE hReferenced = NULL;
+    if (!GetModuleHandleExW( 0,
+                             L"Test.dll",
+                             &hReferenced ) ||
+        hReferenced != hModule) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW(Test.dll) refcount ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    if (!FreeLibrary( hModule )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(Test.dll original reference) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hReferenced );
+       return FALSE;
+    }
+    hModule = hReferenced;
+
+    if (GetModuleHandleW( L"Test.dll" ) != hModule) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW(Test.dll) did not keep Test.dll loaded ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] GetModuleHandleEx refcount\n");
+
     HMODULE hModule2 = LoadLibraryW( L"Test.dll" );
     if (hModule2 != hModule) {
        fprintf(stderr,
@@ -395,6 +449,58 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] LoadLibraryExW LOAD_LIBRARY_AS_DATAFILE\n");
+
+    if (FreeLibrary( NULL )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(NULL) unexpectedly succeeded\n");
+       return FALSE;
+    }
+    if (FreeLibrary( (HMODULE)INVALID_HANDLE_VALUE )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(invalid module) unexpectedly succeeded\n");
+       return FALSE;
+    }
+    printf("[Success] FreeLibrary invalid handles\n");
+
+    HMODULE hPinnedLoad = LoadLibraryW( L"Test.dll" );
+    if (!hPinnedLoad) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(Test.dll pin target) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    HMODULE hPinned = NULL;
+    if (!GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_PIN,
+                             L"Test.dll",
+                             &hPinned ) ||
+        hPinned != hPinnedLoad) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW(Test.dll, PIN) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hPinnedLoad );
+       return FALSE;
+    }
+
+    if (!FreeLibrary( hPinnedLoad )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(Test.dll pinned load reference) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (!FreeLibrary( hPinned )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(Test.dll pinned handle) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"Test.dll" ) != hPinned) {
+       fprintf(stderr,
+               "[Failed] pinned Test.dll was unloaded ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] GetModuleHandleEx PIN\n");
 
     printf("[Success] Library Test\n\n");
     return TRUE;

@@ -86,17 +86,20 @@ the built-in Kernel32 and NTDLL registrations expose name tables only.
 `FreeLibrary` calls `LdrUnloadDll`, which calls `LdkUnloadDll`. Dynamic modules
 are reference-counted. A balanced unload decrements the count; when it reaches
 zero, the module is removed from the module list, called with
-`DLL_PROCESS_DETACH`, and freed.
+`DLL_PROCESS_DETACH`, and freed. Invalid module handles fail instead of being
+treated as successful no-op unloads.
 
 After the dependent module has run detach and its image has been freed, its
 recorded dependency references are released. This keeps imported modules alive
 during the dependent module's detach callback, then lets automatically loaded
 dependencies unload when no other direct or dependency reference remains.
 
-`GetModuleHandleEx` supports the tested name/address lookup paths. Passing
-`GET_MODULE_HANDLE_EX_FLAG_PIN` marks a dynamic module as pinned so later
-`FreeLibrary` calls do not unload it. Pseudo modules registered by LDK itself,
-such as the built-in Kernel32 and NTDLL registrations, are not unloadable.
+`GetModuleHandleEx` supports the tested name/address lookup paths. By default it
+adds a loader reference, while `GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT`
+leaves the load count unchanged. Passing `GET_MODULE_HANDLE_EX_FLAG_PIN` marks a
+dynamic module as pinned so later `FreeLibrary` calls do not unload it. Pseudo
+modules registered by LDK itself, such as the built-in Kernel32 and NTDLL
+registrations, are not unloadable.
 
 `LdkTerminate` unregisters remaining modules before tearing down Kernel32,
 NTDLL, TEB, PEB, and heap state. This matters because loaded DLLs can run detach
