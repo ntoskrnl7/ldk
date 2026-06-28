@@ -121,6 +121,18 @@ LdrUnloadDll (
     _In_ PVOID DllHandle
     );
 
+#ifndef LDR_ADDREF_DLL_PIN
+#define LDR_ADDREF_DLL_PIN 0x00000001
+#endif
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+LdrAddRefDll (
+    _In_ ULONG Flags,
+    _In_ PVOID DllHandle
+    );
+
 NTSYSAPI
 NTSTATUS
 NTAPI
@@ -129,16 +141,6 @@ LdrGetProcedureAddress (
     _In_opt_ PANSI_STRING ProcedureName,
     _In_opt_ ULONG ProcedureNumber,
     _Out_ PVOID* ProcedureAddress
-    );
-
-NTSYSAPI
-NTSTATUS
-NTAPI
-LdrGetDllHandle (
-    _In_opt_ PWSTR DllPath,
-    _In_opt_ PULONG DllCharacteristics,
-    _In_ PUNICODE_STRING DllName,
-    _Out_ PVOID* DllHandle
     );
 
 NTSYSAPI
@@ -475,6 +477,42 @@ LdrTest (
                Status);
         goto Cleanup;
     }
+
+    Status = LdrAddRefDll( 0,
+                           DllHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrAddRefDll(Test.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( DllHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(Test.dll add-ref reference) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &DllName,
+                              &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrAddRefDll did not keep Test.dll loaded Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrAddRefDll( LDR_ADDREF_DLL_PIN << 1,
+                           DllHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] LdrAddRefDll accepted invalid flags\n");
+        goto Cleanup;
+    }
+
+    printf("[Success] LdrAddRefDll refcount\n");
 
     Status = LdrLoadDll( DllPath,
                          NULL,

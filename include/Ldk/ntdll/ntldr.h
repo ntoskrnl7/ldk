@@ -38,6 +38,15 @@ LdrUnloadDll (
     _In_ PVOID DllHandle
     );
 
+#define LDR_ADDREF_DLL_PIN 0x00000001
+
+NTSTATUS
+NTAPI
+LdrAddRefDll (
+    _In_ ULONG Flags,
+    _In_ PVOID DllHandle
+    );
+
 NTSTATUS
 NTAPI
 LdrGetProcedureAddress (
@@ -45,15 +54,6 @@ LdrGetProcedureAddress (
     _In_opt_ PANSI_STRING ProcedureName,
     _In_opt_ ULONG ProcedureNumber,
     _Out_ PVOID *ProcedureAddress
-    );
-
-NTSTATUS
-NTAPI
-LdrGetDllHandle (
-    _In_opt_ PWSTR DllPath,
-    _In_opt_ PULONG DllCharacteristics,
-    _In_ PUNICODE_STRING DllName,
-    _Out_ PVOID *DllHandle
     );
 
 NTSTATUS

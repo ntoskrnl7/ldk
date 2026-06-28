@@ -2163,6 +2163,51 @@ LdkUnloadDll (
 }
 
 NTSTATUS
+LdkAddRefDll (
+	_In_ ULONG Flags,
+	_In_ PVOID DllHandle
+	)
+{
+	NTSTATUS Status;
+	PLDK_MODULE Module = NULL;
+
+	if (FlagOn(Flags, ~LDR_ADDREF_DLL_PIN)) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	if (! ARGUMENT_PRESENT(DllHandle)) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	LdkpAcquireModuleListExclusive();
+
+	Status = LdkpGetModuleByBase( DllHandle,
+								  &Module );
+	if (! NT_SUCCESS(Status)) {
+		for (PLIST_ENTRY NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+			 NextEntry != &LdkCurrentPeb()->ModuleListHead;
+			 NextEntry = NextEntry->Flink) {
+			PLDK_MODULE FoundModule = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
+			if ((PVOID)FoundModule == DllHandle) {
+				Module = FoundModule;
+				Status = STATUS_SUCCESS;
+				break;
+			}
+		}
+	}
+
+	if (NT_SUCCESS(Status)) {
+		LdkpReferenceModuleLocked( Module,
+								   BooleanFlagOn(Flags, LDR_ADDREF_DLL_PIN),
+								   TRUE );
+	}
+
+	LdkpReleaseModuleList();
+
+	return Status;
+}
+
+NTSTATUS
 LdkGetProcedureAddress (
     _In_ PVOID DllHandle,
     _In_opt_ PANSI_STRING ProcedureName,

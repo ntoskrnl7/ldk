@@ -128,6 +128,11 @@ passes a `DllPath` search string. Dynamic modules are registered with their NT
 full path so the path-aware query does not accidentally match a same-named DLL
 loaded from a different directory.
 
+`LdrAddRefDll` supports the native loader add-reference path. With zero flags it
+adds a normal loader reference to a dynamic module; with `LDR_ADDREF_DLL_PIN` it
+marks the module as pinned so later unload calls leave it resident. Invalid
+flags are rejected.
+
 `GetModuleHandleEx` supports the tested name/address lookup paths. By default it
 adds a loader reference, while `GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT`
 leaves the load count unchanged. Passing `GET_MODULE_HANDLE_EX_FLAG_PIN` marks a
