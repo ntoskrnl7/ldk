@@ -916,6 +916,11 @@ FreeLibrary (
 
 	PAGED_CODE()
 
+	if (! ARGUMENT_PRESENT(hLibModule)) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
 	ModuleHandle = LdkpMapModuleHandle( hLibModule,
 										 TRUE );
 	if (! ModuleHandle) {
@@ -926,6 +931,10 @@ FreeLibrary (
 	Status = LdrUnloadDll( ModuleHandle );
 	if (NT_SUCCESS(Status)) {
 		return TRUE;
+	}
+	if (Status == STATUS_NOT_FOUND) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
 	}
 	LdkSetLastNTError( Status );
 	return FALSE;

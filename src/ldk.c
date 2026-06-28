@@ -1506,7 +1506,7 @@ LdkUnloadDll (
 		LdkpUnregisterModule( Module );
 	}
 
-	return STATUS_SUCCESS;
+	return Status;
 }
 
 NTSTATUS
