@@ -19,6 +19,7 @@
 #include "fibersapi.h"
 #include "fileapi.h"
 #include "heapapi.h"
+#include "memoryapi.h"
 #include "processenv.h"
 #include "consoleapi.h"
 #include "consoleapi2.h"

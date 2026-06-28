@@ -79,6 +79,11 @@ that relationship as a module dependency. The dependent module keeps one
 ownership reference to each imported dynamic module, so the imported module
 stays loaded while the dependent module is loaded.
 
+MSVC delay-loaded imports are covered for the normal first-call path produced by
+`delayimp.lib`: the owner DLL can load without its delay dependency, and the
+first delayed call resolves the dependency through LDK's `LoadLibraryExA`,
+`GetProcAddress`, and related Kernel32 pseudo-module exports.
+
 ## Import and export resolution
 
 Imports are resolved by module name and either imported function name or ordinal.
@@ -133,10 +138,11 @@ as recoverable normal behavior.
 The current dependency model covers tested acyclic import ownership and unload
 ordering, including repeated owner/dependency load and unload cycles. It is
 still not a full Windows loader implementation: circular import graphs,
-advanced side-by-side activation behavior, dedicated delay-load helper
-integration, and arbitrary loader callback interactions are outside the current
-contract. Drivers that rely on complex DLL dependency trees should add
-workload-specific load/unload tests before using that pattern.
+advanced side-by-side activation behavior, delay-load notification/failure
+hooks, explicit delay-unload helper behavior, and arbitrary loader callback
+interactions are outside the current contract. Drivers that rely on complex DLL
+dependency trees should add workload-specific load/unload tests before using
+that pattern.
 
 The `LoadLibraryExW` flag model is also intentionally narrower than Windows:
 LDK supports process-wide `SetDllDirectoryA/W`, `GetDllDirectoryA/W`,

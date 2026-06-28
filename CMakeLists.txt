@@ -38,6 +38,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 
 file(GLOB SOURCE_FILES ./src/*.c ./src/*/*.c ./src/ntdll/rtl/*.c)
 list(APPEND SOURCE_FILES
+    ./src/kernel32/memoryapi.c
     ./src/ntdll/alert.c
     ./src/ntdll/waitonaddress.c
 )

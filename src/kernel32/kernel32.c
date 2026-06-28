@@ -425,6 +425,18 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	},
 
 	//
+	// memoryapi.c
+	//
+	{
+		"VirtualQuery",
+		VirtualQuery
+	},
+	{
+		"VirtualProtect",
+		VirtualProtect
+	},
+
+	//
 	// profileapi.c
 	//
 	{
