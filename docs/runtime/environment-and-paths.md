@@ -45,6 +45,10 @@ underlying status mapping.
 callers that accidentally include a leading quote. The current directory is
 stored in the LDK process parameters and guarded with the PEB lock where needed.
 
+`SetDllDirectoryA/W` stores one process-wide user DLL directory in the LDK PEB.
+Passing `NULL` clears that directory and restores the default LDK loader search
+state.
+
 ## DLL search path
 
 The loader uses process-parameter path state when loading DLLs. By default,
@@ -55,8 +59,14 @@ ahead of same-named DLLs in system directories.
 Selected `LoadLibraryExW` search flags override or extend that default. The
 supported subset covers the system directory, the current image directory, the
 directory of a fully qualified DLL name, the default-directory combination, and
-`LOAD_WITH_ALTERED_SEARCH_PATH`. LDK does not currently maintain Windows
-user-added DLL directory state.
+`LOAD_WITH_ALTERED_SEARCH_PATH`. `LOAD_LIBRARY_SEARCH_USER_DIRS` uses the
+directory set by `SetDllDirectoryA/W`; LDK does not currently maintain the full
+Windows `AddDllDirectory` list.
+
+`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` requires a fully qualified DLL path, matching
+the Win32 contract. Search flags are intentionally treated as an explicit mode:
+unsupported or contradictory flag combinations fail instead of falling back to
+the default search path.
 
 `LdkLoadDll` ultimately uses `RtlDosSearchPath_U` and DOS-to-NT path conversion
 before opening the target file.

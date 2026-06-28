@@ -30,10 +30,16 @@ LdkpComputeDllPath (
 	_Outptr_ LPWSTR *DllPath
 	);
 
+NTSTATUS
+LdkpDuplicateDllDirectory (
+	_Out_ PUNICODE_STRING DllDirectory
+	);
+
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LdkpComputeDllPath)
+#pragma alloc_text(PAGE, LdkpDuplicateDllDirectory)
 #pragma alloc_text(PAGE, GetModuleFileNameA)
 #pragma alloc_text(PAGE, GetModuleFileNameW)
 #pragma alloc_text(PAGE, GetModuleHandleA)
@@ -625,6 +631,28 @@ LdkpDuplicateEnvironmentPath (
 	}
 }
 
+NTSTATUS
+LdkpDuplicateDllDirectory (
+	_Out_ PUNICODE_STRING DllDirectory
+	)
+{
+	PAGED_CODE();
+
+	DllDirectory->Length = 0;
+	DllDirectory->MaximumLength = 0;
+	DllDirectory->Buffer = NULL;
+
+	RtlAcquirePebLock();
+	if (NtCurrentPeb()->DllDirectory.Length) {
+		NTSTATUS Status = LdkDuplicateUnicodeString( &NtCurrentPeb()->DllDirectory,
+													 DllDirectory );
+		RtlReleasePebLock();
+		return Status;
+	}
+	RtlReleasePebLock();
+	return STATUS_SUCCESS;
+}
+
 VOID
 LdkpFreeHeapUnicodeString (
 	_Inout_ PUNICODE_STRING String
@@ -676,6 +704,7 @@ LdkpComputeDllPath (
 	UNICODE_STRING ImageDirectory;
 	UNICODE_STRING SystemDirectory;
 	UNICODE_STRING EnvironmentPath;
+	UNICODE_STRING UserDllDirectories;
 	UNICODE_STRING SearchPath;
 	DWORD SearchFlags;
 
@@ -687,6 +716,7 @@ LdkpComputeDllPath (
 	ImageDirectory.Buffer = NULL;
 	SystemDirectory.Buffer = NULL;
 	EnvironmentPath.Buffer = NULL;
+	UserDllDirectories.Buffer = NULL;
 
 	Status = LdkpDuplicateDirectoryFromPath( lpLibFileName,
 											 &LoadDirectory );
@@ -706,12 +736,18 @@ LdkpComputeDllPath (
 		goto Cleanup;
 	}
 
+	Status = LdkpDuplicateDllDirectory( &UserDllDirectories );
+	if (! NT_SUCCESS(Status)) {
+		goto Cleanup;
+	}
+
 	SearchPath.Length = 0;
 	SearchPath.MaximumLength = LoadDirectory.Length +
 							   ImageDirectory.Length +
 							   SystemDirectory.Length +
 							   EnvironmentPath.Length +
-							   (4 * sizeof(WCHAR)) +
+							   UserDllDirectories.Length +
+							   (5 * sizeof(WCHAR)) +
 							   sizeof(UNICODE_NULL);
 	SearchPath.Buffer = RtlAllocateHeap( RtlProcessHeap(),
 										 HEAP_ZERO_MEMORY,
@@ -754,12 +790,12 @@ LdkpComputeDllPath (
 				goto CleanupSearchPath;
 			}
 			Status = LdkpAppendDllPathElement( &SearchPath,
-											   &SystemDirectory );
+											   &UserDllDirectories );
 			if (! NT_SUCCESS(Status)) {
 				goto CleanupSearchPath;
 			}
 			Status = LdkpAppendDllPathElement( &SearchPath,
-											   &EnvironmentPath );
+											   &SystemDirectory );
 			if (! NT_SUCCESS(Status)) {
 				goto CleanupSearchPath;
 			}
@@ -780,7 +816,7 @@ LdkpComputeDllPath (
 			}
 			if (SearchFlags & LOAD_LIBRARY_SEARCH_USER_DIRS) {
 				Status = LdkpAppendDllPathElement( &SearchPath,
-												   &EnvironmentPath );
+												   &UserDllDirectories );
 				if (! NT_SUCCESS(Status)) {
 					goto CleanupSearchPath;
 				}
@@ -814,6 +850,7 @@ Cleanup:
 	LdkpFreeHeapUnicodeString( &LoadDirectory );
 	LdkpFreeHeapUnicodeString( &ImageDirectory );
 	LdkpFreeHeapUnicodeString( &EnvironmentPath );
+	LdkFreeUnicodeString( &UserDllDirectories );
 	return Status;
 }
 

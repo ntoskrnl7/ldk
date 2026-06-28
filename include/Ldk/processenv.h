@@ -89,6 +89,20 @@ SetCurrentDirectoryW(
     _In_ LPCWSTR lpPathName
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+SetDllDirectoryA(
+    _In_opt_ LPCSTR lpPathName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetDllDirectoryW(
+    _In_opt_ LPCWSTR lpPathName
+    );
+
 
 WINBASEAPI
 _NullNull_terminated_
