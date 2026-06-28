@@ -9,7 +9,8 @@ kernel space.
 The call stack is intentionally familiar:
 
 - Kernel32 wrappers: `LoadLibraryA/W`, `LoadLibraryExA/W`, `FreeLibrary`,
-  `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W`.
+  `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W`,
+  `DisableThreadLibraryCalls`.
 - NTDLL wrappers: `LdrLoadDll`, `LdrUnloadDll`, `LdrGetProcedureAddress`,
   `LdrGetDllHandle`.
 - LDK core: module list lookup, PE loading, import resolution, relocation,
@@ -69,6 +70,11 @@ Repeated `LoadLibrary` / `LdrLoadDll` calls for an already loaded dynamic
 module increment the module load count and return the existing module handle.
 `DONT_RESOLVE_DLL_REFERENCES` loads the image without walking imports or calling
 the entry point, matching the limited behavior needed by LDK loader tests.
+
+`DisableThreadLibraryCalls` is supported for loaded dynamic modules. It suppresses
+later `DllMain(DLL_THREAD_ATTACH)` and `DllMain(DLL_THREAD_DETACH)` notifications
+for that module, while leaving TLS callbacks and process attach/detach entry
+point calls intact.
 
 `LOAD_LIBRARY_AS_DATAFILE`, `LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE`, and
 `LOAD_LIBRARY_AS_IMAGE_RESOURCE` create resource-only handles. LDK tags those
@@ -135,7 +141,9 @@ code that touches LDK runtime services.
 LDK loading is not user-mode Windows loading. Loaded DLLs run as kernel code.
 TLS callback notification is implemented for the tested PE TLS callback
 directory path, including process attach/detach and LDK-created thread
-attach/detach notifications. This does not make arbitrary user-mode TLS usage a
+attach/detach notifications. Loaded DLL entry points also receive tested
+`DLL_THREAD_ATTACH` and `DLL_THREAD_DETACH` notifications unless disabled with
+`DisableThreadLibraryCalls`. This does not make arbitrary user-mode TLS usage a
 kernel-safe contract: static TLS data layout, broad CRT startup assumptions,
 GUI state, COM, user-mode APC assumptions, and unsupported imports still need to
 be avoided or validated for the specific driver workload. Treat import failures

@@ -27,6 +27,10 @@ typedef VOID(__stdcall* TLS_RESET_FN)(VOID);
 typedef VOID(__stdcall* TLS_SET_LOG_FN)(LONG *, LONG *, LONG);
 typedef LONG(__stdcall* TLS_GET_COUNT_FN)(VOID);
 typedef LONG(__stdcall* TLS_GET_EVENT_FN)(LONG);
+typedef VOID(__stdcall* THREAD_NOTIFY_RESET_FN)(VOID);
+typedef VOID(__stdcall* THREAD_NOTIFY_SET_LOG_FN)(LONG *, LONG *, LONG);
+typedef LONG(__stdcall* THREAD_NOTIFY_GET_COUNT_FN)(VOID);
+typedef LONG(__stdcall* THREAD_NOTIFY_GET_EVENT_FN)(LONG);
 
 #define TLS_EVENT_TLS_PROCESS_ATTACH 0x101
 #define TLS_EVENT_DLL_PROCESS_ATTACH 0x102
@@ -36,10 +40,32 @@ typedef LONG(__stdcall* TLS_GET_EVENT_FN)(LONG);
 #define TLS_EVENT_DLL_PROCESS_DETACH 0x402
 #define TLS_TEST_LOG_CAPACITY        16
 
+#define THREAD_NOTIFY_EVENT_PROCESS_ATTACH 0x111
+#define THREAD_NOTIFY_EVENT_THREAD_ATTACH  0x211
+#define THREAD_NOTIFY_EVENT_THREAD_DETACH  0x311
+#define THREAD_NOTIFY_EVENT_PROCESS_DETACH 0x411
+#define THREAD_NOTIFY_TEST_LOG_CAPACITY    16
+
 static
 DWORD
 WINAPI
 TlsCallbackTestThreadProc (
+    _In_opt_ LPVOID Parameter
+    )
+{
+    LONG *Counter = (LONG *)Parameter;
+
+    if (Counter) {
+        InterlockedIncrement( Counter );
+    }
+
+    return 0;
+}
+
+static
+DWORD
+WINAPI
+ThreadNotifyTestThreadProc (
     _In_opt_ LPVOID Parameter
     )
 {
@@ -602,6 +628,171 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] TLS callback process/thread notifications\n");
+
+    HMODULE hThreadNotify = LoadLibraryW( L"ThreadNotify.dll" );
+    if (!hThreadNotify) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(ThreadNotify.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    THREAD_NOTIFY_RESET_FN threadNotifyResetFn = (THREAD_NOTIFY_RESET_FN)GetProcAddress( hThreadNotify,
+                                                                                        "ThreadNotifyReset" );
+    THREAD_NOTIFY_SET_LOG_FN threadNotifySetLogFn = (THREAD_NOTIFY_SET_LOG_FN)GetProcAddress( hThreadNotify,
+                                                                                              "ThreadNotifySetLog" );
+    THREAD_NOTIFY_GET_COUNT_FN threadNotifyGetCountFn = (THREAD_NOTIFY_GET_COUNT_FN)GetProcAddress( hThreadNotify,
+                                                                                                    "ThreadNotifyGetCount" );
+    THREAD_NOTIFY_GET_EVENT_FN threadNotifyGetEventFn = (THREAD_NOTIFY_GET_EVENT_FN)GetProcAddress( hThreadNotify,
+                                                                                                    "ThreadNotifyGetEvent" );
+    if (!threadNotifyResetFn ||
+        !threadNotifySetLogFn ||
+        !threadNotifyGetCountFn ||
+        !threadNotifyGetEventFn) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify.dll exports ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    if (threadNotifyGetCountFn() < 1 ||
+        threadNotifyGetEventFn(0) != THREAD_NOTIFY_EVENT_PROCESS_ATTACH) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify process attach Count = %ld Event0 = 0x%lx\n",
+               threadNotifyGetCountFn(),
+               threadNotifyGetEventFn(0));
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    LONG ThreadNotifyLogCount = 0;
+    LONG ThreadNotifyLog[THREAD_NOTIFY_TEST_LOG_CAPACITY] = { 0 };
+    threadNotifySetLogFn( &ThreadNotifyLogCount,
+                          ThreadNotifyLog,
+                          THREAD_NOTIFY_TEST_LOG_CAPACITY );
+
+    LONG ThreadNotifyCounter = 0;
+    HANDLE hThreadNotifyThread = CreateThread( NULL,
+                                               0,
+                                               ThreadNotifyTestThreadProc,
+                                               &ThreadNotifyCounter,
+                                               0,
+                                               NULL );
+    if (!hThreadNotifyThread) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify CreateThread ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    DWORD ThreadNotifyWait = WaitForSingleObject( hThreadNotifyThread,
+                                                  5000 );
+    CloseHandle( hThreadNotifyThread );
+    if (ThreadNotifyWait != WAIT_OBJECT_0 ||
+        ThreadNotifyCounter != 1 ||
+        ThreadNotifyLogCount < 2 ||
+        ThreadNotifyLog[0] != THREAD_NOTIFY_EVENT_THREAD_ATTACH ||
+        ThreadNotifyLog[1] != THREAD_NOTIFY_EVENT_THREAD_DETACH) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify thread events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               ThreadNotifyWait,
+               ThreadNotifyCounter,
+               ThreadNotifyLogCount,
+               ThreadNotifyLog[0],
+               ThreadNotifyLog[1]);
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    if (DisableThreadLibraryCalls( NULL )) {
+       fprintf(stderr,
+               "[Failed] DisableThreadLibraryCalls(NULL) unexpectedly succeeded\n");
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    if (!DisableThreadLibraryCalls( hThreadNotify )) {
+       fprintf(stderr,
+               "[Failed] DisableThreadLibraryCalls(ThreadNotify.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    ThreadNotifyLogCount = 0;
+    ThreadNotifyLog[0] = 0;
+    ThreadNotifyLog[1] = 0;
+    threadNotifySetLogFn( &ThreadNotifyLogCount,
+                          ThreadNotifyLog,
+                          THREAD_NOTIFY_TEST_LOG_CAPACITY );
+
+    ThreadNotifyCounter = 0;
+    hThreadNotifyThread = CreateThread( NULL,
+                                        0,
+                                        ThreadNotifyTestThreadProc,
+                                        &ThreadNotifyCounter,
+                                        0,
+                                        NULL );
+    if (!hThreadNotifyThread) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify disabled CreateThread ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    ThreadNotifyWait = WaitForSingleObject( hThreadNotifyThread,
+                                            5000 );
+    CloseHandle( hThreadNotifyThread );
+    if (ThreadNotifyWait != WAIT_OBJECT_0 ||
+        ThreadNotifyCounter != 1 ||
+        ThreadNotifyLogCount != 0) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify disabled events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx\n",
+               ThreadNotifyWait,
+               ThreadNotifyCounter,
+               ThreadNotifyLogCount,
+               ThreadNotifyLog[0]);
+       FreeLibrary( hThreadNotify );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    LONG ThreadNotifyDetachLogCount = 0;
+    LONG ThreadNotifyDetachLog[THREAD_NOTIFY_TEST_LOG_CAPACITY] = { 0 };
+    threadNotifySetLogFn( &ThreadNotifyDetachLogCount,
+                          ThreadNotifyDetachLog,
+                          THREAD_NOTIFY_TEST_LOG_CAPACITY );
+
+    if (!FreeLibrary( hThreadNotify )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(ThreadNotify.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    hThreadNotify = NULL;
+
+    if (ThreadNotifyDetachLogCount < 1 ||
+        ThreadNotifyDetachLog[0] != THREAD_NOTIFY_EVENT_PROCESS_DETACH) {
+       fprintf(stderr,
+               "[Failed] ThreadNotify process detach Count = %ld Event0 = 0x%lx\n",
+               ThreadNotifyDetachLogCount,
+               ThreadNotifyDetachLog[0]);
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    printf("[Success] DllMain thread notifications and DisableThreadLibraryCalls\n");
 
     if (!FreeLibrary( hModule )) {
        fprintf(stderr,

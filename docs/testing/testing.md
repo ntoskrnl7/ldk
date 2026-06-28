@@ -53,7 +53,8 @@ The current test suite covers:
   balanced load/unload reference-count behavior, and basic imported-dependency
   unload behavior. The loader tests also cover selected `LoadLibraryExW`
   search flags, `DONT_RESOLVE_DLL_REFERENCES`, and datafile/resource-style
-  handles.
+  handles, PE TLS callbacks, DllMain thread notifications, and
+  `DisableThreadLibraryCalls`.
 - Fibers and FLS callbacks.
 - File helpers, including selected `GetFileInformationByHandleEx`,
   `SetFileInformationByHandle`, temporary-file, link, and final-path paths.

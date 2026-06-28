@@ -188,6 +188,13 @@ SetDefaultDllDirectories(
 WINBASEAPI
 BOOL
 WINAPI
+DisableThreadLibraryCalls(
+    _In_ HMODULE hLibModule
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
 FreeLibrary(
     _In_ HMODULE hLibModule
     );

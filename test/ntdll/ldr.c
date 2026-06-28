@@ -165,6 +165,12 @@ EXTERN_C_END
 #define TLS_EVENT_DLL_PROCESS_DETACH 0x402
 #define TLS_TEST_LOG_CAPACITY        16
 
+#define THREAD_NOTIFY_EVENT_PROCESS_ATTACH 0x111
+#define THREAD_NOTIFY_EVENT_THREAD_ATTACH  0x211
+#define THREAD_NOTIFY_EVENT_THREAD_DETACH  0x311
+#define THREAD_NOTIFY_EVENT_PROCESS_DETACH 0x411
+#define THREAD_NOTIFY_TEST_LOG_CAPACITY    16
+
 static
 DWORD
 WINAPI
@@ -192,6 +198,9 @@ LdrTest (
     typedef VOID(__stdcall* TLS_SET_LOG_FN)(LONG *, LONG *, LONG);
     typedef LONG(__stdcall* TLS_GET_COUNT_FN)(VOID);
     typedef LONG(__stdcall* TLS_GET_EVENT_FN)(LONG);
+    typedef VOID(__stdcall* THREAD_NOTIFY_SET_LOG_FN)(LONG *, LONG *, LONG);
+    typedef LONG(__stdcall* THREAD_NOTIFY_GET_COUNT_FN)(VOID);
+    typedef LONG(__stdcall* THREAD_NOTIFY_GET_EVENT_FN)(LONG);
 
     WCHAR DllPath[MAX_PATH];
     DWORD Length;
@@ -203,6 +212,7 @@ LdrTest (
     UNICODE_STRING DependencyOwnerName = RTL_CONSTANT_STRING(L"DependencyOwner.dll");
     UNICODE_STRING DelayOwnerName = RTL_CONSTANT_STRING(L"DelayOwner.dll");
     UNICODE_STRING TlsCallbackName = RTL_CONSTANT_STRING(L"TlsCallback.dll");
+    UNICODE_STRING ThreadNotifyName = RTL_CONSTANT_STRING(L"ThreadNotify.dll");
     UNICODE_STRING FailAttachName = RTL_CONSTANT_STRING(L"FailAttach.dll");
     ANSI_STRING ProcName = RTL_CONSTANT_STRING("TestFunction");
     ANSI_STRING OrdinalImportProcName = RTL_CONSTANT_STRING("TestOrdinalImportFunction");
@@ -212,6 +222,9 @@ LdrTest (
     ANSI_STRING TlsSetLogProcName = RTL_CONSTANT_STRING("TlsCallbackSetLog");
     ANSI_STRING TlsGetCountProcName = RTL_CONSTANT_STRING("TlsCallbackGetCount");
     ANSI_STRING TlsGetEventProcName = RTL_CONSTANT_STRING("TlsCallbackGetEvent");
+    ANSI_STRING ThreadNotifySetLogProcName = RTL_CONSTANT_STRING("ThreadNotifySetLog");
+    ANSI_STRING ThreadNotifyGetCountProcName = RTL_CONSTANT_STRING("ThreadNotifyGetCount");
+    ANSI_STRING ThreadNotifyGetEventProcName = RTL_CONSTANT_STRING("ThreadNotifyGetEvent");
     PVOID DllHandle = NULL;
     PVOID DllHandle2 = NULL;
     PVOID LookupHandle = NULL;
@@ -220,6 +233,7 @@ LdrTest (
     PVOID DependencyOwnerHandle = NULL;
     PVOID DelayOwnerHandle = NULL;
     PVOID TlsCallbackHandle = NULL;
+    PVOID ThreadNotifyHandle = NULL;
     PVOID FailAttachHandle = NULL;
     HMODULE DelayDependencyModule = NULL;
     TEST_FN TestFn = NULL;
@@ -231,6 +245,9 @@ LdrTest (
     TLS_SET_LOG_FN TlsSetLogFn = NULL;
     TLS_GET_COUNT_FN TlsGetCountFn = NULL;
     TLS_GET_EVENT_FN TlsGetEventFn = NULL;
+    THREAD_NOTIFY_SET_LOG_FN ThreadNotifySetLogFn = NULL;
+    THREAD_NOTIFY_GET_COUNT_FN ThreadNotifyGetCountFn = NULL;
+    THREAD_NOTIFY_GET_EVENT_FN ThreadNotifyGetEventFn = NULL;
 
     printf("Ldr Test\n");
 
@@ -552,6 +569,113 @@ LdrTest (
     }
     printf("[Success] LdrLoadDll(TlsCallback.dll) TLS callback notifications\n");
 
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &ThreadNotifyName,
+                         &ThreadNotifyHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrLoadDll(ThreadNotify.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( ThreadNotifyHandle,
+                                     &ThreadNotifySetLogProcName,
+                                     0,
+                                     (PVOID*)&ThreadNotifySetLogFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(ThreadNotifySetLog) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( ThreadNotifyHandle,
+                                     &ThreadNotifyGetCountProcName,
+                                     0,
+                                     (PVOID*)&ThreadNotifyGetCountFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(ThreadNotifyGetCount) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( ThreadNotifyHandle,
+                                     &ThreadNotifyGetEventProcName,
+                                     0,
+                                     (PVOID*)&ThreadNotifyGetEventFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(ThreadNotifyGetEvent) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    if (ThreadNotifyGetCountFn() < 1 ||
+        ThreadNotifyGetEventFn(0) != THREAD_NOTIFY_EVENT_PROCESS_ATTACH) {
+        printf("[Failed] ThreadNotify native process attach Count = %ld Event0 = 0x%lx\n",
+               ThreadNotifyGetCountFn(),
+               ThreadNotifyGetEventFn(0));
+        goto Cleanup;
+    }
+
+    LONG ThreadNotifyLogCount = 0;
+    LONG ThreadNotifyLog[THREAD_NOTIFY_TEST_LOG_CAPACITY] = { 0 };
+    ThreadNotifySetLogFn( &ThreadNotifyLogCount,
+                          ThreadNotifyLog,
+                          THREAD_NOTIFY_TEST_LOG_CAPACITY );
+
+    LONG ThreadNotifyCounter = 0;
+    HANDLE ThreadNotifyThread = CreateThread( NULL,
+                                              0,
+                                              TlsCallbackTestThreadProc,
+                                              &ThreadNotifyCounter,
+                                              0,
+                                              NULL );
+    if (! ThreadNotifyThread) {
+        printf("[Failed] ThreadNotify native CreateThread ErrorCode = %lu\n",
+               GetLastError());
+        goto Cleanup;
+    }
+
+    DWORD ThreadNotifyWait = WaitForSingleObject( ThreadNotifyThread,
+                                                  5000 );
+    CloseHandle( ThreadNotifyThread );
+    if (ThreadNotifyWait != WAIT_OBJECT_0 ||
+        ThreadNotifyCounter != 1 ||
+        ThreadNotifyLogCount < 2 ||
+        ThreadNotifyLog[0] != THREAD_NOTIFY_EVENT_THREAD_ATTACH ||
+        ThreadNotifyLog[1] != THREAD_NOTIFY_EVENT_THREAD_DETACH) {
+        printf("[Failed] ThreadNotify native thread events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               ThreadNotifyWait,
+               ThreadNotifyCounter,
+               ThreadNotifyLogCount,
+               ThreadNotifyLog[0],
+               ThreadNotifyLog[1]);
+        goto Cleanup;
+    }
+
+    LONG ThreadNotifyDetachLogCount = 0;
+    LONG ThreadNotifyDetachLog[THREAD_NOTIFY_TEST_LOG_CAPACITY] = { 0 };
+    ThreadNotifySetLogFn( &ThreadNotifyDetachLogCount,
+                          ThreadNotifyDetachLog,
+                          THREAD_NOTIFY_TEST_LOG_CAPACITY );
+
+    Status = LdrUnloadDll( ThreadNotifyHandle );
+    ThreadNotifyHandle = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(ThreadNotify.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    if (ThreadNotifyDetachLogCount < 1 ||
+        ThreadNotifyDetachLog[0] != THREAD_NOTIFY_EVENT_PROCESS_DETACH) {
+        printf("[Failed] ThreadNotify native process detach Count = %ld Event0 = 0x%lx\n",
+               ThreadNotifyDetachLogCount,
+               ThreadNotifyDetachLog[0]);
+        goto Cleanup;
+    }
+    printf("[Success] LdrLoadDll(ThreadNotify.dll) DllMain thread notifications\n");
+
     if (GetModuleHandleW( L"DelayDependency.dll" ) != NULL) {
         printf("[Failed] DelayDependency.dll was loaded before delay-load test\n");
         goto Cleanup;
@@ -674,6 +798,9 @@ LdrTest (
 Cleanup:
     if (TlsCallbackHandle != NULL) {
         LdrUnloadDll( TlsCallbackHandle );
+    }
+    if (ThreadNotifyHandle != NULL) {
+        LdrUnloadDll( ThreadNotifyHandle );
     }
     if (DelayOwnerHandle != NULL) {
         LdrUnloadDll( DelayOwnerHandle );
