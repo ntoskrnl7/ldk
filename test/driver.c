@@ -76,6 +76,11 @@ ProcessApiTest (
     );
 
 BOOLEAN
+PipeTest (
+    VOID
+    );
+
+BOOLEAN
 NtdllCurrentDirectoryTest (
     VOID
     );
@@ -147,6 +152,7 @@ DriverEntry (
         { "LibraryTest", LibraryTest },
         { "ConsoleTest", ConsoleTest },
         { "ProcessApiTest", ProcessApiTest },
+        { "PipeTest", PipeTest },
         { NULL, NULL }
     };
 

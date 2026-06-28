@@ -38,10 +38,11 @@ CreatePipe (
     if (nSize == 0) {
         nSize = 4096;
     }
-    sprintf( PipeNameBuffer,
-             WIN32_SS_PIPE_FORMAT_STRING,
-             HandleToUlong(NtCurrentTeb()->ClientId.UniqueProcess),
-             InterlockedIncrement(&PipeSerialNumber) );
+    snprintf( PipeNameBuffer,
+              sizeof(PipeNameBuffer),
+              WIN32_SS_PIPE_FORMAT_STRING,
+              HandleToUlong(NtCurrentTeb()->ClientId.UniqueProcess),
+              InterlockedIncrement(&PipeSerialNumber) );
 
     RtlInitAnsiString( &PipeName,
                        PipeNameBuffer );
