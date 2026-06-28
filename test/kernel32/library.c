@@ -1,5 +1,6 @@
 ﻿#if _KERNEL_MODE
 #include <Ldk/Windows.h>
+#include "../../src/teb.h"
 
 BOOLEAN
 LibraryTest (
@@ -27,6 +28,11 @@ typedef VOID(__stdcall* TLS_RESET_FN)(VOID);
 typedef VOID(__stdcall* TLS_SET_LOG_FN)(LONG *, LONG *, LONG);
 typedef LONG(__stdcall* TLS_GET_COUNT_FN)(VOID);
 typedef LONG(__stdcall* TLS_GET_EVENT_FN)(LONG);
+typedef PVOID(__stdcall* TLS_STATIC_TLS_ACCESSOR_FN)(ULONG);
+typedef VOID(__stdcall* TLS_SET_STATIC_TLS_ACCESSOR_FN)(TLS_STATIC_TLS_ACCESSOR_FN);
+typedef ULONG(__stdcall* TLS_GET_STATIC_INDEX_FN)(VOID);
+typedef LONG(__stdcall* TLS_GET_STATIC_VALUE_FN)(VOID);
+typedef VOID(__stdcall* TLS_SET_STATIC_VALUE_FN)(LONG);
 typedef VOID(__stdcall* THREAD_NOTIFY_RESET_FN)(VOID);
 typedef VOID(__stdcall* THREAD_NOTIFY_SET_LOG_FN)(LONG *, LONG *, LONG);
 typedef LONG(__stdcall* THREAD_NOTIFY_GET_COUNT_FN)(VOID);
@@ -39,6 +45,10 @@ typedef LONG(__stdcall* THREAD_NOTIFY_GET_EVENT_FN)(LONG);
 #define TLS_EVENT_TLS_PROCESS_DETACH 0x401
 #define TLS_EVENT_DLL_PROCESS_DETACH 0x402
 #define TLS_TEST_LOG_CAPACITY        16
+#define TLS_STATIC_INITIAL_VALUE     7
+#define TLS_STATIC_THREAD_VALUE      22
+#define TLS_STATIC_MAIN_VALUE        11
+#define TLS_STATIC_INVALID_INDEX     0xffffffff
 
 #define THREAD_NOTIFY_EVENT_PROCESS_ATTACH 0x111
 #define THREAD_NOTIFY_EVENT_THREAD_ATTACH  0x211
@@ -46,19 +56,89 @@ typedef LONG(__stdcall* THREAD_NOTIFY_GET_EVENT_FN)(LONG);
 #define THREAD_NOTIFY_EVENT_PROCESS_DETACH 0x411
 #define THREAD_NOTIFY_TEST_LOG_CAPACITY    16
 
+#if _KERNEL_MODE
+static
+PVOID
+__stdcall
+LdkTestGetStaticTlsBlock (
+    _In_ ULONG Index
+    )
+{
+    PLDK_TEB Teb = NtCurrentTeb();
+
+    if (Index >= RTL_NUMBER_OF(Teb->TlsSlots)) {
+        return NULL;
+    }
+
+    return Teb->TlsSlots[Index];
+}
+#else
+#if defined(_M_AMD64) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#define LDK_TEST_TEB_STATIC_TLS_OFFSET 0x58
+#else
+#define LDK_TEST_TEB_STATIC_TLS_OFFSET 0x2c
+#endif
+
+static
+PVOID
+__stdcall
+LdkTestGetStaticTlsBlock (
+    _In_ ULONG Index
+    )
+{
+    PVOID *TlsArray;
+
+    if (Index >= 4096) {
+        return NULL;
+    }
+
+    TlsArray = *(PVOID **)((PBYTE)NtCurrentTeb() + LDK_TEST_TEB_STATIC_TLS_OFFSET);
+    if (!TlsArray) {
+        return NULL;
+    }
+
+    return TlsArray[Index];
+}
+#endif
+
+typedef struct _TLS_STATIC_THREAD_CONTEXT {
+    TLS_GET_STATIC_VALUE_FN GetValue;
+    TLS_SET_STATIC_VALUE_FN SetValue;
+    LONG Counter;
+    LONG Failure;
+    LONG InitialValue;
+    LONG FinalValue;
+} TLS_STATIC_THREAD_CONTEXT, *PTLS_STATIC_THREAD_CONTEXT;
+
 static
 DWORD
 WINAPI
-TlsCallbackTestThreadProc (
+TlsStaticTestThreadProc (
     _In_opt_ LPVOID Parameter
     )
 {
-    LONG *Counter = (LONG *)Parameter;
+    PTLS_STATIC_THREAD_CONTEXT Context = (PTLS_STATIC_THREAD_CONTEXT)Parameter;
 
-    if (Counter) {
-        InterlockedIncrement( Counter );
+    if (!Context ||
+        !Context->GetValue ||
+        !Context->SetValue) {
+        return 1;
     }
 
+    Context->InitialValue = Context->GetValue();
+    if (Context->InitialValue != TLS_STATIC_INITIAL_VALUE) {
+        Context->Failure = 1;
+        return 1;
+    }
+
+    Context->SetValue( TLS_STATIC_THREAD_VALUE );
+    Context->FinalValue = Context->GetValue();
+    if (Context->FinalValue != TLS_STATIC_THREAD_VALUE) {
+        Context->Failure = 2;
+        return 1;
+    }
+
+    InterlockedIncrement( &Context->Counter );
     return 0;
 }
 
@@ -534,10 +614,22 @@ LibraryTest (
                                                                        "TlsCallbackGetCount" );
     TLS_GET_EVENT_FN tlsGetEventFn = (TLS_GET_EVENT_FN)GetProcAddress( hTlsCallback,
                                                                        "TlsCallbackGetEvent" );
+    TLS_SET_STATIC_TLS_ACCESSOR_FN tlsSetStaticTlsAccessorFn = (TLS_SET_STATIC_TLS_ACCESSOR_FN)GetProcAddress( hTlsCallback,
+                                                                                                              "TlsCallbackSetStaticTlsAccessor" );
+    TLS_GET_STATIC_INDEX_FN tlsGetStaticIndexFn = (TLS_GET_STATIC_INDEX_FN)GetProcAddress( hTlsCallback,
+                                                                                          "TlsCallbackGetStaticIndex" );
+    TLS_GET_STATIC_VALUE_FN tlsGetStaticValueFn = (TLS_GET_STATIC_VALUE_FN)GetProcAddress( hTlsCallback,
+                                                                                          "TlsCallbackGetStaticValue" );
+    TLS_SET_STATIC_VALUE_FN tlsSetStaticValueFn = (TLS_SET_STATIC_VALUE_FN)GetProcAddress( hTlsCallback,
+                                                                                          "TlsCallbackSetStaticValue" );
     if (!tlsResetFn ||
         !tlsSetLogFn ||
         !tlsGetCountFn ||
-        !tlsGetEventFn) {
+        !tlsGetEventFn ||
+        !tlsSetStaticTlsAccessorFn ||
+        !tlsGetStaticIndexFn ||
+        !tlsGetStaticValueFn ||
+        !tlsSetStaticValueFn) {
        fprintf(stderr,
                "[Failed] TlsCallback.dll exports ErrorCode = %lu\n",
                GetLastError());
@@ -556,6 +648,28 @@ LibraryTest (
                tlsGetEventFn(1));
        FreeLibrary( hTlsCallback );
        FreeLibrary( hModule );
+        return FALSE;
+    }
+
+    tlsSetStaticTlsAccessorFn( LdkTestGetStaticTlsBlock );
+    if (tlsGetStaticIndexFn() == TLS_STATIC_INVALID_INDEX ||
+        tlsGetStaticValueFn() != TLS_STATIC_INITIAL_VALUE) {
+       fprintf(stderr,
+               "[Failed] TlsCallback static TLS main initial Index = %lu Value = %ld\n",
+               tlsGetStaticIndexFn(),
+               tlsGetStaticValueFn());
+       FreeLibrary( hTlsCallback );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    tlsSetStaticValueFn( TLS_STATIC_MAIN_VALUE );
+    if (tlsGetStaticValueFn() != TLS_STATIC_MAIN_VALUE) {
+       fprintf(stderr,
+               "[Failed] TlsCallback static TLS main set Value = %ld\n",
+               tlsGetStaticValueFn());
+       FreeLibrary( hTlsCallback );
+       FreeLibrary( hModule );
        return FALSE;
     }
 
@@ -565,11 +679,13 @@ LibraryTest (
                  TlsThreadLog,
                  TLS_TEST_LOG_CAPACITY );
 
-    LONG TlsThreadCounter = 0;
+    TLS_STATIC_THREAD_CONTEXT TlsStaticContext = { 0 };
+    TlsStaticContext.GetValue = tlsGetStaticValueFn;
+    TlsStaticContext.SetValue = tlsSetStaticValueFn;
     HANDLE hTlsThread = CreateThread( NULL,
                                       0,
-                                      TlsCallbackTestThreadProc,
-                                      &TlsThreadCounter,
+                                      TlsStaticTestThreadProc,
+                                      &TlsStaticContext,
                                       0,
                                       NULL );
     if (!hTlsThread) {
@@ -585,14 +701,22 @@ LibraryTest (
                                          5000 );
     CloseHandle( hTlsThread );
     if (TlsWait != WAIT_OBJECT_0 ||
-        TlsThreadCounter != 1 ||
+        TlsStaticContext.Counter != 1 ||
+        TlsStaticContext.Failure != 0 ||
+        TlsStaticContext.InitialValue != TLS_STATIC_INITIAL_VALUE ||
+        TlsStaticContext.FinalValue != TLS_STATIC_THREAD_VALUE ||
+        tlsGetStaticValueFn() != TLS_STATIC_MAIN_VALUE ||
         TlsThreadLogCount < 2 ||
         TlsThreadLog[0] != TLS_EVENT_TLS_THREAD_ATTACH ||
         TlsThreadLog[1] != TLS_EVENT_TLS_THREAD_DETACH) {
        fprintf(stderr,
-               "[Failed] TlsCallback thread events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               "[Failed] TlsCallback thread/static TLS Wait = 0x%08lx Counter = %ld Failure = %ld Initial = %ld Final = %ld Main = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
                TlsWait,
-               TlsThreadCounter,
+               TlsStaticContext.Counter,
+               TlsStaticContext.Failure,
+               TlsStaticContext.InitialValue,
+               TlsStaticContext.FinalValue,
+               tlsGetStaticValueFn(),
                TlsThreadLogCount,
                TlsThreadLog[0],
                TlsThreadLog[1]);
@@ -600,6 +724,9 @@ LibraryTest (
        FreeLibrary( hModule );
        return FALSE;
     }
+
+    ULONG TlsStaticIndex = tlsGetStaticIndexFn();
+    LONG TlsStaticMainValue = tlsGetStaticValueFn();
 
     LONG TlsDetachLogCount = 0;
     LONG TlsDetachLog[TLS_TEST_LOG_CAPACITY] = { 0 };
@@ -625,9 +752,13 @@ LibraryTest (
                TlsDetachLog[0],
                TlsDetachLog[1]);
        FreeLibrary( hModule );
-       return FALSE;
+        return FALSE;
     }
-    printf("[Success] TLS callback process/thread notifications\n");
+    printf("[Success] TLS callback notifications and static TLS storage Index = %lu Main = %ld ThreadInitial = %ld ThreadFinal = %ld\n",
+           TlsStaticIndex,
+           TlsStaticMainValue,
+           TlsStaticContext.InitialValue,
+           TlsStaticContext.FinalValue);
 
     HMODULE hThreadNotify = LoadLibraryW( L"ThreadNotify.dll" );
     if (!hThreadNotify) {
