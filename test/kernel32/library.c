@@ -23,6 +23,34 @@ LibraryTest (
 #endif
 
 typedef LONG(__stdcall* TEST_FN)(LONG);
+typedef VOID(__stdcall* TLS_RESET_FN)(VOID);
+typedef VOID(__stdcall* TLS_SET_LOG_FN)(LONG *, LONG *, LONG);
+typedef LONG(__stdcall* TLS_GET_COUNT_FN)(VOID);
+typedef LONG(__stdcall* TLS_GET_EVENT_FN)(LONG);
+
+#define TLS_EVENT_TLS_PROCESS_ATTACH 0x101
+#define TLS_EVENT_DLL_PROCESS_ATTACH 0x102
+#define TLS_EVENT_TLS_THREAD_ATTACH  0x201
+#define TLS_EVENT_TLS_THREAD_DETACH  0x301
+#define TLS_EVENT_TLS_PROCESS_DETACH 0x401
+#define TLS_EVENT_DLL_PROCESS_DETACH 0x402
+#define TLS_TEST_LOG_CAPACITY        16
+
+static
+DWORD
+WINAPI
+TlsCallbackTestThreadProc (
+    _In_opt_ LPVOID Parameter
+    )
+{
+    LONG *Counter = (LONG *)Parameter;
+
+    if (Counter) {
+        InterlockedIncrement( Counter );
+    }
+
+    return 0;
+}
 
 static
 BOOL
@@ -462,6 +490,118 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] LoadLibraryW(FailAttach.dll) DllMain failure cleanup\n");
+
+    HMODULE hTlsCallback = LoadLibraryW( L"TlsCallback.dll" );
+    if (!hTlsCallback) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(TlsCallback.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    TLS_RESET_FN tlsResetFn = (TLS_RESET_FN)GetProcAddress( hTlsCallback,
+                                                            "TlsCallbackReset" );
+    TLS_SET_LOG_FN tlsSetLogFn = (TLS_SET_LOG_FN)GetProcAddress( hTlsCallback,
+                                                                 "TlsCallbackSetLog" );
+    TLS_GET_COUNT_FN tlsGetCountFn = (TLS_GET_COUNT_FN)GetProcAddress( hTlsCallback,
+                                                                       "TlsCallbackGetCount" );
+    TLS_GET_EVENT_FN tlsGetEventFn = (TLS_GET_EVENT_FN)GetProcAddress( hTlsCallback,
+                                                                       "TlsCallbackGetEvent" );
+    if (!tlsResetFn ||
+        !tlsSetLogFn ||
+        !tlsGetCountFn ||
+        !tlsGetEventFn) {
+       fprintf(stderr,
+               "[Failed] TlsCallback.dll exports ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hTlsCallback );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    if (tlsGetCountFn() < 2 ||
+        tlsGetEventFn(0) != TLS_EVENT_TLS_PROCESS_ATTACH ||
+        tlsGetEventFn(1) != TLS_EVENT_DLL_PROCESS_ATTACH) {
+       fprintf(stderr,
+               "[Failed] TlsCallback process attach order Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               tlsGetCountFn(),
+               tlsGetEventFn(0),
+               tlsGetEventFn(1));
+       FreeLibrary( hTlsCallback );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    LONG TlsThreadLogCount = 0;
+    LONG TlsThreadLog[TLS_TEST_LOG_CAPACITY] = { 0 };
+    tlsSetLogFn( &TlsThreadLogCount,
+                 TlsThreadLog,
+                 TLS_TEST_LOG_CAPACITY );
+
+    LONG TlsThreadCounter = 0;
+    HANDLE hTlsThread = CreateThread( NULL,
+                                      0,
+                                      TlsCallbackTestThreadProc,
+                                      &TlsThreadCounter,
+                                      0,
+                                      NULL );
+    if (!hTlsThread) {
+       fprintf(stderr,
+               "[Failed] TlsCallback CreateThread ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hTlsCallback );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    DWORD TlsWait = WaitForSingleObject( hTlsThread,
+                                         5000 );
+    CloseHandle( hTlsThread );
+    if (TlsWait != WAIT_OBJECT_0 ||
+        TlsThreadCounter != 1 ||
+        TlsThreadLogCount < 2 ||
+        TlsThreadLog[0] != TLS_EVENT_TLS_THREAD_ATTACH ||
+        TlsThreadLog[1] != TLS_EVENT_TLS_THREAD_DETACH) {
+       fprintf(stderr,
+               "[Failed] TlsCallback thread events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               TlsWait,
+               TlsThreadCounter,
+               TlsThreadLogCount,
+               TlsThreadLog[0],
+               TlsThreadLog[1]);
+       FreeLibrary( hTlsCallback );
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
+    LONG TlsDetachLogCount = 0;
+    LONG TlsDetachLog[TLS_TEST_LOG_CAPACITY] = { 0 };
+    tlsSetLogFn( &TlsDetachLogCount,
+                 TlsDetachLog,
+                 TLS_TEST_LOG_CAPACITY );
+
+    if (!FreeLibrary( hTlsCallback )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(TlsCallback.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    hTlsCallback = NULL;
+
+    if (TlsDetachLogCount < 2 ||
+        TlsDetachLog[0] != TLS_EVENT_TLS_PROCESS_DETACH ||
+        TlsDetachLog[1] != TLS_EVENT_DLL_PROCESS_DETACH) {
+       fprintf(stderr,
+               "[Failed] TlsCallback process detach order Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               TlsDetachLogCount,
+               TlsDetachLog[0],
+               TlsDetachLog[1]);
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+    printf("[Success] TLS callback process/thread notifications\n");
 
     if (!FreeLibrary( hModule )) {
        fprintf(stderr,

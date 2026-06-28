@@ -83,6 +83,10 @@ TEB map.
 TLS and FLS indexes are allocated from bitmaps in the LDK PEB. Per-thread slot
 values live in the current LDK TEB.
 
+PE image TLS callbacks are handled by the loader and thread startup/exit paths.
+That callback notification support is separate from full Windows static TLS
+data semantics.
+
 FLS callbacks are invoked when an LDK-created thread exits and again during TEB
 map teardown for remaining TEBs. LDK invokes a callback only when both the
 registered callback and slot data are non-null.

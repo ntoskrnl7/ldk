@@ -17,7 +17,18 @@ inside the start routine does not leak that context.
 
 `CREATE_SUSPENDED` is not supported.
 
-## ExitThread and FLS callbacks
+## TLS callbacks, ExitThread, and FLS callbacks
+
+LDK-created threads notify loaded dynamic modules that have PE TLS callbacks:
+
+- `DLL_THREAD_ATTACH` callbacks run before the caller's thread start routine.
+- `DLL_THREAD_DETACH` callbacks run after the start routine returns.
+- `ExitThread` also runs `DLL_THREAD_DETACH` callbacks before terminating the
+  current system thread.
+
+The module list is snapshotted before callback execution, so loader locks are
+not held while DLL code runs. The snapshot temporarily references each attached
+module to keep it loaded until that thread notification pass finishes.
 
 `ExitThread` invokes FLS callbacks for the current LDK TEB, then terminates the
 system thread with `PsTerminateSystemThread`.
@@ -64,6 +75,7 @@ drop-in replacement for the full Windows threadpool.
 
 ## Testing
 
-The test driver covers basic thread creation, FLS callback behavior, legacy
-work items, modern threadpool work items, and wait-on-address stress paths that
-create and join many worker threads.
+The test driver covers basic thread creation, TLS callback process/thread
+notifications, FLS callback behavior, legacy work items, modern threadpool work
+items, and wait-on-address stress paths that create and join many worker
+threads.

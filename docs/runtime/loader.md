@@ -54,11 +54,13 @@ in progress. The core load path:
 7. Applies base relocations.
 8. Resolves imports through the LDK module list.
 9. Registers the loaded module.
-10. Calls the DLL entry point with `DLL_PROCESS_ATTACH`.
+10. Calls image TLS callbacks with `DLL_PROCESS_ATTACH`.
+11. Calls the DLL entry point with `DLL_PROCESS_ATTACH`.
 
-Entry points are called through a kernel stack expansion helper when needed.
-If a DLL has no entry point, the attach step succeeds. If `DLL_PROCESS_ATTACH`
-returns failure, the module is unloaded and the load fails with
+TLS callbacks and entry points are called through a kernel stack expansion
+helper when needed. If a DLL has no TLS callback directory or entry point, the
+attach step succeeds. If `DLL_PROCESS_ATTACH` returns failure, the module is
+unloaded and the load fails with
 `STATUS_DLL_INIT_FAILED`. The failure path also releases import dependencies
 that were loaded while preparing the failed module, so a failed attach does not
 leave the failing module or its private dependencies registered.
@@ -102,9 +104,10 @@ the built-in Kernel32 and NTDLL registrations expose name tables only.
 
 `FreeLibrary` calls `LdrUnloadDll`, which calls `LdkUnloadDll`. Dynamic modules
 are reference-counted. A balanced unload decrements the count; when it reaches
-zero, the module is removed from the module list, called with
-`DLL_PROCESS_DETACH`, and freed. Invalid module handles fail instead of being
-treated as successful no-op unloads.
+zero, the module is removed from the module list, its TLS callbacks are called
+with `DLL_PROCESS_DETACH`, its entry point is called with
+`DLL_PROCESS_DETACH`, and the image is freed. Invalid module handles fail
+instead of being treated as successful no-op unloads.
 
 After the dependent module has run detach and its image has been freed, its
 recorded dependency references are released. This keeps imported modules alive
@@ -130,10 +133,14 @@ code that touches LDK runtime services.
 ## Limits
 
 LDK loading is not user-mode Windows loading. Loaded DLLs run as kernel code.
-Avoid DLLs that require GUI state, COM, arbitrary CRT startup, user-mode TLS
-callbacks, user-mode APC assumptions, or unsupported imports. Treat import
-failures and debugger breaks in loader paths as compatibility bugs to audit, not
-as recoverable normal behavior.
+TLS callback notification is implemented for the tested PE TLS callback
+directory path, including process attach/detach and LDK-created thread
+attach/detach notifications. This does not make arbitrary user-mode TLS usage a
+kernel-safe contract: static TLS data layout, broad CRT startup assumptions,
+GUI state, COM, user-mode APC assumptions, and unsupported imports still need to
+be avoided or validated for the specific driver workload. Treat import failures
+and debugger breaks in loader paths as compatibility bugs to audit, not as
+recoverable normal behavior.
 
 The current dependency model covers tested acyclic import ownership and unload
 ordering, including repeated owner/dependency load and unload cycles. It is

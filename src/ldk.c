@@ -820,6 +820,86 @@ typedef struct _LDK_DLL_ENTRY_POINIT_CONTEXT {
 	BOOL Result;
 } LDK_DLL_ENTRY_POINIT_CONTEXT, *PLDK_DLL_ENTRY_POINIT_CONTEXT;
 
+typedef struct _LDK_TLS_CALLBACK_CONTEXT {
+	PIMAGE_TLS_CALLBACK Callback;
+	PVOID Base;
+	DWORD Reason;
+	PVOID Reserved;
+} LDK_TLS_CALLBACK_CONTEXT, *PLDK_TLS_CALLBACK_CONTEXT;
+
+_IRQL_requires_same_
+_Function_class_(EXPAND_STACK_CALLOUT)
+VOID
+NTAPI
+LdkpCallTlsCallbackExpandStackCallout (
+    _In_ PLDK_TLS_CALLBACK_CONTEXT Context
+    )
+{
+	Context->Callback( Context->Base,
+					   Context->Reason,
+					   Context->Reserved );
+}
+
+VOID
+LdkpCallTlsCallback (
+	_In_ PIMAGE_TLS_CALLBACK Callback,
+	_In_ PVOID Base,
+	_In_ DWORD Reason,
+	_In_opt_ PVOID Reserved
+	)
+{
+	LDK_TLS_CALLBACK_CONTEXT Context;
+
+	Context.Callback = Callback;
+	Context.Base = Base;
+	Context.Reason = Reason;
+	Context.Reserved = Reserved;
+
+	if (! NT_SUCCESS(KeExpandKernelStackAndCalloutEx( LdkpCallTlsCallbackExpandStackCallout,
+													  &Context,
+													  MAXIMUM_EXPANSION_SIZE,
+													  TRUE,
+													  NULL ))) {
+		Callback( Base,
+				  Reason,
+				  Reserved );
+	}
+}
+
+VOID
+LdkpCallTlsCallbacks (
+	_In_ PVOID ImageBase,
+	_In_ DWORD Reason,
+	_In_opt_ PVOID Reserved
+	)
+{
+	ULONG TlsSize;
+	PIMAGE_TLS_DIRECTORY TlsDirectory;
+	PIMAGE_TLS_CALLBACK *Callbacks;
+
+	TlsDirectory = RtlImageDirectoryEntryToData( ImageBase,
+												 TRUE,
+												 IMAGE_DIRECTORY_ENTRY_TLS,
+												 &TlsSize );
+	if (TlsDirectory == NULL ||
+		TlsSize < sizeof(IMAGE_TLS_DIRECTORY) ||
+		TlsDirectory->AddressOfCallBacks == 0) {
+		return;
+	}
+
+	Callbacks = (PIMAGE_TLS_CALLBACK *)(ULONG_PTR)TlsDirectory->AddressOfCallBacks;
+	if (Callbacks == NULL) {
+		return;
+	}
+
+	for (; *Callbacks != NULL; Callbacks++) {
+		LdkpCallTlsCallback( *Callbacks,
+							  ImageBase,
+							  Reason,
+							  Reserved );
+	}
+}
+
 _IRQL_requires_same_
 _Function_class_(EXPAND_STACK_CALLOUT)
 VOID
@@ -857,6 +937,113 @@ LdkpCallEntryPoint (
 													   NULL )) ?
 			Context.Result :
 			Context.EntryPoint(Base, Reason, Reserved);
+}
+
+NTSTATUS
+LdkpReferenceProcessAttachedModuleSnapshot (
+	_Outptr_result_buffer_maybenull_(*ModuleCount) PVOID **ModuleBases,
+	_Out_ PULONG ModuleCount
+	)
+{
+	ULONG Count = 0;
+	ULONG Index = 0;
+	PVOID *Bases = NULL;
+	PLIST_ENTRY NextEntry;
+
+	*ModuleBases = NULL;
+	*ModuleCount = 0;
+
+	LdkpAcquireModuleListExclusive();
+
+	for (NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+		 NextEntry != &LdkCurrentPeb()->ModuleListHead;
+		 NextEntry = NextEntry->Flink) {
+		PLDK_MODULE Module = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
+
+		if (Module->Base &&
+			FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED)) {
+			Count++;
+		}
+	}
+
+	if (Count != 0) {
+#pragma warning(disable:4996)
+		Bases = ExAllocatePoolWithTag( NonPagedPool,
+									   Count * sizeof(PVOID),
+									   TAG_TMP_POOL );
+#pragma warning(default:4996)
+		if (Bases == NULL) {
+			LdkpReleaseModuleList();
+			return STATUS_INSUFFICIENT_RESOURCES;
+		}
+
+		for (NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+			 NextEntry != &LdkCurrentPeb()->ModuleListHead && Index < Count;
+			 NextEntry = NextEntry->Flink) {
+			PLDK_MODULE Module = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
+
+			if (Module->Base &&
+				FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED)) {
+				LdkpReferenceModuleLocked( Module,
+										   FALSE,
+										   TRUE );
+				Bases[Index++] = Module->Base;
+			}
+		}
+	}
+
+	LdkpReleaseModuleList();
+
+	*ModuleBases = Bases;
+	*ModuleCount = Index;
+	return STATUS_SUCCESS;
+}
+
+VOID
+LdkpReleaseProcessAttachedModuleSnapshot (
+	_In_reads_opt_(ModuleCount) PVOID *ModuleBases,
+	_In_ ULONG ModuleCount
+	)
+{
+	if (ModuleBases == NULL) {
+		return;
+	}
+
+	for (ULONG Index = 0; Index < ModuleCount; Index++) {
+		LdkUnloadDll( ModuleBases[Index] );
+	}
+
+	ExFreePoolWithTag( ModuleBases,
+					   TAG_TMP_POOL );
+}
+
+VOID
+LdkpCallTlsCallbacksForThread (
+	_In_ DWORD Reason
+	)
+{
+	NTSTATUS Status;
+	PVOID *ModuleBases;
+	ULONG ModuleCount;
+
+	if (! LDK_IS_INITIALIZED) {
+		return;
+	}
+
+	Status = LdkpReferenceProcessAttachedModuleSnapshot( &ModuleBases,
+														 &ModuleCount );
+	if (! NT_SUCCESS(Status)) {
+		return;
+	}
+
+	for (ULONG Index = 0; Index < ModuleCount; Index++) {
+		LdkpCallTlsCallbacks( ModuleBases[Index],
+							  Reason,
+							  NULL );
+	}
+
+	LdkpReleaseProcessAttachedModuleSnapshot( ModuleBases,
+											  ModuleCount );
 }
 
 NTSTATUS
@@ -1064,6 +1251,9 @@ LdkpUnloadDll (
 	)
 {
 	if (CallEntryPoint) {
+		LdkpCallTlsCallbacks( ImageBase,
+							  DLL_PROCESS_DETACH,
+							  NULL );
 		LdkpCallEntryPoint( (HINSTANCE)ImageBase,
 							DLL_PROCESS_DETACH,
 							NULL );
@@ -1556,6 +1746,9 @@ retry:
 				ResolveImports) {
 				SetFlag( RegisteredModule->Flags,
 						 LDK_MODULE_FLAG_PROCESS_ATTACHED );
+				LdkpCallTlsCallbacks( *DllHandle,
+									  DLL_PROCESS_ATTACH,
+									  NULL );
 				if (! LdkpCallEntryPoint( *DllHandle,
 										  DLL_PROCESS_ATTACH,
 										  NULL )) {
