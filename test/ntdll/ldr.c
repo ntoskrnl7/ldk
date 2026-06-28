@@ -153,6 +153,25 @@ LdrGetDllHandle (
     _Out_ PVOID* DllHandle
     );
 
+#ifndef LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT
+#define LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT 0x00000001
+#endif
+
+#ifndef LDR_GET_DLL_HANDLE_EX_PIN
+#define LDR_GET_DLL_HANDLE_EX_PIN 0x00000002
+#endif
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+LdrGetDllHandleEx (
+    _In_ ULONG Flags,
+    _In_opt_ PWSTR DllPath,
+    _In_opt_ PULONG DllCharacteristics,
+    _In_ PUNICODE_STRING DllName,
+    _Out_ PVOID* DllHandle
+    );
+
 EXTERN_C_END
 
 #pragma comment(lib, "ntdll.lib")
@@ -457,6 +476,78 @@ LdrTest (
                LookupHandle);
         goto Cleanup;
     }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT,
+                                NULL,
+                                NULL,
+                                &DllName,
+                                &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrGetDllHandleEx(Test.dll, UNCHANGED_REFCOUNT) Status = 0x%08x Handle = %p Lookup = %p\n",
+               Status,
+               DllHandle,
+               LookupHandle);
+        goto Cleanup;
+    }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandleEx( 0,
+                                DllPath,
+                                NULL,
+                                &DllName,
+                                &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrGetDllHandleEx(Test.dll) Status = 0x%08x Handle = %p Lookup = %p\n",
+               Status,
+               DllHandle,
+               LookupHandle);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( LookupHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(Test.dll LdrGetDllHandleEx reference) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandleEx( 4,
+                                NULL,
+                                NULL,
+                                &DllName,
+                                &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrGetDllHandleEx(Test.dll, compatibility flag 4) Status = 0x%08x Handle = %p Lookup = %p\n",
+               Status,
+               DllHandle,
+               LookupHandle);
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( LookupHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(Test.dll compatibility flag 4 reference) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT |
+                                LDR_GET_DLL_HANDLE_EX_PIN,
+                                NULL,
+                                NULL,
+                                &DllName,
+                                &LookupHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetDllHandleEx accepted incompatible flags\n");
+        goto Cleanup;
+    }
+
+    printf("[Success] LdrGetDllHandleEx refcount\n");
 
     Status = LdrUnloadDll( DllHandle2 );
     DllHandle2 = NULL;

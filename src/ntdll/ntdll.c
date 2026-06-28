@@ -107,6 +107,10 @@ LDK_FUNCTION_REGISTRATION LdkpNtdllFunctionRegistration[] = {
         "LdrAddRefDll",
         LdrAddRefDll
     },
+    {
+        "LdrGetDllHandleEx",
+        LdrGetDllHandleEx
+    },
 	{
 		NULL
 	}
