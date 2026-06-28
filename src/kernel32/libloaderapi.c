@@ -70,6 +70,7 @@ LdkpAppendDllPathElement (
 #pragma alloc_text(PAGE, LoadLibraryW)
 #pragma alloc_text(PAGE, LoadLibraryExA)
 #pragma alloc_text(PAGE, LoadLibraryExW)
+#pragma alloc_text(PAGE, DisableThreadLibraryCalls)
 #pragma alloc_text(PAGE, FreeLibrary)
 #pragma alloc_text(PAGE, FreeLibraryAndExitThread)
 #endif
@@ -1040,6 +1041,44 @@ LoadLibraryExW (
 		}
 		return hModule;
 	}
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+DisableThreadLibraryCalls (
+    _In_ HMODULE hLibModule
+    )
+{
+	NTSTATUS Status;
+	PVOID ModuleHandle;
+
+	PAGED_CODE()
+
+	if (! ARGUMENT_PRESENT(hLibModule)) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	ModuleHandle = LdkpMapModuleHandle( hLibModule,
+										 FALSE );
+	if (! ModuleHandle) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	Status = LdkDisableThreadLibraryCalls( ModuleHandle );
+	if (NT_SUCCESS(Status)) {
+		return TRUE;
+	}
+	if (Status == STATUS_NOT_FOUND ||
+		Status == STATUS_INVALID_HANDLE ||
+		Status == STATUS_INVALID_PARAMETER) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+	LdkSetLastNTError( Status );
+	return FALSE;
 }
 
 WINBASEAPI

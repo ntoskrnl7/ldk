@@ -700,6 +700,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		LoadLibraryExW
 	},
 	{
+		"DisableThreadLibraryCalls",
+		DisableThreadLibraryCalls
+	},
+	{
 		"GetModuleHandleA",
 		GetModuleHandleA
 	},

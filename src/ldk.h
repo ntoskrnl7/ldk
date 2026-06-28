@@ -29,6 +29,7 @@ typedef struct _LDK_FUNCTION_REGISTRATION {
 #define LDK_MODULE_HAS_UNREGISTRABLE(m)		(! (m)->FunctionTable)
 #define LDK_MODULE_FLAG_PINNED				0x00000001
 #define LDK_MODULE_FLAG_PROCESS_ATTACHED	0x00000002
+#define LDK_MODULE_FLAG_THREAD_LIBRARY_CALLS_DISABLED 0x00000004
 
 #define LDK_LOAD_DLL_DONT_RESOLVE_IMPORTS	0x80000000
 #define LDK_LOAD_DLL_RESOURCE_ONLY			0x40000000
@@ -144,8 +145,13 @@ LdkUnloadDll (
 	);
 
 VOID
-LdkpCallTlsCallbacksForThread (
+LdkpCallThreadNotifications (
 	_In_ DWORD Reason
+	);
+
+NTSTATUS
+LdkDisableThreadLibraryCalls (
+	_In_ PVOID DllHandle
 	);
 
 NTSTATUS

@@ -17,14 +17,21 @@ inside the start routine does not leak that context.
 
 `CREATE_SUSPENDED` is not supported.
 
-## TLS callbacks, ExitThread, and FLS callbacks
+## DLL thread notifications, ExitThread, and FLS callbacks
 
-LDK-created threads notify loaded dynamic modules that have PE TLS callbacks:
+LDK-created threads notify loaded dynamic modules before and after the caller's
+thread start routine:
 
-- `DLL_THREAD_ATTACH` callbacks run before the caller's thread start routine.
-- `DLL_THREAD_DETACH` callbacks run after the start routine returns.
-- `ExitThread` also runs `DLL_THREAD_DETACH` callbacks before terminating the
+- PE TLS callbacks run with `DLL_THREAD_ATTACH`, then DLL entry points receive
+  `DllMain(DLL_THREAD_ATTACH)`.
+- On normal return, PE TLS callbacks run with `DLL_THREAD_DETACH`, then DLL
+  entry points receive `DllMain(DLL_THREAD_DETACH)`.
+- `ExitThread` also runs the detach notification pass before terminating the
   current system thread.
+
+`DisableThreadLibraryCalls` suppresses the `DllMain(DLL_THREAD_ATTACH)` and
+`DllMain(DLL_THREAD_DETACH)` calls for the target module. It does not suppress
+PE TLS callbacks or process attach/detach entry-point calls.
 
 The module list is snapshotted before callback execution, so loader locks are
 not held while DLL code runs. The snapshot temporarily references each attached
@@ -76,6 +83,6 @@ drop-in replacement for the full Windows threadpool.
 ## Testing
 
 The test driver covers basic thread creation, TLS callback process/thread
-notifications, FLS callback behavior, legacy work items, modern threadpool work
-items, and wait-on-address stress paths that create and join many worker
-threads.
+notifications, DllMain thread notifications, `DisableThreadLibraryCalls`, FLS
+callback behavior, legacy work items, modern threadpool work items, and
+wait-on-address stress paths that create and join many worker threads.

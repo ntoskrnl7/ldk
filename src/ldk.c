@@ -941,6 +941,7 @@ LdkpCallEntryPoint (
 
 NTSTATUS
 LdkpReferenceProcessAttachedModuleSnapshot (
+	_In_ ULONG ExcludedFlags,
 	_Outptr_result_buffer_maybenull_(*ModuleCount) PVOID **ModuleBases,
 	_Out_ PULONG ModuleCount
 	)
@@ -961,7 +962,8 @@ LdkpReferenceProcessAttachedModuleSnapshot (
 		PLDK_MODULE Module = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
 
 		if (Module->Base &&
-			FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED)) {
+			FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED) &&
+			(! FlagOn(Module->Flags, ExcludedFlags))) {
 			Count++;
 		}
 	}
@@ -983,7 +985,8 @@ LdkpReferenceProcessAttachedModuleSnapshot (
 			PLDK_MODULE Module = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
 
 			if (Module->Base &&
-				FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED)) {
+				FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED) &&
+				(! FlagOn(Module->Flags, ExcludedFlags))) {
 				LdkpReferenceModuleLocked( Module,
 										   FALSE,
 										   TRUE );
@@ -1030,7 +1033,8 @@ LdkpCallTlsCallbacksForThread (
 		return;
 	}
 
-	Status = LdkpReferenceProcessAttachedModuleSnapshot( &ModuleBases,
+	Status = LdkpReferenceProcessAttachedModuleSnapshot( 0,
+														 &ModuleBases,
 														 &ModuleCount );
 	if (! NT_SUCCESS(Status)) {
 		return;
@@ -1044,6 +1048,76 @@ LdkpCallTlsCallbacksForThread (
 
 	LdkpReleaseProcessAttachedModuleSnapshot( ModuleBases,
 											  ModuleCount );
+}
+
+VOID
+LdkpCallEntryPointsForThread (
+	_In_ DWORD Reason
+	)
+{
+	NTSTATUS Status;
+	PVOID *ModuleBases;
+	ULONG ModuleCount;
+
+	if (! LDK_IS_INITIALIZED) {
+		return;
+	}
+
+	Status = LdkpReferenceProcessAttachedModuleSnapshot( LDK_MODULE_FLAG_THREAD_LIBRARY_CALLS_DISABLED,
+														 &ModuleBases,
+														 &ModuleCount );
+	if (! NT_SUCCESS(Status)) {
+		return;
+	}
+
+	for (ULONG Index = 0; Index < ModuleCount; Index++) {
+		LdkpCallEntryPoint( (HINSTANCE)ModuleBases[Index],
+							Reason,
+							NULL );
+	}
+
+	LdkpReleaseProcessAttachedModuleSnapshot( ModuleBases,
+											  ModuleCount );
+}
+
+VOID
+LdkpCallThreadNotifications (
+	_In_ DWORD Reason
+	)
+{
+	LdkpCallTlsCallbacksForThread( Reason );
+	LdkpCallEntryPointsForThread( Reason );
+}
+
+NTSTATUS
+LdkDisableThreadLibraryCalls (
+	_In_ PVOID DllHandle
+	)
+{
+	NTSTATUS Status;
+	PLDK_MODULE Module;
+
+	if (! ARGUMENT_PRESENT(DllHandle)) {
+		return STATUS_INVALID_HANDLE;
+	}
+
+	LdkpAcquireModuleListExclusive();
+
+	Status = LdkpGetModuleByBase( DllHandle,
+								  &Module );
+	if (NT_SUCCESS(Status)) {
+		if (LDK_MODULE_HAS_UNREGISTRABLE(Module) &&
+			Module->Base &&
+			FlagOn(Module->Flags, LDK_MODULE_FLAG_PROCESS_ATTACHED)) {
+			SetFlag( Module->Flags,
+					 LDK_MODULE_FLAG_THREAD_LIBRARY_CALLS_DISABLED );
+		} else {
+			Status = STATUS_INVALID_HANDLE;
+		}
+	}
+
+	LdkpReleaseModuleList();
+	return Status;
 }
 
 NTSTATUS
