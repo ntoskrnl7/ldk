@@ -16,6 +16,7 @@
 #define TAG_ANSI_POOL					'bAdL'
 #define TAG_TMP_POOL                    'bTdL'
 #define TAG_DLL_POOL                    'lDdL'
+#define TAG_TLS_POOL                    'sTdL'
 #define TAG_MODULE_DEPENDENCY_POOL      'dMdL'
 #define TAG_HEAP_POOL                   'pHdL'
 
@@ -31,6 +32,8 @@ typedef struct _LDK_FUNCTION_REGISTRATION {
 #define LDK_MODULE_FLAG_PROCESS_ATTACHED	0x00000002
 #define LDK_MODULE_FLAG_THREAD_LIBRARY_CALLS_DISABLED 0x00000004
 
+#define LDK_TLS_OUT_OF_INDEXES			0xFFFFFFFF
+
 #define LDK_LOAD_DLL_DONT_RESOLVE_IMPORTS	0x80000000
 #define LDK_LOAD_DLL_RESOURCE_ONLY			0x40000000
 
@@ -42,6 +45,10 @@ typedef struct _LDK_MODULE {
 	ULONG Size;
 	LONG LoadCount;
 	ULONG Flags;
+	ULONG TlsIndex;
+	ULONG TlsRawDataSize;
+	ULONG TlsDataSize;
+	PVOID TlsRawData;
 	LIST_ENTRY DependencyList;
 	LIST_ENTRY ActiveLinks;
 } LDK_MODULE, * PLDK_MODULE;

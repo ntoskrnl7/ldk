@@ -55,8 +55,10 @@ in progress. The core load path:
 7. Applies base relocations.
 8. Resolves imports through the LDK module list.
 9. Registers the loaded module.
-10. Calls image TLS callbacks with `DLL_PROCESS_ATTACH`.
-11. Calls the DLL entry point with `DLL_PROCESS_ATTACH`.
+10. Initializes loader-managed PE static TLS storage when the image has a TLS
+    directory.
+11. Calls image TLS callbacks with `DLL_PROCESS_ATTACH`.
+12. Calls the DLL entry point with `DLL_PROCESS_ATTACH`.
 
 TLS callbacks and entry points are called through a kernel stack expansion
 helper when needed. If a DLL has no TLS callback directory or entry point, the
@@ -112,8 +114,9 @@ the built-in Kernel32 and NTDLL registrations expose name tables only.
 are reference-counted. A balanced unload decrements the count; when it reaches
 zero, the module is removed from the module list, its TLS callbacks are called
 with `DLL_PROCESS_DETACH`, its entry point is called with
-`DLL_PROCESS_DETACH`, and the image is freed. Invalid module handles fail
-instead of being treated as successful no-op unloads.
+`DLL_PROCESS_DETACH`, loader-managed static TLS storage is freed for all LDK
+TEBs, and the image is freed. Invalid module handles fail instead of being
+treated as successful no-op unloads.
 
 After the dependent module has run detach and its image has been freed, its
 recorded dependency references are released. This keeps imported modules alive
@@ -141,14 +144,19 @@ code that touches LDK runtime services.
 LDK loading is not user-mode Windows loading. Loaded DLLs run as kernel code.
 TLS callback notification is implemented for the tested PE TLS callback
 directory path, including process attach/detach and LDK-created thread
-attach/detach notifications. Loaded DLL entry points also receive tested
-`DLL_THREAD_ATTACH` and `DLL_THREAD_DETACH` notifications unless disabled with
-`DisableThreadLibraryCalls`. This does not make arbitrary user-mode TLS usage a
-kernel-safe contract: static TLS data layout, broad CRT startup assumptions,
-GUI state, COM, user-mode APC assumptions, and unsupported imports still need to
-be avoided or validated for the specific driver workload. Treat import failures
-and debugger breaks in loader paths as compatibility bugs to audit, not as
-recoverable normal behavior.
+attach/detach notifications. Loader-managed PE static TLS storage is also
+implemented for the tested raw-data path: LDK allocates an image TLS index,
+patches `AddressOfIndex`, copies the raw TLS block for each participating LDK
+TEB, and frees those blocks on thread detach or module unload. Loaded DLL entry
+points receive tested `DLL_THREAD_ATTACH` and `DLL_THREAD_DETACH` notifications
+unless disabled with `DisableThreadLibraryCalls`.
+
+This does not make arbitrary user-mode TLS usage a kernel-safe contract. Broad
+CRT startup assumptions, GUI state, COM, user-mode APC assumptions, unsupported
+imports, and compiler/runtime features that assume a real user-mode TEB still
+need to be avoided or validated for the specific driver workload. Treat import
+failures and debugger breaks in loader paths as compatibility bugs to audit, not
+as recoverable normal behavior.
 
 The current dependency model covers tested acyclic import ownership and unload
 ordering, including repeated owner/dependency load and unload cycles. It is

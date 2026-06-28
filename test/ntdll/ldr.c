@@ -1,6 +1,7 @@
 ﻿#if _KERNEL_MODE
 #include <Ldk/Windows.h>
 #include <Ldk/ntdll.h>
+#include "../../src/teb.h"
 
 BOOLEAN
 LdrTest (
@@ -164,6 +165,10 @@ EXTERN_C_END
 #define TLS_EVENT_TLS_PROCESS_DETACH 0x401
 #define TLS_EVENT_DLL_PROCESS_DETACH 0x402
 #define TLS_TEST_LOG_CAPACITY        16
+#define TLS_STATIC_INITIAL_VALUE     7
+#define TLS_STATIC_THREAD_VALUE      22
+#define TLS_STATIC_MAIN_VALUE        11
+#define TLS_STATIC_INVALID_INDEX     0xffffffff
 
 #define THREAD_NOTIFY_EVENT_PROCESS_ATTACH 0x111
 #define THREAD_NOTIFY_EVENT_THREAD_ATTACH  0x211
@@ -171,10 +176,102 @@ EXTERN_C_END
 #define THREAD_NOTIFY_EVENT_PROCESS_DETACH 0x411
 #define THREAD_NOTIFY_TEST_LOG_CAPACITY    16
 
+typedef PVOID(__stdcall* TLS_STATIC_TLS_ACCESSOR_FN)(ULONG);
+typedef VOID(__stdcall* TLS_SET_STATIC_TLS_ACCESSOR_FN)(TLS_STATIC_TLS_ACCESSOR_FN);
+typedef ULONG(__stdcall* TLS_GET_STATIC_INDEX_FN)(VOID);
+typedef LONG(__stdcall* TLS_GET_STATIC_VALUE_FN)(VOID);
+typedef VOID(__stdcall* TLS_SET_STATIC_VALUE_FN)(LONG);
+
+#if _KERNEL_MODE
+static
+PVOID
+__stdcall
+LdkTestGetStaticTlsBlock (
+    _In_ ULONG Index
+    )
+{
+    PLDK_TEB Teb = NtCurrentTeb();
+
+    if (Index >= RTL_NUMBER_OF(Teb->TlsSlots)) {
+        return NULL;
+    }
+
+    return Teb->TlsSlots[Index];
+}
+#else
+#if defined(_M_AMD64) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#define LDK_TEST_TEB_STATIC_TLS_OFFSET 0x58
+#else
+#define LDK_TEST_TEB_STATIC_TLS_OFFSET 0x2c
+#endif
+
+static
+PVOID
+__stdcall
+LdkTestGetStaticTlsBlock (
+    _In_ ULONG Index
+    )
+{
+    PVOID *TlsArray;
+
+    if (Index >= 4096) {
+        return NULL;
+    }
+
+    TlsArray = *(PVOID **)((PBYTE)NtCurrentTeb() + LDK_TEST_TEB_STATIC_TLS_OFFSET);
+    if (!TlsArray) {
+        return NULL;
+    }
+
+    return TlsArray[Index];
+}
+#endif
+
+typedef struct _TLS_STATIC_THREAD_CONTEXT {
+    TLS_GET_STATIC_VALUE_FN GetValue;
+    TLS_SET_STATIC_VALUE_FN SetValue;
+    LONG Counter;
+    LONG Failure;
+    LONG InitialValue;
+    LONG FinalValue;
+} TLS_STATIC_THREAD_CONTEXT, *PTLS_STATIC_THREAD_CONTEXT;
+
 static
 DWORD
 WINAPI
-TlsCallbackTestThreadProc (
+TlsStaticTestThreadProc (
+    _In_opt_ LPVOID Parameter
+    )
+{
+    PTLS_STATIC_THREAD_CONTEXT Context = (PTLS_STATIC_THREAD_CONTEXT)Parameter;
+
+    if (!Context ||
+        !Context->GetValue ||
+        !Context->SetValue) {
+        return 1;
+    }
+
+    Context->InitialValue = Context->GetValue();
+    if (Context->InitialValue != TLS_STATIC_INITIAL_VALUE) {
+        Context->Failure = 1;
+        return 1;
+    }
+
+    Context->SetValue( TLS_STATIC_THREAD_VALUE );
+    Context->FinalValue = Context->GetValue();
+    if (Context->FinalValue != TLS_STATIC_THREAD_VALUE) {
+        Context->Failure = 2;
+        return 1;
+    }
+
+    InterlockedIncrement( &Context->Counter );
+    return 0;
+}
+
+static
+DWORD
+WINAPI
+ThreadNotifyTestThreadProc (
     _In_opt_ LPVOID Parameter
     )
 {
@@ -222,6 +319,10 @@ LdrTest (
     ANSI_STRING TlsSetLogProcName = RTL_CONSTANT_STRING("TlsCallbackSetLog");
     ANSI_STRING TlsGetCountProcName = RTL_CONSTANT_STRING("TlsCallbackGetCount");
     ANSI_STRING TlsGetEventProcName = RTL_CONSTANT_STRING("TlsCallbackGetEvent");
+    ANSI_STRING TlsSetStaticTlsAccessorProcName = RTL_CONSTANT_STRING("TlsCallbackSetStaticTlsAccessor");
+    ANSI_STRING TlsGetStaticIndexProcName = RTL_CONSTANT_STRING("TlsCallbackGetStaticIndex");
+    ANSI_STRING TlsGetStaticValueProcName = RTL_CONSTANT_STRING("TlsCallbackGetStaticValue");
+    ANSI_STRING TlsSetStaticValueProcName = RTL_CONSTANT_STRING("TlsCallbackSetStaticValue");
     ANSI_STRING ThreadNotifySetLogProcName = RTL_CONSTANT_STRING("ThreadNotifySetLog");
     ANSI_STRING ThreadNotifyGetCountProcName = RTL_CONSTANT_STRING("ThreadNotifyGetCount");
     ANSI_STRING ThreadNotifyGetEventProcName = RTL_CONSTANT_STRING("ThreadNotifyGetEvent");
@@ -245,6 +346,10 @@ LdrTest (
     TLS_SET_LOG_FN TlsSetLogFn = NULL;
     TLS_GET_COUNT_FN TlsGetCountFn = NULL;
     TLS_GET_EVENT_FN TlsGetEventFn = NULL;
+    TLS_SET_STATIC_TLS_ACCESSOR_FN TlsSetStaticTlsAccessorFn = NULL;
+    TLS_GET_STATIC_INDEX_FN TlsGetStaticIndexFn = NULL;
+    TLS_GET_STATIC_VALUE_FN TlsGetStaticValueFn = NULL;
+    TLS_SET_STATIC_VALUE_FN TlsSetStaticValueFn = NULL;
     THREAD_NOTIFY_SET_LOG_FN ThreadNotifySetLogFn = NULL;
     THREAD_NOTIFY_GET_COUNT_FN ThreadNotifyGetCountFn = NULL;
     THREAD_NOTIFY_GET_EVENT_FN ThreadNotifyGetEventFn = NULL;
@@ -498,6 +603,46 @@ LdrTest (
         goto Cleanup;
     }
 
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsSetStaticTlsAccessorProcName,
+                                     0,
+                                     (PVOID*)&TlsSetStaticTlsAccessorFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackSetStaticTlsAccessor) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsGetStaticIndexProcName,
+                                     0,
+                                     (PVOID*)&TlsGetStaticIndexFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackGetStaticIndex) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsGetStaticValueProcName,
+                                     0,
+                                     (PVOID*)&TlsGetStaticValueFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackGetStaticValue) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsSetStaticValueProcName,
+                                     0,
+                                     (PVOID*)&TlsSetStaticValueFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackSetStaticValue) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
     if (TlsGetCountFn() < 2 ||
         TlsGetEventFn(0) != TLS_EVENT_TLS_PROCESS_ATTACH ||
         TlsGetEventFn(1) != TLS_EVENT_DLL_PROCESS_ATTACH) {
@@ -508,17 +653,35 @@ LdrTest (
         goto Cleanup;
     }
 
+    TlsSetStaticTlsAccessorFn( LdkTestGetStaticTlsBlock );
+    if (TlsGetStaticIndexFn() == TLS_STATIC_INVALID_INDEX ||
+        TlsGetStaticValueFn() != TLS_STATIC_INITIAL_VALUE) {
+        printf("[Failed] TlsCallback native static TLS main initial Index = %lu Value = %ld\n",
+               TlsGetStaticIndexFn(),
+               TlsGetStaticValueFn());
+        goto Cleanup;
+    }
+
+    TlsSetStaticValueFn( TLS_STATIC_MAIN_VALUE );
+    if (TlsGetStaticValueFn() != TLS_STATIC_MAIN_VALUE) {
+        printf("[Failed] TlsCallback native static TLS main set Value = %ld\n",
+               TlsGetStaticValueFn());
+        goto Cleanup;
+    }
+
     LONG TlsThreadLogCount = 0;
     LONG TlsThreadLog[TLS_TEST_LOG_CAPACITY] = { 0 };
     TlsSetLogFn( &TlsThreadLogCount,
                  TlsThreadLog,
                  TLS_TEST_LOG_CAPACITY );
 
-    LONG TlsThreadCounter = 0;
+    TLS_STATIC_THREAD_CONTEXT TlsStaticContext = { 0 };
+    TlsStaticContext.GetValue = TlsGetStaticValueFn;
+    TlsStaticContext.SetValue = TlsSetStaticValueFn;
     HANDLE TlsThread = CreateThread( NULL,
                                      0,
-                                     TlsCallbackTestThreadProc,
-                                     &TlsThreadCounter,
+                                     TlsStaticTestThreadProc,
+                                     &TlsStaticContext,
                                      0,
                                      NULL );
     if (! TlsThread) {
@@ -531,18 +694,29 @@ LdrTest (
                                          5000 );
     CloseHandle( TlsThread );
     if (TlsWait != WAIT_OBJECT_0 ||
-        TlsThreadCounter != 1 ||
+        TlsStaticContext.Counter != 1 ||
+        TlsStaticContext.Failure != 0 ||
+        TlsStaticContext.InitialValue != TLS_STATIC_INITIAL_VALUE ||
+        TlsStaticContext.FinalValue != TLS_STATIC_THREAD_VALUE ||
+        TlsGetStaticValueFn() != TLS_STATIC_MAIN_VALUE ||
         TlsThreadLogCount < 2 ||
         TlsThreadLog[0] != TLS_EVENT_TLS_THREAD_ATTACH ||
         TlsThreadLog[1] != TLS_EVENT_TLS_THREAD_DETACH) {
-        printf("[Failed] TlsCallback native thread events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+        printf("[Failed] TlsCallback native thread/static TLS Wait = 0x%08lx Counter = %ld Failure = %ld Initial = %ld Final = %ld Main = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
                TlsWait,
-               TlsThreadCounter,
+               TlsStaticContext.Counter,
+               TlsStaticContext.Failure,
+               TlsStaticContext.InitialValue,
+               TlsStaticContext.FinalValue,
+               TlsGetStaticValueFn(),
                TlsThreadLogCount,
                TlsThreadLog[0],
                TlsThreadLog[1]);
         goto Cleanup;
     }
+
+    ULONG TlsStaticIndex = TlsGetStaticIndexFn();
+    LONG TlsStaticMainValue = TlsGetStaticValueFn();
 
     LONG TlsDetachLogCount = 0;
     LONG TlsDetachLog[TLS_TEST_LOG_CAPACITY] = { 0 };
@@ -567,7 +741,11 @@ LdrTest (
                TlsDetachLog[1]);
         goto Cleanup;
     }
-    printf("[Success] LdrLoadDll(TlsCallback.dll) TLS callback notifications\n");
+    printf("[Success] LdrLoadDll(TlsCallback.dll) TLS callbacks and static TLS storage Index = %lu Main = %ld ThreadInitial = %ld ThreadFinal = %ld\n",
+           TlsStaticIndex,
+           TlsStaticMainValue,
+           TlsStaticContext.InitialValue,
+           TlsStaticContext.FinalValue);
 
     Status = LdrLoadDll( DllPath,
                          NULL,
@@ -626,7 +804,7 @@ LdrTest (
     LONG ThreadNotifyCounter = 0;
     HANDLE ThreadNotifyThread = CreateThread( NULL,
                                               0,
-                                              TlsCallbackTestThreadProc,
+                                              ThreadNotifyTestThreadProc,
                                               &ThreadNotifyCounter,
                                               0,
                                               NULL );

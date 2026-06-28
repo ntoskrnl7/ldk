@@ -105,6 +105,30 @@ LdkpMoveModuleDependencies (
 	_Inout_ PLIST_ENTRY SourceList
 	);
 
+PTEB
+LdkGetNextTebRundownProtection (
+	_In_ PTEB Teb
+	);
+
+VOID
+LdkpCallTlsCallbacks (
+	_In_ PVOID ImageBase,
+	_In_ DWORD Reason,
+	_In_opt_ PVOID Reserved
+	);
+
+BOOL
+LdkpCallEntryPoint (
+	_In_ HINSTANCE Base,
+	_In_ DWORD Reason,
+	_In_ PVOID Reserved
+	);
+
+VOID
+LdkpUninitializeModuleTls (
+	_Inout_ PLDK_MODULE Module
+	);
+
 
 NTSTATUS
 LDKAPI
@@ -266,6 +290,10 @@ LdkRegisterModule (
 	NewModule->FunctionTable = NULL;
 	NewModule->LoadCount = 1;
 	NewModule->Flags = 0;
+	NewModule->TlsIndex = LDK_TLS_OUT_OF_INDEXES;
+	NewModule->TlsRawDataSize = 0;
+	NewModule->TlsDataSize = 0;
+	NewModule->TlsRawData = NULL;
 	InitializeListHead( &NewModule->DependencyList );
 	
 	LdkpAcquireModuleListExclusive();
@@ -287,9 +315,18 @@ LdkpUnregisterModule (
 {
 	if (LDK_MODULE_HAS_UNREGISTRABLE(Module)) {
 		if (Module->Base) {
-			LdkpUnloadDll( Module->Base,
-						   BooleanFlagOn(Module->Flags,
-										 LDK_MODULE_FLAG_PROCESS_ATTACHED) );
+			if (BooleanFlagOn(Module->Flags,
+							  LDK_MODULE_FLAG_PROCESS_ATTACHED)) {
+				LdkpCallTlsCallbacks( Module->Base,
+									  DLL_PROCESS_DETACH,
+									  NULL );
+				LdkpCallEntryPoint( (HINSTANCE)Module->Base,
+									DLL_PROCESS_DETACH,
+									NULL );
+			}
+			LdkpUninitializeModuleTls( Module );
+			ExFreePoolWithTag( Module->Base,
+							   TAG_DLL_POOL );
 		}
 		LdkpReleaseModuleDependencies( &Module->DependencyList );
 		LdkFreeAnsiString( &Module->ModuleName );
@@ -900,6 +937,239 @@ LdkpCallTlsCallbacks (
 	}
 }
 
+PIMAGE_TLS_DIRECTORY
+LdkpGetTlsDirectory (
+	_In_ PVOID ImageBase,
+	_Out_opt_ PULONG TlsSize
+	)
+{
+	ULONG Size;
+	PIMAGE_TLS_DIRECTORY TlsDirectory;
+
+	TlsDirectory = RtlImageDirectoryEntryToData( ImageBase,
+												 TRUE,
+												 IMAGE_DIRECTORY_ENTRY_TLS,
+												 &Size );
+	if (TlsSize) {
+		*TlsSize = Size;
+	}
+	if (TlsDirectory == NULL ||
+		Size < sizeof(IMAGE_TLS_DIRECTORY)) {
+		return NULL;
+	}
+
+	return TlsDirectory;
+}
+
+BOOLEAN
+LdkpModuleHasStaticTls (
+	_In_ PLDK_MODULE Module
+	)
+{
+	return Module->TlsIndex != LDK_TLS_OUT_OF_INDEXES;
+}
+
+NTSTATUS
+LdkpInitializeStaticTlsForTeb (
+	_In_ PLDK_MODULE Module,
+	_Inout_ PLDK_TEB Teb
+	)
+{
+	PVOID Block = NULL;
+	PVOID PreviousBlock;
+
+	if (! LdkpModuleHasStaticTls(Module)) {
+		return STATUS_SUCCESS;
+	}
+
+	if (Module->TlsIndex >= LDK_TLS_SLOTS_SIZE) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	if (Teb->TlsSlots[Module->TlsIndex] != NULL) {
+		return STATUS_SUCCESS;
+	}
+
+	if (Module->TlsDataSize != 0) {
+#pragma warning(disable:4996)
+		Block = ExAllocatePoolWithTag( NonPagedPool,
+									   Module->TlsDataSize,
+									   TAG_TLS_POOL );
+#pragma warning(default:4996)
+		if (Block == NULL) {
+			return STATUS_INSUFFICIENT_RESOURCES;
+		}
+
+		RtlZeroMemory( Block,
+					   Module->TlsDataSize );
+		if (Module->TlsRawDataSize != 0) {
+			RtlCopyMemory( Block,
+						   Module->TlsRawData,
+						   Module->TlsRawDataSize );
+		}
+	}
+
+	PreviousBlock = InterlockedCompareExchangePointer( &Teb->TlsSlots[Module->TlsIndex],
+													   Block,
+													   NULL );
+	if (PreviousBlock != NULL &&
+		Block != NULL) {
+		ExFreePoolWithTag( Block,
+						   TAG_TLS_POOL );
+	}
+
+	return STATUS_SUCCESS;
+}
+
+VOID
+LdkpFreeStaticTlsForTeb (
+	_In_ PLDK_MODULE Module,
+	_Inout_ PLDK_TEB Teb
+	)
+{
+	PVOID Block;
+
+	if (! LdkpModuleHasStaticTls(Module) ||
+		Module->TlsIndex >= LDK_TLS_SLOTS_SIZE) {
+		return;
+	}
+
+	Block = InterlockedExchangePointer( &Teb->TlsSlots[Module->TlsIndex],
+										NULL );
+	if (Block != NULL) {
+		ExFreePoolWithTag( Block,
+						   TAG_TLS_POOL );
+	}
+}
+
+VOID
+LdkpFreeStaticTlsForAllTebs (
+	_In_ PLDK_MODULE Module
+	)
+{
+	PLDK_TEB InitialTeb;
+	PLDK_TEB Teb;
+
+	if (! LdkpModuleHasStaticTls(Module)) {
+		return;
+	}
+
+	InitialTeb = LdkCurrentTeb();
+	if (! ExAcquireRundownProtection( &InitialTeb->RundownProtect )) {
+		return;
+	}
+
+	Teb = InitialTeb;
+	do {
+		LdkpFreeStaticTlsForTeb( Module,
+								 Teb );
+		Teb = LdkGetNextTebRundownProtection( Teb );
+		if (Teb == NULL) {
+			return;
+		}
+	} while (Teb != InitialTeb);
+
+	ExReleaseRundownProtection( &Teb->RundownProtect );
+}
+
+NTSTATUS
+LdkpInitializeModuleTls (
+	_Inout_ PLDK_MODULE Module
+	)
+{
+	NTSTATUS Status;
+	PIMAGE_TLS_DIRECTORY TlsDirectory;
+	ULONG_PTR RawDataStart;
+	ULONG_PTR RawDataEnd;
+	ULONG RawDataSize;
+	ULONG DataSize;
+	ULONG TlsIndex;
+
+	Module->TlsIndex = LDK_TLS_OUT_OF_INDEXES;
+	Module->TlsRawDataSize = 0;
+	Module->TlsDataSize = 0;
+	Module->TlsRawData = NULL;
+
+	TlsDirectory = LdkpGetTlsDirectory( Module->Base,
+										NULL );
+	if (TlsDirectory == NULL) {
+		return STATUS_SUCCESS;
+	}
+
+	if (TlsDirectory->AddressOfIndex == 0) {
+		return STATUS_INVALID_IMAGE_FORMAT;
+	}
+
+	RawDataStart = (ULONG_PTR)TlsDirectory->StartAddressOfRawData;
+	RawDataEnd = (ULONG_PTR)TlsDirectory->EndAddressOfRawData;
+	if (RawDataEnd < RawDataStart ||
+		(RawDataEnd - RawDataStart) > MAXULONG ||
+		TlsDirectory->SizeOfZeroFill > MAXULONG - (ULONG)(RawDataEnd - RawDataStart)) {
+		return STATUS_INVALID_IMAGE_FORMAT;
+	}
+
+	RawDataSize = (ULONG)(RawDataEnd - RawDataStart);
+	DataSize = RawDataSize + TlsDirectory->SizeOfZeroFill;
+
+	RtlAcquirePebLock();
+	TlsIndex = RtlFindClearBitsAndSet( &NtCurrentPeb()->TlsBitmap,
+									   1,
+									   0 );
+	RtlReleasePebLock();
+	if (TlsIndex == LDK_TLS_OUT_OF_INDEXES) {
+		return STATUS_NO_MEMORY;
+	}
+
+	Module->TlsIndex = TlsIndex;
+	Module->TlsRawDataSize = RawDataSize;
+	Module->TlsDataSize = DataSize;
+	Module->TlsRawData = (PVOID)RawDataStart;
+
+	*(PULONG)(ULONG_PTR)TlsDirectory->AddressOfIndex = TlsIndex;
+
+	Status = LdkpInitializeStaticTlsForTeb( Module,
+										   LdkCurrentTeb() );
+	if (! NT_SUCCESS(Status)) {
+		RtlAcquirePebLock();
+		RtlClearBits( &NtCurrentPeb()->TlsBitmap,
+					  TlsIndex,
+					  1 );
+		RtlReleasePebLock();
+		Module->TlsIndex = LDK_TLS_OUT_OF_INDEXES;
+		Module->TlsRawDataSize = 0;
+		Module->TlsDataSize = 0;
+		Module->TlsRawData = NULL;
+	}
+
+	return Status;
+}
+
+VOID
+LdkpUninitializeModuleTls (
+	_Inout_ PLDK_MODULE Module
+	)
+{
+	ULONG TlsIndex;
+
+	if (! LdkpModuleHasStaticTls(Module)) {
+		return;
+	}
+
+	TlsIndex = Module->TlsIndex;
+	LdkpFreeStaticTlsForAllTebs( Module );
+
+	RtlAcquirePebLock();
+	RtlClearBits( &NtCurrentPeb()->TlsBitmap,
+				  TlsIndex,
+				  1 );
+	RtlReleasePebLock();
+
+	Module->TlsIndex = LDK_TLS_OUT_OF_INDEXES;
+	Module->TlsRawDataSize = 0;
+	Module->TlsDataSize = 0;
+	Module->TlsRawData = NULL;
+}
+
 _IRQL_requires_same_
 _Function_class_(EXPAND_STACK_CALLOUT)
 VOID
@@ -942,16 +1212,16 @@ LdkpCallEntryPoint (
 NTSTATUS
 LdkpReferenceProcessAttachedModuleSnapshot (
 	_In_ ULONG ExcludedFlags,
-	_Outptr_result_buffer_maybenull_(*ModuleCount) PVOID **ModuleBases,
+	_Outptr_result_buffer_maybenull_(*ModuleCount) PLDK_MODULE **Modules,
 	_Out_ PULONG ModuleCount
 	)
 {
 	ULONG Count = 0;
 	ULONG Index = 0;
-	PVOID *Bases = NULL;
+	PLDK_MODULE *Snapshot = NULL;
 	PLIST_ENTRY NextEntry;
 
-	*ModuleBases = NULL;
+	*Modules = NULL;
 	*ModuleCount = 0;
 
 	LdkpAcquireModuleListExclusive();
@@ -970,11 +1240,11 @@ LdkpReferenceProcessAttachedModuleSnapshot (
 
 	if (Count != 0) {
 #pragma warning(disable:4996)
-		Bases = ExAllocatePoolWithTag( NonPagedPool,
-									   Count * sizeof(PVOID),
-									   TAG_TMP_POOL );
+		Snapshot = ExAllocatePoolWithTag( NonPagedPool,
+										  Count * sizeof(PLDK_MODULE),
+										  TAG_TMP_POOL );
 #pragma warning(default:4996)
-		if (Bases == NULL) {
+		if (Snapshot == NULL) {
 			LdkpReleaseModuleList();
 			return STATUS_INSUFFICIENT_RESOURCES;
 		}
@@ -990,94 +1260,34 @@ LdkpReferenceProcessAttachedModuleSnapshot (
 				LdkpReferenceModuleLocked( Module,
 										   FALSE,
 										   TRUE );
-				Bases[Index++] = Module->Base;
+				Snapshot[Index++] = Module;
 			}
 		}
 	}
 
 	LdkpReleaseModuleList();
 
-	*ModuleBases = Bases;
+	*Modules = Snapshot;
 	*ModuleCount = Index;
 	return STATUS_SUCCESS;
 }
 
 VOID
 LdkpReleaseProcessAttachedModuleSnapshot (
-	_In_reads_opt_(ModuleCount) PVOID *ModuleBases,
+	_In_reads_opt_(ModuleCount) PLDK_MODULE *Modules,
 	_In_ ULONG ModuleCount
 	)
 {
-	if (ModuleBases == NULL) {
+	if (Modules == NULL) {
 		return;
 	}
 
 	for (ULONG Index = 0; Index < ModuleCount; Index++) {
-		LdkUnloadDll( ModuleBases[Index] );
+		LdkUnloadDll( Modules[Index]->Base );
 	}
 
-	ExFreePoolWithTag( ModuleBases,
+	ExFreePoolWithTag( Modules,
 					   TAG_TMP_POOL );
-}
-
-VOID
-LdkpCallTlsCallbacksForThread (
-	_In_ DWORD Reason
-	)
-{
-	NTSTATUS Status;
-	PVOID *ModuleBases;
-	ULONG ModuleCount;
-
-	if (! LDK_IS_INITIALIZED) {
-		return;
-	}
-
-	Status = LdkpReferenceProcessAttachedModuleSnapshot( 0,
-														 &ModuleBases,
-														 &ModuleCount );
-	if (! NT_SUCCESS(Status)) {
-		return;
-	}
-
-	for (ULONG Index = 0; Index < ModuleCount; Index++) {
-		LdkpCallTlsCallbacks( ModuleBases[Index],
-							  Reason,
-							  NULL );
-	}
-
-	LdkpReleaseProcessAttachedModuleSnapshot( ModuleBases,
-											  ModuleCount );
-}
-
-VOID
-LdkpCallEntryPointsForThread (
-	_In_ DWORD Reason
-	)
-{
-	NTSTATUS Status;
-	PVOID *ModuleBases;
-	ULONG ModuleCount;
-
-	if (! LDK_IS_INITIALIZED) {
-		return;
-	}
-
-	Status = LdkpReferenceProcessAttachedModuleSnapshot( LDK_MODULE_FLAG_THREAD_LIBRARY_CALLS_DISABLED,
-														 &ModuleBases,
-														 &ModuleCount );
-	if (! NT_SUCCESS(Status)) {
-		return;
-	}
-
-	for (ULONG Index = 0; Index < ModuleCount; Index++) {
-		LdkpCallEntryPoint( (HINSTANCE)ModuleBases[Index],
-							Reason,
-							NULL );
-	}
-
-	LdkpReleaseProcessAttachedModuleSnapshot( ModuleBases,
-											  ModuleCount );
 }
 
 VOID
@@ -1085,8 +1295,49 @@ LdkpCallThreadNotifications (
 	_In_ DWORD Reason
 	)
 {
-	LdkpCallTlsCallbacksForThread( Reason );
-	LdkpCallEntryPointsForThread( Reason );
+	NTSTATUS Status;
+	PLDK_MODULE *Modules;
+	ULONG ModuleCount;
+	PLDK_TEB Teb;
+
+	if (! LDK_IS_INITIALIZED) {
+		return;
+	}
+
+	Status = LdkpReferenceProcessAttachedModuleSnapshot( 0,
+														 &Modules,
+														 &ModuleCount );
+	if (! NT_SUCCESS(Status)) {
+		return;
+	}
+
+	Teb = LdkCurrentTeb();
+	for (ULONG Index = 0; Index < ModuleCount; Index++) {
+		PLDK_MODULE Module = Modules[Index];
+
+		if (Reason == DLL_THREAD_ATTACH &&
+			! NT_SUCCESS(LdkpInitializeStaticTlsForTeb( Module,
+														Teb ))) {
+			continue;
+		}
+
+		LdkpCallTlsCallbacks( Module->Base,
+							  Reason,
+							  NULL );
+		if (! FlagOn(Module->Flags, LDK_MODULE_FLAG_THREAD_LIBRARY_CALLS_DISABLED)) {
+			LdkpCallEntryPoint( (HINSTANCE)Module->Base,
+								Reason,
+								NULL );
+		}
+
+		if (Reason == DLL_THREAD_DETACH) {
+			LdkpFreeStaticTlsForTeb( Module,
+									 Teb );
+		}
+	}
+
+	LdkpReleaseProcessAttachedModuleSnapshot( Modules,
+											  ModuleCount );
 }
 
 NTSTATUS
@@ -1818,6 +2069,16 @@ retry:
 										&LoadDependencyList );
 			if ((! ResourceOnly) &&
 				ResolveImports) {
+				Status = LdkpInitializeModuleTls( RegisteredModule );
+				if (! NT_SUCCESS(Status)) {
+					PVOID FailedHandle = *DllHandle;
+					*DllHandle = NULL;
+					LdkUnloadDll( FailedHandle );
+					RtlFreeHeap( RtlProcessHeap(),
+								 0,
+								 NtFileName.Buffer );
+					return Status;
+				}
 				SetFlag( RegisteredModule->Flags,
 						 LDK_MODULE_FLAG_PROCESS_ATTACHED );
 				LdkpCallTlsCallbacks( *DllHandle,

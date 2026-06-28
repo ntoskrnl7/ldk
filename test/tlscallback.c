@@ -11,6 +11,7 @@
 #define TLS_EVENT_TLS_PROCESS_DETACH 0x401
 #define TLS_EVENT_DLL_PROCESS_DETACH 0x402
 #define TLS_EVENT_CAPACITY           64
+#define TLS_STATIC_INITIAL_VALUE     7
 
 #if defined(_M_IX86)
 #pragma comment(linker, "/include:__tls_used")
@@ -18,13 +19,28 @@
 #pragma comment(linker, "/export:TlsCallbackSetLog=_TlsCallbackSetLog@12")
 #pragma comment(linker, "/export:TlsCallbackGetCount=_TlsCallbackGetCount@0")
 #pragma comment(linker, "/export:TlsCallbackGetEvent=_TlsCallbackGetEvent@4")
+#pragma comment(linker, "/export:TlsCallbackSetStaticTlsAccessor=_TlsCallbackSetStaticTlsAccessor@4")
+#pragma comment(linker, "/export:TlsCallbackGetStaticIndex=_TlsCallbackGetStaticIndex@0")
+#pragma comment(linker, "/export:TlsCallbackGetStaticValue=_TlsCallbackGetStaticValue@0")
+#pragma comment(linker, "/export:TlsCallbackSetStaticValue=_TlsCallbackSetStaticValue@4")
 #else
 #pragma comment(linker, "/include:_tls_used")
 #pragma comment(linker, "/export:TlsCallbackReset")
 #pragma comment(linker, "/export:TlsCallbackSetLog")
 #pragma comment(linker, "/export:TlsCallbackGetCount")
 #pragma comment(linker, "/export:TlsCallbackGetEvent")
+#pragma comment(linker, "/export:TlsCallbackSetStaticTlsAccessor")
+#pragma comment(linker, "/export:TlsCallbackGetStaticIndex")
+#pragma comment(linker, "/export:TlsCallbackGetStaticValue")
+#pragma comment(linker, "/export:TlsCallbackSetStaticValue")
 #endif
+
+typedef PVOID(__stdcall *TLS_STATIC_TLS_ACCESSOR)(ULONG Index);
+
+typedef struct _TLS_STATIC_DATA {
+    LONG Value;
+    LONG Guard;
+} TLS_STATIC_DATA, *PTLS_STATIC_DATA;
 
 static LONG LdkpTlsCallbackCount;
 static LONG LdkpTlsCallbackEvents[TLS_EVENT_CAPACITY];
@@ -32,10 +48,14 @@ static LONG *LdkpTlsCallbackExternalCount;
 static LONG *LdkpTlsCallbackExternalEvents;
 static LONG LdkpTlsCallbackExternalCapacity;
 ULONG LdkpTlsIndex;
+static TLS_STATIC_TLS_ACCESSOR LdkpTlsStaticTlsAccessor;
 
 #pragma section(".tls$AAA", long, read, write)
 #pragma section(".tls$ZZZ", long, read, write)
-__declspec(allocate(".tls$AAA")) CHAR LdkpTlsStart = 0;
+__declspec(allocate(".tls$AAA")) TLS_STATIC_DATA LdkpTlsStart = {
+    TLS_STATIC_INITIAL_VALUE,
+    0x12345678
+};
 __declspec(allocate(".tls$ZZZ")) CHAR LdkpTlsEnd = 0;
 
 static
@@ -61,6 +81,19 @@ LdkpTlsCallbackRecord (
         }
         *LdkpTlsCallbackExternalCount = Index + 1;
     }
+}
+
+static
+PTLS_STATIC_DATA
+LdkpTlsGetStaticData (
+    VOID
+    )
+{
+    if (!LdkpTlsStaticTlsAccessor) {
+        return NULL;
+    }
+
+    return (PTLS_STATIC_DATA)LdkpTlsStaticTlsAccessor( LdkpTlsIndex );
 }
 
 VOID
@@ -114,6 +147,54 @@ TlsCallbackGetEvent (
     }
 
     return LdkpTlsCallbackEvents[Index];
+}
+
+VOID
+__stdcall
+TlsCallbackSetStaticTlsAccessor (
+    _In_opt_ TLS_STATIC_TLS_ACCESSOR Accessor
+    )
+{
+    LdkpTlsStaticTlsAccessor = Accessor;
+}
+
+ULONG
+__stdcall
+TlsCallbackGetStaticIndex (
+    VOID
+    )
+{
+    return LdkpTlsIndex;
+}
+
+LONG
+__stdcall
+TlsCallbackGetStaticValue (
+    VOID
+    )
+{
+    PTLS_STATIC_DATA Data = LdkpTlsGetStaticData();
+    if (!Data) {
+        return -1;
+    }
+
+    if (Data->Guard != 0x12345678) {
+        return -2;
+    }
+
+    return Data->Value;
+}
+
+VOID
+__stdcall
+TlsCallbackSetStaticValue (
+    _In_ LONG Value
+    )
+{
+    PTLS_STATIC_DATA Data = LdkpTlsGetStaticData();
+    if (Data) {
+        Data->Value = Value;
+    }
 }
 
 VOID

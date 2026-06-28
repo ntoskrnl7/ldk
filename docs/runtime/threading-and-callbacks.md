@@ -22,10 +22,13 @@ inside the start routine does not leak that context.
 LDK-created threads notify loaded dynamic modules before and after the caller's
 thread start routine:
 
+- Loader-managed static TLS storage is initialized for the new LDK TEB before
+  module callbacks run.
 - PE TLS callbacks run with `DLL_THREAD_ATTACH`, then DLL entry points receive
   `DllMain(DLL_THREAD_ATTACH)`.
 - On normal return, PE TLS callbacks run with `DLL_THREAD_DETACH`, then DLL
-  entry points receive `DllMain(DLL_THREAD_DETACH)`.
+  entry points receive `DllMain(DLL_THREAD_DETACH)`, and that thread's static
+  TLS blocks are freed.
 - `ExitThread` also runs the detach notification pass before terminating the
   current system thread.
 
