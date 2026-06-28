@@ -126,7 +126,10 @@ dependencies unload when no other direct or dependency reference remains.
 `LdrGetDllHandle` supports name lookup and path-aware lookup when a caller
 passes a `DllPath` search string. Dynamic modules are registered with their NT
 full path so the path-aware query does not accidentally match a same-named DLL
-loaded from a different directory.
+loaded from a different directory. `LdrGetDllHandleEx` adds the native
+reference-counting variant: `LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT` leaves
+the module count alone, zero flags add a loader reference, and
+`LDR_GET_DLL_HANDLE_EX_PIN` pins the module.
 
 `LdrAddRefDll` supports the native loader add-reference path. With zero flags it
 adds a normal loader reference to a dynamic module; with `LDR_ADDREF_DLL_PIN` it

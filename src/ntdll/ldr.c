@@ -9,6 +9,7 @@
 #pragma alloc_text(PAGE, LdrAddRefDll)
 #pragma alloc_text(PAGE, LdrGetProcedureAddress)
 #pragma alloc_text(PAGE, LdrGetDllHandle)
+#pragma alloc_text(PAGE, LdrGetDllHandleEx)
 #endif
 
 
@@ -96,4 +97,23 @@ LdrGetDllHandle (
                             DllCharacteristics,
                             DllName,
                             DllHandle );
+}
+
+NTSTATUS
+NTAPI
+LdrGetDllHandleEx (
+    _In_ ULONG Flags,
+    _In_opt_ PWSTR DllPath,
+    _In_opt_ PULONG DllCharacteristics,
+    _In_ PUNICODE_STRING DllName,
+    _Out_ PVOID *DllHandle
+    )
+{
+    PAGED_CODE();
+
+    return LdkGetDllHandleEx( Flags,
+                              DllPath,
+                              DllCharacteristics,
+                              DllName,
+                              DllHandle );
 }

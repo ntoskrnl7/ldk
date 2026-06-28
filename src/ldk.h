@@ -139,6 +139,15 @@ LdkGetDllHandle (
     );
 
 NTSTATUS
+LdkGetDllHandleEx (
+    _In_ ULONG Flags,
+    _In_opt_ PWSTR DllPath,
+    _In_opt_ PULONG DllCharacteristics,
+    _In_ PUNICODE_STRING DllName,
+    _Out_ PVOID *DllHandle
+    );
+
+NTSTATUS
 LdkLoadDll (
     _In_opt_ PWSTR DllPath,
     _In_opt_ PULONG DllCharacteristics,

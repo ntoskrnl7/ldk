@@ -1834,6 +1834,50 @@ LdkpGetModuleByNtPath (
 	return Status;
 }
 
+NTSTATUS
+LdkpReferenceModuleByNtPath (
+	_In_ PCUNICODE_STRING NtFileName,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	NTSTATUS Status;
+	ANSI_STRING FullPathName;
+	PLIST_ENTRY NextEntry;
+
+	Status = LdkUnicodeStringToAnsiString( &FullPathName,
+										   NtFileName,
+										   TRUE );
+	if (! NT_SUCCESS(Status)) {
+		return Status;
+	}
+
+	Status = STATUS_NOT_FOUND;
+	LdkpAcquireModuleListExclusive();
+	for (NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+		 NextEntry != &LdkCurrentPeb()->ModuleListHead;
+		 NextEntry = NextEntry->Flink) {
+		PLDK_MODULE FoundModule = CONTAINING_RECORD( NextEntry,
+													 LDK_MODULE,
+													 ActiveLinks );
+		if (FoundModule->FullPathName.Buffer &&
+			_stricmp( FoundModule->FullPathName.Buffer,
+					  FullPathName.Buffer ) == 0) {
+			LdkpReferenceModuleLocked( FoundModule,
+									   Pin,
+									   IncrementLoadCount );
+			*Module = FoundModule;
+			Status = STATUS_SUCCESS;
+			break;
+		}
+	}
+	LdkpReleaseModuleList();
+
+	LdkFreeAnsiString( &FullPathName );
+	return Status;
+}
+
 
 
 _Ret_maybenull_
@@ -1887,13 +1931,48 @@ LdkGetDllHandle (
     _Out_ PVOID *DllHandle
     )
 {
+	return LdkGetDllHandleEx( LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT,
+							  DllPath,
+							  DllCharacteristics,
+							  DllName,
+							  DllHandle );
+}
+
+#define LDR_GET_DLL_HANDLE_EX_VALID_FLAGS \
+	(LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT | \
+	 LDR_GET_DLL_HANDLE_EX_PIN | \
+	 0x00000004)
+
+NTSTATUS
+LdkGetDllHandleEx (
+    _In_ ULONG Flags,
+    _In_opt_ PWSTR DllPath,
+    _In_opt_ PULONG DllCharacteristics,
+    _In_ PUNICODE_STRING DllName,
+    _Out_ PVOID *DllHandle
+    )
+{
 	UNREFERENCED_PARAMETER(DllCharacteristics);
 
 	NTSTATUS Status;
 	ANSI_STRING Name;
 	UNICODE_STRING NtFileName;
+	BOOLEAN IncrementLoadCount;
+	BOOLEAN Pin;
+
+	if (FlagOn(Flags, ~LDR_GET_DLL_HANDLE_EX_VALID_FLAGS) ||
+		(FlagOn(Flags, LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT) &&
+		 FlagOn(Flags, LDR_GET_DLL_HANDLE_EX_PIN)) ||
+		! ARGUMENT_PRESENT(DllName) ||
+		! ARGUMENT_PRESENT(DllHandle)) {
+		return STATUS_INVALID_PARAMETER;
+	}
 
 	*DllHandle = NULL;
+	IncrementLoadCount = ! BooleanFlagOn( Flags,
+										   LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT );
+	Pin = BooleanFlagOn( Flags,
+						 LDR_GET_DLL_HANDLE_EX_PIN );
 
 	if (DllPath) {
 		Status = LdkpResolveDllNameToNtPath( DllPath,
@@ -1904,8 +1983,10 @@ LdkGetDllHandle (
 		}
 
 		PLDK_MODULE PathModule;
-		Status = LdkpGetModuleByNtPath( &NtFileName,
-										&PathModule );
+		Status = LdkpReferenceModuleByNtPath( &NtFileName,
+											  Pin,
+											  IncrementLoadCount,
+											  &PathModule );
 		RtlFreeHeap( RtlProcessHeap(),
 					 0,
 					 NtFileName.Buffer );
@@ -1925,8 +2006,10 @@ LdkGetDllHandle (
 	}
 
 	PLDK_MODULE Module;
-	Status = LdkGetModuleByName( Name.Buffer,
-								 &Module );
+	Status = LdkReferenceModuleByName( Name.Buffer,
+									   Pin,
+									   IncrementLoadCount,
+									   &Module );
 	LdkFreeAnsiString (&Name );
 	if (! NT_SUCCESS(Status)) {
 		return Status;

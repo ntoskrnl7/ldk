@@ -65,6 +65,19 @@ LdrGetDllHandle (
     _Out_ PVOID *DllHandle
     );
 
+#define LDR_GET_DLL_HANDLE_EX_UNCHANGED_REFCOUNT 0x00000001
+#define LDR_GET_DLL_HANDLE_EX_PIN                0x00000002
+
+NTSTATUS
+NTAPI
+LdrGetDllHandleEx (
+    _In_ ULONG Flags,
+    _In_opt_ PWSTR DllPath,
+    _In_opt_ PULONG DllCharacteristics,
+    _In_ PUNICODE_STRING DllName,
+    _Out_ PVOID *DllHandle
+    );
+
 EXTERN_C_END
 
 #endif // _LDK_NTLDR_
