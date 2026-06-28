@@ -1218,6 +1218,107 @@ LdkGetModuleByName (
 	return Status;
 }
 
+NTSTATUS
+LdkpResolveDllNameToNtPath (
+	_In_opt_ PWSTR DllPath,
+	_In_ PUNICODE_STRING DllName,
+	_Out_ PUNICODE_STRING NtFileName
+	)
+{
+	UNICODE_STRING FullDllName;
+	BOOLEAN Result;
+
+	NtFileName->Length = 0;
+	NtFileName->MaximumLength = 0;
+	NtFileName->Buffer = NULL;
+
+	FullDllName.MaximumLength = 4096 * sizeof(WCHAR);
+	FullDllName.Buffer = RtlAllocateHeap( RtlProcessHeap(),
+										  0,
+										  FullDllName.MaximumLength );
+	if (! FullDllName.Buffer) {
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+retry:
+	FullDllName.Length = (USHORT)RtlDosSearchPath_U( DllPath ? DllPath : NtCurrentPeb()->ProcessParameters->DllPath.Buffer,
+													 DllName->Buffer,
+													 NULL,
+													 FullDllName.MaximumLength - sizeof(UNICODE_NULL),
+													 FullDllName.Buffer,
+													 NULL );
+	if (FullDllName.Length == 0) {
+		RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					 FullDllName.Buffer );
+		return STATUS_DLL_NOT_FOUND;
+	}
+	if (FullDllName.Length + sizeof(UNICODE_NULL) > FullDllName.MaximumLength) {
+		FullDllName.MaximumLength = FullDllName.Length + sizeof(UNICODE_NULL);
+		PVOID Buffer = RtlReAllocateHeap( RtlProcessHeap(),
+										  0,
+										  FullDllName.Buffer,
+										  FullDllName.MaximumLength );
+		if (! Buffer) {
+			RtlFreeHeap( RtlProcessHeap(),
+						 0,
+						 FullDllName.Buffer );
+			return STATUS_INSUFFICIENT_RESOURCES;
+		}
+		FullDllName.Buffer = Buffer;
+		goto retry;
+	}
+	FullDllName.Buffer[FullDllName.Length / sizeof(WCHAR)] = UNICODE_NULL;
+
+	Result = RtlDosPathNameToNtPathName_U( FullDllName.Buffer,
+										   NtFileName,
+										   NULL,
+										   NULL );
+	RtlFreeHeap( RtlProcessHeap(),
+				 0,
+				 FullDllName.Buffer );
+	return Result ? STATUS_SUCCESS : STATUS_UNSUCCESSFUL;
+}
+
+NTSTATUS
+LdkpGetModuleByNtPath (
+	_In_ PCUNICODE_STRING NtFileName,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	NTSTATUS Status;
+	ANSI_STRING FullPathName;
+	PLIST_ENTRY NextEntry;
+
+	Status = LdkUnicodeStringToAnsiString( &FullPathName,
+										   NtFileName,
+										   TRUE );
+	if (! NT_SUCCESS(Status)) {
+		return Status;
+	}
+
+	Status = STATUS_NOT_FOUND;
+	LdkpAcquireModuleListShared();
+	for (NextEntry = LdkCurrentPeb()->ModuleListHead.Flink;
+		 NextEntry != &LdkCurrentPeb()->ModuleListHead;
+		 NextEntry = NextEntry->Flink) {
+		PLDK_MODULE FoundModule = CONTAINING_RECORD( NextEntry,
+													 LDK_MODULE,
+													 ActiveLinks );
+		if (FoundModule->FullPathName.Buffer &&
+			_stricmp( FoundModule->FullPathName.Buffer,
+					  FullPathName.Buffer ) == 0) {
+			*Module = FoundModule;
+			Status = STATUS_SUCCESS;
+			break;
+		}
+	}
+	LdkpReleaseModuleList();
+
+	LdkFreeAnsiString( &FullPathName );
+	return Status;
+}
+
 
 
 _Ret_maybenull_
@@ -1271,11 +1372,35 @@ LdkGetDllHandle (
     _Out_ PVOID *DllHandle
     )
 {
-	UNREFERENCED_PARAMETER(DllPath);
 	UNREFERENCED_PARAMETER(DllCharacteristics);
 
 	NTSTATUS Status;
 	ANSI_STRING Name;
+	UNICODE_STRING NtFileName;
+
+	*DllHandle = NULL;
+
+	if (DllPath) {
+		Status = LdkpResolveDllNameToNtPath( DllPath,
+											 DllName,
+											 &NtFileName );
+		if (! NT_SUCCESS(Status)) {
+			return Status;
+		}
+
+		PLDK_MODULE PathModule;
+		Status = LdkpGetModuleByNtPath( &NtFileName,
+										&PathModule );
+		RtlFreeHeap( RtlProcessHeap(),
+					 0,
+					 NtFileName.Buffer );
+		if (! NT_SUCCESS(Status)) {
+			return Status;
+		}
+
+		*DllHandle = (PathModule->Base) ? PathModule->Base : (PVOID)PathModule;
+		return STATUS_SUCCESS;
+	}
 
 	Status = LdkUnicodeStringToAnsiString( &Name,
 										   DllName,
@@ -1420,7 +1545,7 @@ retry:
 		Name.MaximumLength = Name.Length = (USHORT)(wcslen( Name.Buffer ) * sizeof(WCHAR));
 
 		Status = LdkRegisterModule( &Name,
-									DllName,
+									&NtFileName,
 									*DllHandle,
 									ImageSize,
 									&RegisteredModule );

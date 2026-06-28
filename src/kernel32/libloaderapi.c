@@ -31,15 +31,34 @@ LdkpComputeDllPath (
 	);
 
 NTSTATUS
-LdkpDuplicateDllDirectory (
-	_Out_ PUNICODE_STRING DllDirectory
+LdkpDuplicateUserDllDirectories (
+	_Out_ PUNICODE_STRING DllDirectories
+	);
+
+DWORD
+LdkpGetDefaultDllDirectories (
+	VOID
+	);
+
+VOID
+LdkpFreeHeapUnicodeString (
+	_Inout_ PUNICODE_STRING String
+	);
+
+NTSTATUS
+LdkpAppendDllPathElement (
+	_Inout_ PUNICODE_STRING SearchPath,
+	_In_ PCUNICODE_STRING Element
 	);
 
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LdkpComputeDllPath)
-#pragma alloc_text(PAGE, LdkpDuplicateDllDirectory)
+#pragma alloc_text(PAGE, LdkpAppendDllPathElement)
+#pragma alloc_text(PAGE, LdkpDuplicateUserDllDirectories)
+#pragma alloc_text(PAGE, LdkpFreeHeapUnicodeString)
+#pragma alloc_text(PAGE, LdkpGetDefaultDllDirectories)
 #pragma alloc_text(PAGE, GetModuleFileNameA)
 #pragma alloc_text(PAGE, GetModuleFileNameW)
 #pragma alloc_text(PAGE, GetModuleHandleA)
@@ -632,25 +651,103 @@ LdkpDuplicateEnvironmentPath (
 }
 
 NTSTATUS
-LdkpDuplicateDllDirectory (
-	_Out_ PUNICODE_STRING DllDirectory
+LdkpDuplicateUserDllDirectories (
+	_Out_ PUNICODE_STRING DllDirectories
 	)
 {
+	NTSTATUS Status;
+	PLIST_ENTRY Entry;
+	PLDK_DLL_DIRECTORY Directory;
+	SIZE_T RequiredLength = sizeof(UNICODE_NULL);
+	ULONG Count = 0;
+
 	PAGED_CODE();
 
-	DllDirectory->Length = 0;
-	DllDirectory->MaximumLength = 0;
-	DllDirectory->Buffer = NULL;
+	DllDirectories->Length = 0;
+	DllDirectories->MaximumLength = 0;
+	DllDirectories->Buffer = NULL;
 
 	RtlAcquirePebLock();
 	if (NtCurrentPeb()->DllDirectory.Length) {
-		NTSTATUS Status = LdkDuplicateUnicodeString( &NtCurrentPeb()->DllDirectory,
-													 DllDirectory );
+		RequiredLength += NtCurrentPeb()->DllDirectory.Length;
+		Count++;
+	}
+
+	for (Entry = NtCurrentPeb()->DllDirectoryListHead.Flink;
+		 Entry != &NtCurrentPeb()->DllDirectoryListHead;
+		 Entry = Entry->Flink) {
+		Directory = CONTAINING_RECORD( Entry,
+									   LDK_DLL_DIRECTORY,
+									   Links );
+		if (Directory->Path.Length) {
+			RequiredLength += Directory->Path.Length;
+			Count++;
+		}
+	}
+
+	if (Count > 1) {
+		RequiredLength += (Count - 1) * sizeof(WCHAR);
+	}
+
+	if (Count == 0) {
 		RtlReleasePebLock();
+		return STATUS_SUCCESS;
+	}
+
+	if (RequiredLength > MAXUSHORT) {
+		RtlReleasePebLock();
+		return STATUS_NAME_TOO_LONG;
+	}
+
+	DllDirectories->MaximumLength = (USHORT)RequiredLength;
+	DllDirectories->Buffer = RtlAllocateHeap( RtlProcessHeap(),
+											  HEAP_ZERO_MEMORY,
+											  DllDirectories->MaximumLength );
+	if (! DllDirectories->Buffer) {
+		RtlReleasePebLock();
+		return STATUS_INSUFFICIENT_RESOURCES;
+	}
+
+	Status = LdkpAppendDllPathElement( DllDirectories,
+									   &NtCurrentPeb()->DllDirectory );
+	if (! NT_SUCCESS(Status)) {
+		RtlReleasePebLock();
+		LdkpFreeHeapUnicodeString( DllDirectories );
 		return Status;
 	}
+
+	for (Entry = NtCurrentPeb()->DllDirectoryListHead.Flink;
+		 Entry != &NtCurrentPeb()->DllDirectoryListHead;
+		 Entry = Entry->Flink) {
+		Directory = CONTAINING_RECORD( Entry,
+									   LDK_DLL_DIRECTORY,
+									   Links );
+		Status = LdkpAppendDllPathElement( DllDirectories,
+										   &Directory->Path );
+		if (! NT_SUCCESS(Status)) {
+			RtlReleasePebLock();
+			LdkpFreeHeapUnicodeString( DllDirectories );
+			return Status;
+		}
+	}
+
 	RtlReleasePebLock();
 	return STATUS_SUCCESS;
+}
+
+DWORD
+LdkpGetDefaultDllDirectories (
+	VOID
+	)
+{
+	DWORD DirectoryFlags;
+
+	PAGED_CODE();
+
+	RtlAcquirePebLock();
+	DirectoryFlags = NtCurrentPeb()->DefaultDllDirectories;
+	RtlReleasePebLock();
+	return DirectoryFlags;
 }
 
 VOID
@@ -736,7 +833,7 @@ LdkpComputeDllPath (
 		goto Cleanup;
 	}
 
-	Status = LdkpDuplicateDllDirectory( &UserDllDirectories );
+	Status = LdkpDuplicateUserDllDirectories( &UserDllDirectories );
 	if (! NT_SUCCESS(Status)) {
 		goto Cleanup;
 	}
@@ -758,6 +855,10 @@ LdkpComputeDllPath (
 	}
 
 	SearchFlags = dwFlags & LDK_LOAD_LIBRARY_SEARCH_FLAGS;
+	if (! SearchFlags &&
+		! (dwFlags & LOAD_WITH_ALTERED_SEARCH_PATH)) {
+		SearchFlags = LdkpGetDefaultDllDirectories();
+	}
 	if (dwFlags & LOAD_WITH_ALTERED_SEARCH_PATH) {
 		Status = LdkpAppendDllPathElement( &SearchPath,
 										   &LoadDirectory );
@@ -850,7 +951,7 @@ Cleanup:
 	LdkpFreeHeapUnicodeString( &LoadDirectory );
 	LdkpFreeHeapUnicodeString( &ImageDirectory );
 	LdkpFreeHeapUnicodeString( &EnvironmentPath );
-	LdkFreeUnicodeString( &UserDllDirectories );
+	LdkpFreeHeapUnicodeString( &UserDllDirectories );
 	return Status;
 }
 

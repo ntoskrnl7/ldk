@@ -27,12 +27,18 @@ same-named DLLs found in system directories.
 
 The tested `LoadLibraryExW` search subset includes
 `LOAD_LIBRARY_SEARCH_SYSTEM32`, `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR`,
-`LOAD_LIBRARY_SEARCH_APPLICATION_DIR`, `LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`, and
-`LOAD_WITH_ALTERED_SEARCH_PATH`. When a DLL is loaded from a specific directory,
-imports discovered while loading that DLL inherit the same search context where
-applicable, which lets private dependency DLLs live beside their owner DLL.
-`LOAD_LIBRARY_SEARCH_USER_DIRS` uses the single process-wide directory set by
-`SetDllDirectoryA/W`. Invalid combinations such as
+`LOAD_LIBRARY_SEARCH_APPLICATION_DIR`, `LOAD_LIBRARY_SEARCH_USER_DIRS`,
+`LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`, and `LOAD_WITH_ALTERED_SEARCH_PATH`. When a
+DLL is loaded from a specific directory, imports discovered while loading that
+DLL inherit the same search context where applicable, which lets private
+dependency DLLs live beside their owner DLL.
+
+User DLL directories are process-wide LDK PEB state. `SetDllDirectoryA/W`
+stores the single Win32-compatible directory reported by `GetDllDirectoryA/W`.
+`AddDllDirectory` appends absolute directories to a cookie list, and
+`RemoveDllDirectory` removes those cookies. `SetDefaultDllDirectories` controls
+the search flags used by later `LoadLibraryA/W` calls that do not pass explicit
+search flags. Invalid combinations such as
 `LOAD_WITH_ALTERED_SEARCH_PATH` mixed with `LOAD_LIBRARY_SEARCH_*` flags are
 rejected before the load reaches the native loader.
 
@@ -100,6 +106,11 @@ recorded dependency references are released. This keeps imported modules alive
 during the dependent module's detach callback, then lets automatically loaded
 dependencies unload when no other direct or dependency reference remains.
 
+`LdrGetDllHandle` supports name lookup and path-aware lookup when a caller
+passes a `DllPath` search string. Dynamic modules are registered with their NT
+full path so the path-aware query does not accidentally match a same-named DLL
+loaded from a different directory.
+
 `GetModuleHandleEx` supports the tested name/address lookup paths. By default it
 adds a loader reference, while `GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT`
 leaves the load count unchanged. Passing `GET_MODULE_HANDLE_EX_FLAG_PIN` marks a
@@ -120,15 +131,16 @@ failures and debugger breaks in loader paths as compatibility bugs to audit, not
 as recoverable normal behavior.
 
 The current dependency model covers tested acyclic import ownership and unload
-ordering. It is still not a full Windows loader implementation: circular import
-graphs, advanced side-by-side activation behavior, delay-load ownership, and
-arbitrary loader callback interactions are outside the current contract.
-Drivers that rely on complex DLL dependency trees should add workload-specific
-load/unload tests before using that pattern.
+ordering, including repeated owner/dependency load and unload cycles. It is
+still not a full Windows loader implementation: circular import graphs,
+advanced side-by-side activation behavior, dedicated delay-load helper
+integration, and arbitrary loader callback interactions are outside the current
+contract. Drivers that rely on complex DLL dependency trees should add
+workload-specific load/unload tests before using that pattern.
 
 The `LoadLibraryExW` flag model is also intentionally narrower than Windows:
-LDK supports `SetDllDirectoryA/W` as one process-wide user DLL directory, but it
-does not implement `AddDllDirectory`, per-thread default DLL directories,
-activation contexts, signed-target enforcement, or the full safe search mode
-policy. Unsupported flag combinations fail early instead of being silently
-treated as normal loads.
+LDK supports process-wide `SetDllDirectoryA/W`, `GetDllDirectoryA/W`,
+`AddDllDirectory`, `RemoveDllDirectory`, and `SetDefaultDllDirectories`, but it
+does not implement per-thread DLL directory state, activation contexts,
+signed-target enforcement, or the full safe search mode policy. Unsupported flag
+combinations fail early instead of being silently treated as normal loads.

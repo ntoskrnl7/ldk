@@ -46,6 +46,11 @@ typedef struct _RTL_USER_PROCESS_PARAMETERS {
      ULONG EnvironmentSize;
 } RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
 
+typedef struct _LDK_DLL_DIRECTORY {
+	LIST_ENTRY Links;
+	UNICODE_STRING Path;
+} LDK_DLL_DIRECTORY, *PLDK_DLL_DIRECTORY;
+
 typedef struct _LDK_PEB {
 
 	ULONG NtGlobalFlag;
@@ -65,6 +70,8 @@ typedef struct _LDK_PEB {
 	PDRIVER_OBJECT DriverObject;
 	UNICODE_STRING RegistryPath;
 	UNICODE_STRING DllDirectory;
+	LIST_ENTRY DllDirectoryListHead;
+	ULONG DefaultDllDirectories;
 
 	ULONG ProcessId;
 	HANDLE RealProcessId;

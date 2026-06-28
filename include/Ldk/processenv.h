@@ -103,6 +103,22 @@ SetDllDirectoryW(
     _In_opt_ LPCWSTR lpPathName
     );
 
+WINBASEAPI
+DWORD
+WINAPI
+GetDllDirectoryA(
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPSTR lpBuffer
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetDllDirectoryW(
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPWSTR lpBuffer
+    );
+
 
 WINBASEAPI
 _NullNull_terminated_

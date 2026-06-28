@@ -162,6 +162,29 @@ LoadLibraryExW(
 
 #endif
 
+typedef PVOID DLL_DIRECTORY_COOKIE;
+
+WINBASEAPI
+DLL_DIRECTORY_COOKIE
+WINAPI
+AddDllDirectory(
+    _In_ PCWSTR NewDirectory
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+RemoveDllDirectory(
+    _In_ DLL_DIRECTORY_COOKIE Cookie
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetDefaultDllDirectories(
+    _In_ DWORD DirectoryFlags
+    );
+
 WINBASEAPI
 BOOL
 WINAPI

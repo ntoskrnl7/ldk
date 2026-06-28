@@ -278,6 +278,20 @@ LdrTest (
         goto Cleanup;
     }
 
+    LookupHandle = NULL;
+    Status = LdrGetDllHandle( DllPath,
+                              NULL,
+                              &DllName,
+                              &LookupHandle );
+    if (! NT_SUCCESS(Status) ||
+        LookupHandle != DllHandle) {
+        printf("[Failed] LdrGetDllHandle(Test.dll, path-aware) Status = 0x%08x Handle = %p Lookup = %p\n",
+               Status,
+               DllHandle,
+               LookupHandle);
+        goto Cleanup;
+    }
+
     Status = LdrUnloadDll( DllHandle2 );
     DllHandle2 = NULL;
     if (! NT_SUCCESS(Status)) {
