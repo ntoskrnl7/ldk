@@ -49,7 +49,9 @@ in progress. The core load path:
 Entry points are called through a kernel stack expansion helper when needed.
 If a DLL has no entry point, the attach step succeeds. If `DLL_PROCESS_ATTACH`
 returns failure, the module is unloaded and the load fails with
-`STATUS_DLL_INIT_FAILED`.
+`STATUS_DLL_INIT_FAILED`. The failure path also releases import dependencies
+that were loaded while preparing the failed module, so a failed attach does not
+leave the failing module or its private dependencies registered.
 
 Repeated `LoadLibrary` / `LdrLoadDll` calls for an already loaded dynamic
 module increment the module load count and return the existing module handle.

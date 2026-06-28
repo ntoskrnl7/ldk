@@ -35,6 +35,10 @@ typedef LONG NTSTATUS;
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 
+#ifndef STATUS_DLL_INIT_FAILED
+#define STATUS_DLL_INIT_FAILED ((NTSTATUS)0xC0000142)
+#endif
+
 typedef struct _STRING {
     USHORT Length;
     USHORT MaximumLength;
@@ -170,6 +174,7 @@ LdrTest (
     UNICODE_STRING OrdinalImportName = RTL_CONSTANT_STRING(L"OrdinalImport.dll");
     UNICODE_STRING AutoDependencyName = RTL_CONSTANT_STRING(L"AutoDependency.dll");
     UNICODE_STRING DependencyOwnerName = RTL_CONSTANT_STRING(L"DependencyOwner.dll");
+    UNICODE_STRING FailAttachName = RTL_CONSTANT_STRING(L"FailAttach.dll");
     ANSI_STRING ProcName = RTL_CONSTANT_STRING("TestFunction");
     ANSI_STRING OrdinalImportProcName = RTL_CONSTANT_STRING("TestOrdinalImportFunction");
     ANSI_STRING DependencyOwnerProcName = RTL_CONSTANT_STRING("DependencyOwnerFunction");
@@ -179,6 +184,7 @@ LdrTest (
     PVOID OrdinalImportHandle = NULL;
     PVOID AutoDependencyLookupHandle = NULL;
     PVOID DependencyOwnerHandle = NULL;
+    PVOID FailAttachHandle = NULL;
     TEST_FN TestFn = NULL;
     TEST_FN OrdinalFn = NULL;
     TEST_FN OrdinalImportFn = NULL;
@@ -378,6 +384,38 @@ LdrTest (
         printf("[Failed] AutoDependency.dll stayed loaded after DependencyOwner.dll unload\n");
         goto Cleanup;
     }
+
+    FailAttachHandle = NULL;
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &FailAttachName,
+                         &FailAttachHandle );
+    if (Status != STATUS_DLL_INIT_FAILED) {
+        printf("[Failed] LdrLoadDll(FailAttach.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    LookupHandle = NULL;
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &FailAttachName,
+                              &LookupHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] FailAttach.dll stayed loaded after DllMain failure\n");
+        goto Cleanup;
+    }
+
+    AutoDependencyLookupHandle = NULL;
+    Status = LdrGetDllHandle( NULL,
+                              NULL,
+                              &AutoDependencyName,
+                              &AutoDependencyLookupHandle );
+    if (NT_SUCCESS(Status)) {
+        printf("[Failed] AutoDependency.dll stayed loaded after FailAttach.dll failure\n");
+        goto Cleanup;
+    }
+    printf("[Success] LdrLoadDll(FailAttach.dll) DllMain failure cleanup\n");
 
     Status = LdrUnloadDll( DllHandle );
     DllHandle = NULL;
