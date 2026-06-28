@@ -1,7 +1,7 @@
 ﻿#include "winbase.h"
 #include "../ldk.h"
 #include "../ntdll/ntdll.h"
-#include <stdio.h>
+#include <ntstrsafe.h>
 
 
 LONG PipeSerialNumber = 0;
@@ -38,10 +38,15 @@ CreatePipe (
     if (nSize == 0) {
         nSize = 4096;
     }
-    sprintf( PipeNameBuffer,
-             WIN32_SS_PIPE_FORMAT_STRING,
-             HandleToUlong(NtCurrentTeb()->ClientId.UniqueProcess),
-             InterlockedIncrement(&PipeSerialNumber) );
+    Status = RtlStringCbPrintfA( PipeNameBuffer,
+                                 sizeof(PipeNameBuffer),
+                                 WIN32_SS_PIPE_FORMAT_STRING,
+                                 HandleToUlong(NtCurrentTeb()->ClientId.UniqueProcess),
+                                 InterlockedIncrement(&PipeSerialNumber) );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError(Status);
+        return FALSE;
+    }
 
     RtlInitAnsiString( &PipeName,
                        PipeNameBuffer );
