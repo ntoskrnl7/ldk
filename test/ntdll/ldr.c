@@ -157,6 +157,30 @@ EXTERN_C_END
 #define PAGED_CODE()
 #endif
 
+#define TLS_EVENT_TLS_PROCESS_ATTACH 0x101
+#define TLS_EVENT_DLL_PROCESS_ATTACH 0x102
+#define TLS_EVENT_TLS_THREAD_ATTACH  0x201
+#define TLS_EVENT_TLS_THREAD_DETACH  0x301
+#define TLS_EVENT_TLS_PROCESS_DETACH 0x401
+#define TLS_EVENT_DLL_PROCESS_DETACH 0x402
+#define TLS_TEST_LOG_CAPACITY        16
+
+static
+DWORD
+WINAPI
+TlsCallbackTestThreadProc (
+    _In_opt_ LPVOID Parameter
+    )
+{
+    LONG *Counter = (LONG *)Parameter;
+
+    if (Counter) {
+        InterlockedIncrement( Counter );
+    }
+
+    return 0;
+}
+
 BOOLEAN
 LdrTest (
     VOID
@@ -165,6 +189,9 @@ LdrTest (
     PAGED_CODE();
 
     typedef LONG(__stdcall* TEST_FN)(LONG);
+    typedef VOID(__stdcall* TLS_SET_LOG_FN)(LONG *, LONG *, LONG);
+    typedef LONG(__stdcall* TLS_GET_COUNT_FN)(VOID);
+    typedef LONG(__stdcall* TLS_GET_EVENT_FN)(LONG);
 
     WCHAR DllPath[MAX_PATH];
     DWORD Length;
@@ -175,12 +202,16 @@ LdrTest (
     UNICODE_STRING AutoDependencyName = RTL_CONSTANT_STRING(L"AutoDependency.dll");
     UNICODE_STRING DependencyOwnerName = RTL_CONSTANT_STRING(L"DependencyOwner.dll");
     UNICODE_STRING DelayOwnerName = RTL_CONSTANT_STRING(L"DelayOwner.dll");
+    UNICODE_STRING TlsCallbackName = RTL_CONSTANT_STRING(L"TlsCallback.dll");
     UNICODE_STRING FailAttachName = RTL_CONSTANT_STRING(L"FailAttach.dll");
     ANSI_STRING ProcName = RTL_CONSTANT_STRING("TestFunction");
     ANSI_STRING OrdinalImportProcName = RTL_CONSTANT_STRING("TestOrdinalImportFunction");
     ANSI_STRING DependencyOwnerProcName = RTL_CONSTANT_STRING("DependencyOwnerFunction");
     ANSI_STRING DelayOwnerProbeProcName = RTL_CONSTANT_STRING("DelayOwnerProbeFunction");
     ANSI_STRING DelayOwnerCallProcName = RTL_CONSTANT_STRING("DelayOwnerCallFunction");
+    ANSI_STRING TlsSetLogProcName = RTL_CONSTANT_STRING("TlsCallbackSetLog");
+    ANSI_STRING TlsGetCountProcName = RTL_CONSTANT_STRING("TlsCallbackGetCount");
+    ANSI_STRING TlsGetEventProcName = RTL_CONSTANT_STRING("TlsCallbackGetEvent");
     PVOID DllHandle = NULL;
     PVOID DllHandle2 = NULL;
     PVOID LookupHandle = NULL;
@@ -188,6 +219,7 @@ LdrTest (
     PVOID AutoDependencyLookupHandle = NULL;
     PVOID DependencyOwnerHandle = NULL;
     PVOID DelayOwnerHandle = NULL;
+    PVOID TlsCallbackHandle = NULL;
     PVOID FailAttachHandle = NULL;
     HMODULE DelayDependencyModule = NULL;
     TEST_FN TestFn = NULL;
@@ -196,6 +228,9 @@ LdrTest (
     TEST_FN DependencyOwnerFn = NULL;
     TEST_FN DelayOwnerProbeFn = NULL;
     TEST_FN DelayOwnerCallFn = NULL;
+    TLS_SET_LOG_FN TlsSetLogFn = NULL;
+    TLS_GET_COUNT_FN TlsGetCountFn = NULL;
+    TLS_GET_EVENT_FN TlsGetEventFn = NULL;
 
     printf("Ldr Test\n");
 
@@ -406,6 +441,117 @@ LdrTest (
         goto Cleanup;
     }
 
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &TlsCallbackName,
+                         &TlsCallbackHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrLoadDll(TlsCallback.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsSetLogProcName,
+                                     0,
+                                     (PVOID*)&TlsSetLogFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackSetLog) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsGetCountProcName,
+                                     0,
+                                     (PVOID*)&TlsGetCountFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackGetCount) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( TlsCallbackHandle,
+                                     &TlsGetEventProcName,
+                                     0,
+                                     (PVOID*)&TlsGetEventFn );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrGetProcedureAddress(TlsCallbackGetEvent) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    if (TlsGetCountFn() < 2 ||
+        TlsGetEventFn(0) != TLS_EVENT_TLS_PROCESS_ATTACH ||
+        TlsGetEventFn(1) != TLS_EVENT_DLL_PROCESS_ATTACH) {
+        printf("[Failed] TlsCallback native process attach order Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               TlsGetCountFn(),
+               TlsGetEventFn(0),
+               TlsGetEventFn(1));
+        goto Cleanup;
+    }
+
+    LONG TlsThreadLogCount = 0;
+    LONG TlsThreadLog[TLS_TEST_LOG_CAPACITY] = { 0 };
+    TlsSetLogFn( &TlsThreadLogCount,
+                 TlsThreadLog,
+                 TLS_TEST_LOG_CAPACITY );
+
+    LONG TlsThreadCounter = 0;
+    HANDLE TlsThread = CreateThread( NULL,
+                                     0,
+                                     TlsCallbackTestThreadProc,
+                                     &TlsThreadCounter,
+                                     0,
+                                     NULL );
+    if (! TlsThread) {
+        printf("[Failed] TlsCallback native CreateThread ErrorCode = %lu\n",
+               GetLastError());
+        goto Cleanup;
+    }
+
+    DWORD TlsWait = WaitForSingleObject( TlsThread,
+                                         5000 );
+    CloseHandle( TlsThread );
+    if (TlsWait != WAIT_OBJECT_0 ||
+        TlsThreadCounter != 1 ||
+        TlsThreadLogCount < 2 ||
+        TlsThreadLog[0] != TLS_EVENT_TLS_THREAD_ATTACH ||
+        TlsThreadLog[1] != TLS_EVENT_TLS_THREAD_DETACH) {
+        printf("[Failed] TlsCallback native thread events Wait = 0x%08lx Counter = %ld Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               TlsWait,
+               TlsThreadCounter,
+               TlsThreadLogCount,
+               TlsThreadLog[0],
+               TlsThreadLog[1]);
+        goto Cleanup;
+    }
+
+    LONG TlsDetachLogCount = 0;
+    LONG TlsDetachLog[TLS_TEST_LOG_CAPACITY] = { 0 };
+    TlsSetLogFn( &TlsDetachLogCount,
+                 TlsDetachLog,
+                 TLS_TEST_LOG_CAPACITY );
+
+    Status = LdrUnloadDll( TlsCallbackHandle );
+    TlsCallbackHandle = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(TlsCallback.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    if (TlsDetachLogCount < 2 ||
+        TlsDetachLog[0] != TLS_EVENT_TLS_PROCESS_DETACH ||
+        TlsDetachLog[1] != TLS_EVENT_DLL_PROCESS_DETACH) {
+        printf("[Failed] TlsCallback native process detach order Count = %ld Event0 = 0x%lx Event1 = 0x%lx\n",
+               TlsDetachLogCount,
+               TlsDetachLog[0],
+               TlsDetachLog[1]);
+        goto Cleanup;
+    }
+    printf("[Success] LdrLoadDll(TlsCallback.dll) TLS callback notifications\n");
+
     if (GetModuleHandleW( L"DelayDependency.dll" ) != NULL) {
         printf("[Failed] DelayDependency.dll was loaded before delay-load test\n");
         goto Cleanup;
@@ -526,6 +672,9 @@ LdrTest (
     Result = TRUE;
 
 Cleanup:
+    if (TlsCallbackHandle != NULL) {
+        LdrUnloadDll( TlsCallbackHandle );
+    }
     if (DelayOwnerHandle != NULL) {
         LdrUnloadDll( DelayOwnerHandle );
     }

@@ -37,6 +37,7 @@ add_library(DependencyOwner SHARED ../dependencyowner.c)
 add_library(FailAttach SHARED ../failattach.c)
 add_library(DelayDependency SHARED ../delaydependency.c)
 add_library(DelayOwner SHARED ../delayowner.c)
+add_library(TlsCallback SHARED ../tlscallback.c)
 target_link_libraries(OrdinalImport PRIVATE Test)
 target_link_libraries(DependencyOwner PRIVATE AutoDependency)
 target_link_libraries(FailAttach PRIVATE AutoDependency)
@@ -56,7 +57,7 @@ target_compile_options(LdkWin32ApiTest PRIVATE
     /FI"${CMAKE_CURRENT_LIST_DIR}/compat.h"
 )
 
-foreach(target Test OrdinalImport AutoDependency DependencyOwner FailAttach DelayDependency DelayOwner)
+foreach(target Test OrdinalImport AutoDependency DependencyOwner FailAttach DelayDependency DelayOwner TlsCallback)
     target_compile_options(${target} PRIVATE
         /W4
         /WX
@@ -68,14 +69,16 @@ if(CMAKE_VS_PLATFORM_NAME STREQUAL "Win32" OR CMAKE_GENERATOR_PLATFORM STREQUAL 
 else()
     target_link_options(FailAttach PRIVATE /ENTRY:FailAttachDllMain /NODEFAULTLIB)
 endif()
+target_link_options(TlsCallback PRIVATE /INCREMENTAL:NO)
 target_compile_options(FailAttach PRIVATE /GS-)
+target_compile_options(TlsCallback PRIVATE /GS-)
 target_link_options(DelayOwner PRIVATE /DELAYLOAD:DelayDependency.dll)
 
 target_link_libraries(LdkWin32ApiTest PRIVATE
     Synchronization
 )
 
-foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner FailAttach DelayDependency DelayOwner)
+foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner FailAttach DelayDependency DelayOwner TlsCallback)
     set_target_properties(${target} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
         RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/bin/Debug"
@@ -85,4 +88,4 @@ foreach(target LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner
     )
 endforeach()
 
-add_dependencies(LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner FailAttach DelayDependency DelayOwner)
+add_dependencies(LdkWin32ApiTest Test OrdinalImport AutoDependency DependencyOwner FailAttach DelayDependency DelayOwner TlsCallback)

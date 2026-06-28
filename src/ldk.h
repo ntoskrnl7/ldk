@@ -143,6 +143,11 @@ LdkUnloadDll (
 	_In_ PVOID DllHandle
 	);
 
+VOID
+LdkpCallTlsCallbacksForThread (
+	_In_ DWORD Reason
+	);
+
 NTSTATUS
 LdkReferenceModuleByAddress (
 	_In_ PVOID Address,

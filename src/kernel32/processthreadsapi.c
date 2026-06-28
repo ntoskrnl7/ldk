@@ -101,7 +101,9 @@ LdkpThreadStartExpandStackAndCallout (
 	LPVOID lpThreadParameter = Context->lpThreadParameter;
 	PTHREAD_START_ROUTINE ThreadStartRoutine = Context->ThreadStartRoutine;
 
+	LdkpCallTlsCallbacksForThread( DLL_THREAD_ATTACH );
 	Context->ExitCode = ThreadStartRoutine( lpThreadParameter );
+	LdkpCallTlsCallbacksForThread( DLL_THREAD_DETACH );
 
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
 }
@@ -150,7 +152,9 @@ LdkpThreadStartRoutine (
 									Context );
 	}
 
+	LdkpCallTlsCallbacksForThread( DLL_THREAD_ATTACH );
 	DWORD ExitCode = ThreadStartRoutine( lpThreadParameter );
+	LdkpCallTlsCallbacksForThread( DLL_THREAD_DETACH );
 
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
 
@@ -373,6 +377,7 @@ ExitThread (
 {
 	PAGED_CODE();
 
+	LdkpCallTlsCallbacksForThread( DLL_THREAD_DETACH );
 	LdkpInvokeFlsCallback( NtCurrentTeb() );
 
 	PsTerminateSystemThread( (NTSTATUS)dwExitCode );
