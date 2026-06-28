@@ -6,6 +6,7 @@
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LdrLoadDll)
 #pragma alloc_text(PAGE, LdrUnloadDll)
+#pragma alloc_text(PAGE, LdrAddRefDll)
 #pragma alloc_text(PAGE, LdrGetProcedureAddress)
 #pragma alloc_text(PAGE, LdrGetDllHandle)
 #endif
@@ -48,6 +49,19 @@ LdrUnloadDll (
     PAGED_CODE();
 
     return LdkUnloadDll( DllHandle );
+}
+
+NTSTATUS
+NTAPI
+LdrAddRefDll (
+    _In_ ULONG Flags,
+    _In_ PVOID DllHandle
+    )
+{
+    PAGED_CODE();
+
+    return LdkAddRefDll( Flags,
+                         DllHandle );
 }
 
 NTSTATUS

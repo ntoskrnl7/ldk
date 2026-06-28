@@ -151,6 +151,12 @@ LdkUnloadDll (
 	_In_ PVOID DllHandle
 	);
 
+NTSTATUS
+LdkAddRefDll (
+	_In_ ULONG Flags,
+	_In_ PVOID DllHandle
+	);
+
 VOID
 LdkpCallThreadNotifications (
 	_In_ DWORD Reason

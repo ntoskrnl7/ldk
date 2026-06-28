@@ -103,6 +103,10 @@ LDK_FUNCTION_REGISTRATION LdkpNtdllFunctionRegistration[] = {
         "RtlLeaveCriticalSection",
         RtlLeaveCriticalSection
     },
+    {
+        "LdrAddRefDll",
+        LdrAddRefDll
+    },
 	{
 		NULL
 	}
