@@ -174,21 +174,28 @@ LdrTest (
     UNICODE_STRING OrdinalImportName = RTL_CONSTANT_STRING(L"OrdinalImport.dll");
     UNICODE_STRING AutoDependencyName = RTL_CONSTANT_STRING(L"AutoDependency.dll");
     UNICODE_STRING DependencyOwnerName = RTL_CONSTANT_STRING(L"DependencyOwner.dll");
+    UNICODE_STRING DelayOwnerName = RTL_CONSTANT_STRING(L"DelayOwner.dll");
     UNICODE_STRING FailAttachName = RTL_CONSTANT_STRING(L"FailAttach.dll");
     ANSI_STRING ProcName = RTL_CONSTANT_STRING("TestFunction");
     ANSI_STRING OrdinalImportProcName = RTL_CONSTANT_STRING("TestOrdinalImportFunction");
     ANSI_STRING DependencyOwnerProcName = RTL_CONSTANT_STRING("DependencyOwnerFunction");
+    ANSI_STRING DelayOwnerProbeProcName = RTL_CONSTANT_STRING("DelayOwnerProbeFunction");
+    ANSI_STRING DelayOwnerCallProcName = RTL_CONSTANT_STRING("DelayOwnerCallFunction");
     PVOID DllHandle = NULL;
     PVOID DllHandle2 = NULL;
     PVOID LookupHandle = NULL;
     PVOID OrdinalImportHandle = NULL;
     PVOID AutoDependencyLookupHandle = NULL;
     PVOID DependencyOwnerHandle = NULL;
+    PVOID DelayOwnerHandle = NULL;
     PVOID FailAttachHandle = NULL;
+    HMODULE DelayDependencyModule = NULL;
     TEST_FN TestFn = NULL;
     TEST_FN OrdinalFn = NULL;
     TEST_FN OrdinalImportFn = NULL;
     TEST_FN DependencyOwnerFn = NULL;
+    TEST_FN DelayOwnerProbeFn = NULL;
+    TEST_FN DelayOwnerCallFn = NULL;
 
     printf("Ldr Test\n");
 
@@ -399,6 +406,72 @@ LdrTest (
         goto Cleanup;
     }
 
+    if (GetModuleHandleW( L"DelayDependency.dll" ) != NULL) {
+        printf("[Failed] DelayDependency.dll was loaded before delay-load test\n");
+        goto Cleanup;
+    }
+
+    Status = LdrLoadDll( DllPath,
+                         NULL,
+                         &DelayOwnerName,
+                         &DelayOwnerHandle );
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrLoadDll(DelayOwner.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    if (GetModuleHandleW( L"DelayDependency.dll" ) != NULL) {
+        printf("[Failed] DelayDependency.dll was loaded before first native delay call\n");
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( DelayOwnerHandle,
+                                     &DelayOwnerProbeProcName,
+                                     0,
+                                     (PVOID*)&DelayOwnerProbeFn );
+    if (! NT_SUCCESS(Status) ||
+        DelayOwnerProbeFn(10) != 12) {
+        printf("[Failed] LdrGetProcedureAddress(DelayOwnerProbeFunction) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    Status = LdrGetProcedureAddress( DelayOwnerHandle,
+                                     &DelayOwnerCallProcName,
+                                     0,
+                                     (PVOID*)&DelayOwnerCallFn );
+    if (! NT_SUCCESS(Status) ||
+        DelayOwnerCallFn(10) != 55) {
+        printf("[Failed] LdrGetProcedureAddress(DelayOwnerCallFunction) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    DelayDependencyModule = GetModuleHandleW( L"DelayDependency.dll" );
+    if (! DelayDependencyModule) {
+        printf("[Failed] DelayDependency.dll was not loaded by native delay call\n");
+        goto Cleanup;
+    }
+
+    Status = LdrUnloadDll( DelayOwnerHandle );
+    DelayOwnerHandle = NULL;
+    if (! NT_SUCCESS(Status)) {
+        printf("[Failed] LdrUnloadDll(DelayOwner.dll) Status = 0x%08x\n",
+               Status);
+        goto Cleanup;
+    }
+
+    DelayDependencyModule = GetModuleHandleW( L"DelayDependency.dll" );
+    if (DelayDependencyModule &&
+        ! FreeLibrary( DelayDependencyModule )) {
+        printf("[Failed] FreeLibrary(DelayDependency.dll) ErrorCode = %lu\n",
+               GetLastError());
+        goto Cleanup;
+    }
+    DelayDependencyModule = NULL;
+    printf("[Success] LdrLoadDll(DelayOwner.dll) delay-load first-call resolution\n");
+
     FailAttachHandle = NULL;
     Status = LdrLoadDll( DllPath,
                          NULL,
@@ -453,6 +526,9 @@ LdrTest (
     Result = TRUE;
 
 Cleanup:
+    if (DelayOwnerHandle != NULL) {
+        LdrUnloadDll( DelayOwnerHandle );
+    }
     if (DependencyOwnerHandle != NULL) {
         LdrUnloadDll( DependencyOwnerHandle );
     }
@@ -464,6 +540,10 @@ Cleanup:
     }
     if (DllHandle != NULL) {
         LdrUnloadDll( DllHandle );
+    }
+    DelayDependencyModule = GetModuleHandleW( L"DelayDependency.dll" );
+    if (DelayDependencyModule != NULL) {
+        FreeLibrary( DelayDependencyModule );
     }
     return Result;
 }

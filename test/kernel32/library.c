@@ -896,6 +896,76 @@ LibraryTest (
     }
     printf("[Success] Dependency graph load/unload stress\n");
 
+    if (GetModuleHandleW( L"DelayDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] DelayDependency.dll was loaded before delay-load test ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    HMODULE hDelayOwner = LoadLibraryW( L"DelayOwner.dll" );
+    if (!hDelayOwner) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(DelayOwner.dll) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    if (GetModuleHandleW( L"DelayDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] DelayDependency.dll was loaded before first delay call ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDelayOwner );
+       return FALSE;
+    }
+
+    TEST_FN delayProbeFn = (TEST_FN)GetProcAddress( hDelayOwner, "DelayOwnerProbeFunction" );
+    if (!delayProbeFn ||
+        delayProbeFn(10) != 12) {
+       fprintf(stderr,
+               "[Failed] DelayOwnerProbeFunction ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDelayOwner );
+       return FALSE;
+    }
+
+    TEST_FN delayCallFn = (TEST_FN)GetProcAddress( hDelayOwner, "DelayOwnerCallFunction" );
+    if (!delayCallFn ||
+        delayCallFn(10) != 55) {
+       fprintf(stderr,
+               "[Failed] DelayOwnerCallFunction ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDelayOwner );
+       return FALSE;
+    }
+
+    HMODULE hDelayDependency = GetModuleHandleW( L"DelayDependency.dll" );
+    if (!hDelayDependency) {
+       fprintf(stderr,
+               "[Failed] DelayDependency.dll was not loaded by first delay call ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDelayOwner );
+       return FALSE;
+    }
+
+    if (!FreeLibrary( hDelayOwner )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DelayOwner.dll) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDelayDependency );
+       return FALSE;
+    }
+
+    hDelayDependency = GetModuleHandleW( L"DelayDependency.dll" );
+    if (hDelayDependency &&
+        !FreeLibrary( hDelayDependency )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DelayDependency.dll) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] Delay-load first-call resolution\n");
+
     if (!VerifyResourceOnlyLoad( L"Test.dll",
                                  LOAD_LIBRARY_AS_DATAFILE,
                                  "LOAD_LIBRARY_AS_DATAFILE" )) {
