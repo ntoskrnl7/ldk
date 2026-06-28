@@ -1,5 +1,7 @@
 ﻿#include "winbase.h"
 
+#include <Ldk/ntdll/ntldr.h>
+
 #define TAG_FREE_MODULE_ENTRY		'mFdL'
 typedef struct _LDK_FREE_MODULE_ENTRY {
 	SINGLE_LIST_ENTRY Links;
@@ -32,15 +34,14 @@ typedef struct _TP_WORK
 
 #define LDK_TP_WORK_FLAGS_DELETE_REQUESTED			0x00000001
 #define LDK_TP_WORK_FLAGS_CANCEL_REQUESTED			0x00000002
-#define LDK_TP_WORK_FLAGS_STARTED_BIT_INDEX			2
-#define LDK_TP_WORK_FLAGS_STARTED					(1 << (LDK_TP_WORK_FLAGS_STARTED_BIT_INDEX))
 	LONG Flags;
+	LONG OutstandingCount;
 
 	KEVENT Event;
 
     PVOID CallbackParameter;
     PTP_WORK_CALLBACK WorkCallback;
-    PTP_CALLBACK_ENVIRON CallbackEnvironment;
+    TP_CALLBACK_ENVIRON CallbackEnvironment;
 } TP_WORK, *PTP_WORK;
 
 NPAGED_LOOKASIDE_LIST LdkpThreadpoolWorkLookaside;
@@ -82,11 +83,29 @@ LdkpThreadpoolWokerThreadRoutine (
     _In_ PLDK_THREAD_POOL_WORK_ITEM Item
     );
 
+NTSTATUS
+LdkpCaptureThreadpoolCallbackEnvironment (
+	_In_opt_ PTP_CALLBACK_ENVIRON Source,
+	_Out_ PTP_CALLBACK_ENVIRON Destination
+	);
+
+VOID
+LdkpDereferenceThreadpoolWork (
+	_Inout_ PTP_WORK Work
+	);
+
+VOID
+LdkpCompleteThreadpoolWorkItem (
+	_Inout_ PTP_WORK Work
+	);
+
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeThreadpoolApiset)
 #pragma alloc_text(PAGE, LdkpTerminateThreadpoolApiset)
+#pragma alloc_text(PAGE, LdkpCaptureThreadpoolCallbackEnvironment)
+#pragma alloc_text(PAGE, CreateThreadpoolWork)
 #pragma alloc_text(PAGE, WaitForThreadpoolWorkCallbacks)
 #endif
 
@@ -144,6 +163,83 @@ LdkpTerminateThreadpoolApiset (
 	ExDeleteNPagedLookasideList( &LdkpFreeModuleEntryLookaside );
 }
 
+NTSTATUS
+LdkpCaptureThreadpoolCallbackEnvironment (
+	_In_opt_ PTP_CALLBACK_ENVIRON Source,
+	_Out_ PTP_CALLBACK_ENVIRON Destination
+	)
+{
+	PAGED_CODE();
+
+	if (! ARGUMENT_PRESENT(Source)) {
+		*Destination = LdkpDefaultCallbackEnviron;
+		return STATUS_SUCCESS;
+	}
+
+	if (Source->Version != 1 &&
+		Source->Version != 3) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+#if (_WIN32_WINNT >= _WIN32_WINNT_WIN7)
+	if (Source->Version == 3 &&
+		Source->Size != sizeof(TP_CALLBACK_ENVIRON)) {
+		return STATUS_INVALID_PARAMETER;
+	}
+
+	if (Source->Version == 3 &&
+		Source->CallbackPriority >= TP_CALLBACK_PRIORITY_INVALID) {
+		return STATUS_INVALID_PARAMETER;
+	}
+#endif
+
+	if ((Source->Pool != NULL &&
+		 Source->Pool != &LdkpDefaultThreadPool) ||
+		Source->CleanupGroup != NULL ||
+		Source->CleanupGroupCancelCallback != NULL ||
+		Source->FinalizationCallback != NULL) {
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	if (Source->ActivationContext != NULL &&
+		Source->ActivationContext != (struct _ACTIVATION_CONTEXT *)(LONG_PTR)-1) {
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	*Destination = *Source;
+	if (Destination->Pool == NULL) {
+		Destination->Pool = &LdkpDefaultThreadPool;
+	}
+	return STATUS_SUCCESS;
+}
+
+VOID
+LdkpDereferenceThreadpoolWork (
+	_Inout_ PTP_WORK Work
+	)
+{
+	if (InterlockedDecrement( &Work->ReferenceCount ) == 0) {
+		ExFreeToNPagedLookasideList( &LdkpThreadpoolWorkLookaside,
+									 Work );
+	}
+}
+
+VOID
+LdkpCompleteThreadpoolWorkItem (
+	_Inout_ PTP_WORK Work
+	)
+{
+	if (InterlockedDecrement( &Work->OutstandingCount ) == 0) {
+		InterlockedAnd( &Work->Flags,
+						~LDK_TP_WORK_FLAGS_CANCEL_REQUESTED );
+		KeSetEvent( &Work->Event,
+					IO_NO_INCREMENT,
+					FALSE );
+	}
+
+	LdkpDereferenceThreadpoolWork( Work );
+}
+
 
 
 WINBASEAPI
@@ -156,9 +252,12 @@ CreateThreadpoolWork (
     _In_opt_ PTP_CALLBACK_ENVIRON pcbe
     )
 {
-	if (ARGUMENT_PRESENT(pcbe)) {
-		LDK_DIAGNOSTIC_BREAK();
-		LdkSetLastNTError(STATUS_NOT_SUPPORTED);
+	NTSTATUS Status;
+
+	PAGED_CODE();
+
+	if (! ARGUMENT_PRESENT(pfnwk)) {
+		SetLastError( ERROR_INVALID_PARAMETER );
 		return NULL;
 	}
 
@@ -168,15 +267,24 @@ CreateThreadpoolWork (
 		return NULL;
 	}
 
+	Status = LdkpCaptureThreadpoolCallbackEnvironment( pcbe,
+													   &work->CallbackEnvironment );
+	if (! NT_SUCCESS(Status)) {
+		ExFreeToNPagedLookasideList( &LdkpThreadpoolWorkLookaside,
+									 work );
+		LdkSetLastNTError( Status );
+		return NULL;
+	}
+
 	KeInitializeEvent( &work->Event,
 					   NotificationEvent,
-					   FALSE );
+					   TRUE );
 
 	work->ReferenceCount = 1;
 	work->Flags = 0;
+	work->OutstandingCount = 0;
 	work->WorkCallback = pfnwk;
 	work->CallbackParameter = pv;
-	work->CallbackEnvironment = pcbe ? pcbe : &LdkpDefaultCallbackEnviron;
 	return work;
 }
 
@@ -189,49 +297,63 @@ LdkpThreadpoolWokerThreadRoutine (
     )
 {
 	PTP_WORK Work = Item->Work;
+	SINGLE_LIST_ENTRY ModuleList;
+	BOOLEAN InvokeCallback;
+	HMODULE RaceDll;
+	BOOLEAN ReleaseRaceDll;
+	NTSTATUS Status;
 
-	if (FlagOn(Work->Flags, LDK_TP_WORK_FLAGS_CANCEL_REQUESTED)) {
-		InterlockedDecrement( &Work->ReferenceCount );
-		return;
-	}
+	InvokeCallback = ! FlagOn( InterlockedCompareExchange( &Work->Flags,
+															0,
+															0 ),
+							   LDK_TP_WORK_FLAGS_CANCEL_REQUESTED );
 
 	TP_CALLBACK_INSTANCE Instance;
 	Instance.ModuleList.Next = NULL;
 	KeInitializeSpinLock( &Instance.Lock );
 	Instance.DeletePending = FALSE;
 
-	Work->WorkCallback( &Instance,
-						Work->CallbackParameter,
-						Work );
+	ReleaseRaceDll = FALSE;
+	RaceDll = (HMODULE)Work->CallbackEnvironment.RaceDll;
+	if (InvokeCallback &&
+		RaceDll != NULL) {
+		Status = LdrAddRefDll( 0,
+							   RaceDll );
+		ReleaseRaceDll = NT_SUCCESS(Status);
+	}
 
-	KeSetEvent( &Work->Event,
-				IO_NO_INCREMENT,
-				FALSE );
+	if (InvokeCallback) {
+		Work->WorkCallback( &Instance,
+							Work->CallbackParameter,
+							Work );
+	}
 
 	KIRQL OldIrql;
 	KeAcquireSpinLock( &Instance.Lock,
 					   &OldIrql );
 	Instance.DeletePending = TRUE;
-	PSINGLE_LIST_ENTRY Entry = PopEntryList( &Instance.ModuleList );
+	ModuleList.Next = Instance.ModuleList.Next;
+	Instance.ModuleList.Next = NULL;
+	KeReleaseSpinLock( &Instance.Lock,
+					   OldIrql );
+
+	PSINGLE_LIST_ENTRY Entry = ModuleList.Next;
 	while (Entry) {
+		PSINGLE_LIST_ENTRY NextEntry = Entry->Next;
 		PLDK_FREE_MODULE_ENTRY module = CONTAINING_RECORD(Entry, LDK_FREE_MODULE_ENTRY, Links);
 		FreeLibrary( module->hModule );
 		ExFreeToNPagedLookasideList( &LdkpFreeModuleEntryLookaside,
 									 Entry );
-		Entry = PopEntryList( &Instance.ModuleList );
+		Entry = NextEntry;
 	}
-	KeReleaseSpinLock( &Instance.Lock,
-					   OldIrql );
 
-	InterlockedDecrement( &Work->ReferenceCount );
-
-	if (FlagOn(Work->Flags, LDK_TP_WORK_FLAGS_DELETE_REQUESTED)) {
-		ExFreeToNPagedLookasideList( &LdkpThreadpoolWorkLookaside,
-									 Work );
+	if (ReleaseRaceDll) {
+		FreeLibrary( RaceDll );
 	}
 
 	ExFreeToNPagedLookasideList( &LdkpThreadpoolWorkQueItemLookaside,
 								 Item );
+	LdkpCompleteThreadpoolWorkItem( Work );
 }
 
 WINBASEAPI
@@ -241,24 +363,27 @@ SubmitThreadpoolWork (
     _Inout_ PTP_WORK pwk
     )
 {
-	if (InterlockedIncrement( &pwk->ReferenceCount ) <= 1) {
-		LDK_DIAGNOSTIC_BREAK();
+	if (FlagOn( InterlockedCompareExchange( &pwk->Flags,
+											0,
+											0 ),
+				LDK_TP_WORK_FLAGS_DELETE_REQUESTED )) {
 		LdkSetLastNTError( STATUS_DELETE_PENDING );
 		return;
 	}
 
-	if (InterlockedBitTestAndSet( &pwk->Flags,
-								  LDK_TP_WORK_FLAGS_STARTED_BIT_INDEX )) {
-		LDK_DIAGNOSTIC_BREAK();
-		LdkSetLastNTError(STATUS_ALREADY_REGISTERED);
-		InterlockedDecrement( &pwk->ReferenceCount );
-		return;
-	}
+	InterlockedIncrement( &pwk->ReferenceCount );
+	InterlockedIncrement( &pwk->OutstandingCount );
+	KeResetEvent( &pwk->Event );
 
 	PLDK_THREAD_POOL_WORK_ITEM item = ExAllocateFromNPagedLookasideList( &LdkpThreadpoolWorkQueItemLookaside );
 	if (!item) {
 		LdkSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
-		InterlockedDecrement( &pwk->ReferenceCount );
+		if (InterlockedDecrement( &pwk->OutstandingCount ) == 0) {
+			KeSetEvent( &pwk->Event,
+						IO_NO_INCREMENT,
+						FALSE );
+		}
+		LdkpDereferenceThreadpoolWork( pwk );
 		return;
 	}
 
@@ -285,16 +410,13 @@ WaitForThreadpoolWorkCallbacks (
 	PAGED_CODE();
 
 	if (InterlockedIncrement( &pwk->ReferenceCount ) <= 1) {
-		LDK_DIAGNOSTIC_BREAK();
 		LdkSetLastNTError( STATUS_DELETE_PENDING );
 		return;
 	}
 
-	if (fCancelPendingCallbacks && (! FlagOn(pwk->Flags, LDK_TP_WORK_FLAGS_STARTED))) {
+	if (fCancelPendingCallbacks) {
 		InterlockedOr( &pwk->Flags,
 					   LDK_TP_WORK_FLAGS_CANCEL_REQUESTED );
-		ASSERT(InterlockedDecrement( &pwk->ReferenceCount ) > 0);
-		return;
 	}
 
 	NTSTATUS Status = KeWaitForSingleObject( &pwk->Event,
@@ -305,7 +427,11 @@ WaitForThreadpoolWorkCallbacks (
 	if (! NT_SUCCESS(Status)) {
 		LdkSetLastNTError( Status );
 	}
-	ASSERT(InterlockedDecrement( &pwk->ReferenceCount ) > 0);
+	if (fCancelPendingCallbacks) {
+		InterlockedAnd( &pwk->Flags,
+						~LDK_TP_WORK_FLAGS_CANCEL_REQUESTED );
+	}
+	LdkpDereferenceThreadpoolWork( pwk );
 }
 
 WINBASEAPI
@@ -331,21 +457,27 @@ FreeLibraryWhenCallbackReturns (
     _In_ HMODULE mod
     )
 {
+	PLDK_FREE_MODULE_ENTRY Module;
 	KIRQL OldIrql;
+
+	Module = ExAllocateFromNPagedLookasideList( &LdkpFreeModuleEntryLookaside );
+	if (! Module) {
+		return;
+	}
+	Module->hModule = mod;
+
 	KeAcquireSpinLock( &pci->Lock,
 					   &OldIrql );
 
 	if (pci->DeletePending) {
 		KeReleaseSpinLock( &pci->Lock,
 						   OldIrql );
+		ExFreeToNPagedLookasideList( &LdkpFreeModuleEntryLookaside,
+									 Module );
 		return;
 	}
-	PLDK_FREE_MODULE_ENTRY Module = ExAllocateFromNPagedLookasideList( &LdkpFreeModuleEntryLookaside );
-	if (Module) {
-		Module->hModule = mod;
-		PushEntryList( &pci->ModuleList,
-					   &Module->Links );
-	}
+	PushEntryList( &pci->ModuleList,
+				   &Module->Links );
 	KeReleaseSpinLock( &pci->Lock,
 					   OldIrql );
 }
