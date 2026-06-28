@@ -16,9 +16,9 @@ Status guide:
 
 | Area | Representative APIs | Status | Notes |
 | --- | --- | --- | --- |
-| Loader | `LoadLibraryA/W`, `LoadLibraryExA/W`, `FreeLibrary`, `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W` | Experimental | Supports tested name/ordinal export lookup, import-by-ordinal, load counts, pinning, basic acyclic import dependency ownership, selected `LoadLibraryExW` search flags, `DONT_RESOLVE_DLL_REFERENCES`, and resource/datafile handles. Complex dependency graphs still need workload validation. See [Loader](../runtime/loader.md). |
+| Loader | `LoadLibraryA/W`, `LoadLibraryExA/W`, `FreeLibrary`, `GetProcAddress`, `GetModuleHandleA/W`, `GetModuleFileNameA/W`, `AddDllDirectory`, `RemoveDllDirectory`, `SetDefaultDllDirectories` | Experimental | Supports tested name/ordinal export lookup, import-by-ordinal, load counts, pinning, basic acyclic import dependency ownership, process-wide user DLL directories, selected `LoadLibraryExW` search flags, `DONT_RESOLVE_DLL_REFERENCES`, and resource/datafile handles. Complex dependency graphs still need workload validation. See [Loader](../runtime/loader.md). |
 | Runtime state | `GetLastError`, `SetLastError`, `GetStartupInfoA/W`, `GetCurrentProcess`, `GetCurrentProcessId`, `OpenProcess`, `GetCurrentThread` | Partial | Process state is backed by the LDK runtime instance, while thread identity follows real kernel threads with LDK TEB sidecars. |
-| Environment and paths | `GetEnvironmentVariableA/W`, `SetEnvironmentVariableA/W`, `GetEnvironmentStringsA/W`, `GetCurrentDirectoryA/W`, `SetCurrentDirectoryA/W`, `SetDllDirectoryA/W`, `GetCommandLineA/W` | Partial | Backed by `RTL_USER_PROCESS_PARAMETERS` and LDK PEB path state. See [Environment and paths](../runtime/environment-and-paths.md). |
+| Environment and paths | `GetEnvironmentVariableA/W`, `SetEnvironmentVariableA/W`, `GetEnvironmentStringsA/W`, `GetCurrentDirectoryA/W`, `SetCurrentDirectoryA/W`, `SetDllDirectoryA/W`, `GetDllDirectoryA/W`, `GetCommandLineA/W` | Partial | Backed by `RTL_USER_PROCESS_PARAMETERS` and LDK PEB path state. See [Environment and paths](../runtime/environment-and-paths.md). |
 | Synchronization | Critical sections, condition variables, waits, `Sleep`, `WaitOnAddress`, `WakeByAddressSingle`, `WakeByAddressAll` | Partial | Common paths are tested, including multi-threaded wait-on-address stress. See [Synchronization](../runtime/synchronization.md). |
 | Threads | `CreateThread`, `OpenThread`, `ExitThread`, `GetExitCodeThread`, `GetThreadTimes`, priority helpers | Partial | Uses kernel system threads. `CREATE_SUSPENDED` is not supported. See [Threading and callbacks](../runtime/threading-and-callbacks.md). |
 | FLS | `FlsAlloc`, `FlsFree`, `FlsGetValue`, `FlsSetValue` | Partial | Stored in LDK TEB records. Callback lifetime is tied to thread exit and LDK teardown. |
@@ -36,7 +36,7 @@ Status guide:
 
 | Area | Representative APIs | Status | Notes |
 | --- | --- | --- | --- |
-| Loader | `LdrLoadDll`, `LdrUnloadDll`, `LdrGetProcedureAddress`, `LdrGetDllHandle` | Experimental | Wraps the LDK loader and module list. |
+| Loader | `LdrLoadDll`, `LdrUnloadDll`, `LdrGetProcedureAddress`, `LdrGetDllHandle` | Experimental | Wraps the LDK loader and module list. `LdrGetDllHandle` covers tested name and path-aware lookup paths. |
 | Synchronization | `RtlInitializeCriticalSection`, `RtlEnterCriticalSection`, `RtlLeaveCriticalSection`, condition-variable RTL APIs, SRW helpers | Partial | Implemented in LDK over kernel wait primitives and wait-on-address helpers. |
 | Wait-on-address | `RtlWaitOnAddress`, `RtlWakeAddressSingle`, `RtlWakeAddressAll` | Partial | Uses LDK alert-by-thread-id primitives internally. |
 | Native alert wait | `NtAlertThreadByThreadId`, `NtWaitForAlertByThreadId`, `Zw*` aliases | Partial | Pending alerts are keyed by the target `PETHREAD` object to avoid stale thread-id reuse. |

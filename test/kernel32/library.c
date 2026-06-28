@@ -151,6 +151,28 @@ VerifyResourceOnlyLoad (
     return TRUE;
 }
 
+static
+BOOL
+CopyWideAsciiForTest (
+    _In_ LPCWSTR Source,
+    _Out_writes_(BufferCch) LPSTR Buffer,
+    _In_ DWORD BufferCch
+    )
+{
+    DWORD Index;
+
+    for (Index = 0; Source[Index] != UNICODE_NULL; Index++) {
+        if (Index + 1 >= BufferCch ||
+            Source[Index] > 0x7f) {
+            return FALSE;
+        }
+        Buffer[Index] = (CHAR)Source[Index];
+    }
+
+    Buffer[Index] = ANSI_NULL;
+    return TRUE;
+}
+
 BOOLEAN
 LibraryTest (
     VOID
@@ -159,7 +181,10 @@ LibraryTest (
     PAGED_CODE();
 
     WCHAR DllDirectory[MAX_PATH];
+    WCHAR DllDirectoryProbe[MAX_PATH];
     WCHAR DependencyOwnerPath[MAX_PATH];
+    CHAR DllDirectoryA[MAX_PATH];
+    CHAR DllDirectoryProbeA[MAX_PATH];
     HMODULE hFailAttach;
 
     printf("Library Test\n");
@@ -178,6 +203,24 @@ LibraryTest (
                GetLastError());
        return FALSE;
     }
+    if (GetDllDirectoryW( 0,
+                          NULL ) != 1) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryW(empty query) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    DllDirectoryProbe[0] = L'X';
+    if (GetDllDirectoryW( RTL_NUMBER_OF(DllDirectoryProbe),
+                          DllDirectoryProbe ) != 0 ||
+        DllDirectoryProbe[0] != UNICODE_NULL) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryW(empty buffer) ErrorCode = %lu Value = %ws\n",
+               GetLastError(),
+               DllDirectoryProbe);
+       return FALSE;
+    }
+    printf("[Success] GetDllDirectoryW empty state\n");
 
     HMODULE hModule = LoadLibraryW( L"Test.dll" );
     if (!hModule) {
@@ -537,6 +580,79 @@ LibraryTest (
                GetLastError());
        return FALSE;
     }
+    DWORD DllDirectoryLength = (DWORD)wcslen( DllDirectory );
+    if (GetDllDirectoryW( 0,
+                          NULL ) != DllDirectoryLength + 1) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryW(test directory query) ErrorCode = %lu\n",
+               GetLastError());
+       SetDllDirectoryW( NULL );
+       return FALSE;
+    }
+    DllDirectoryProbe[0] = L'X';
+    if (GetDllDirectoryW( 1,
+                          DllDirectoryProbe ) != DllDirectoryLength + 1 ||
+        DllDirectoryProbe[0] != UNICODE_NULL) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryW(test directory small buffer) ErrorCode = %lu\n",
+               GetLastError());
+       SetDllDirectoryW( NULL );
+       return FALSE;
+    }
+    if (GetDllDirectoryW( RTL_NUMBER_OF(DllDirectoryProbe),
+                          DllDirectoryProbe ) != DllDirectoryLength ||
+        wcscmp( DllDirectoryProbe,
+                DllDirectory ) != 0) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryW(test directory) ErrorCode = %lu Value = %ws Expected = %ws\n",
+               GetLastError(),
+               DllDirectoryProbe,
+               DllDirectory);
+       SetDllDirectoryW( NULL );
+       return FALSE;
+    }
+    if (!CopyWideAsciiForTest( DllDirectory,
+                               DllDirectoryA,
+                               RTL_NUMBER_OF(DllDirectoryA) )) {
+       fprintf(stderr,
+               "[Failed] test DLL directory is not ASCII-compatible for GetDllDirectoryA\n");
+       SetDllDirectoryW( NULL );
+       return FALSE;
+    }
+    DWORD DllDirectoryALength = 0;
+    while (DllDirectoryA[DllDirectoryALength] != ANSI_NULL) {
+       DllDirectoryALength++;
+    }
+    if (GetDllDirectoryA( 0,
+                          NULL ) != DllDirectoryALength + 1) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryA(test directory query) ErrorCode = %lu\n",
+               GetLastError());
+       SetDllDirectoryW( NULL );
+       return FALSE;
+    }
+    DWORD DllDirectoryAReturn = GetDllDirectoryA( RTL_NUMBER_OF(DllDirectoryProbeA),
+                                                  DllDirectoryProbeA );
+    DWORD DllDirectoryAActualLength = 0;
+    while (DllDirectoryProbeA[DllDirectoryAActualLength] != ANSI_NULL) {
+       DllDirectoryAActualLength++;
+    }
+    if ((DllDirectoryAReturn != DllDirectoryAActualLength &&
+         DllDirectoryAReturn + 1 != DllDirectoryAActualLength) ||
+        strcmp( DllDirectoryProbeA,
+                DllDirectoryA ) != 0) {
+       fprintf(stderr,
+               "[Failed] GetDllDirectoryA(test directory) Return = %lu ActualLength = %lu ExpectedLength = %lu ErrorCode = %lu Value = %s Expected = %s\n",
+               DllDirectoryAReturn,
+               DllDirectoryAActualLength,
+               DllDirectoryALength,
+               GetLastError(),
+               DllDirectoryProbeA,
+               DllDirectoryA);
+       SetDllDirectoryW( NULL );
+       return FALSE;
+    }
+    printf("[Success] GetDllDirectoryA/W test directory\n");
 
     HMODULE hUserDirs = LoadLibraryExW( L"DependencyOwner.dll",
                                         NULL,
@@ -579,6 +695,71 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] LoadLibraryExW SEARCH_USER_DIRS\n");
+
+    if (AddDllDirectory( L"relative-directory" ) != NULL ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+       fprintf(stderr,
+               "[Failed] AddDllDirectory(relative) was not rejected ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    DLL_DIRECTORY_COOKIE UserCookie = AddDllDirectory( DllDirectory );
+    if (!UserCookie) {
+       fprintf(stderr,
+               "[Failed] AddDllDirectory(test directory) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    HMODULE hAddedUserDir = LoadLibraryExW( L"DependencyOwner.dll",
+                                            NULL,
+                                            LOAD_LIBRARY_SEARCH_USER_DIRS );
+    if (!hAddedUserDir) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(DependencyOwner.dll, AddDllDirectory user dir) ErrorCode = %lu\n",
+               GetLastError());
+       RemoveDllDirectory( UserCookie );
+       return FALSE;
+    }
+    dependencyOwnerFn = (TEST_FN)GetProcAddress( hAddedUserDir, "DependencyOwnerFunction" );
+    if (!dependencyOwnerFn ||
+        dependencyOwnerFn(10) != 34) {
+       fprintf(stderr,
+               "[Failed] AddDllDirectory DependencyOwnerFunction ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hAddedUserDir );
+       RemoveDllDirectory( UserCookie );
+       return FALSE;
+    }
+    if (!FreeLibrary( hAddedUserDir )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DependencyOwner.dll AddDllDirectory) ErrorCode = %lu\n",
+               GetLastError());
+       RemoveDllDirectory( UserCookie );
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll stayed loaded after AddDllDirectory owner unload ErrorCode = %lu\n",
+               GetLastError());
+       RemoveDllDirectory( UserCookie );
+       return FALSE;
+    }
+    if (!RemoveDllDirectory( UserCookie )) {
+       fprintf(stderr,
+               "[Failed] RemoveDllDirectory(test directory) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (LoadLibraryExW( L"DependencyOwner.dll",
+                        NULL,
+                        LOAD_LIBRARY_SEARCH_USER_DIRS ) != NULL) {
+       fprintf(stderr,
+               "[Failed] SEARCH_USER_DIRS succeeded after RemoveDllDirectory\n");
+       return FALSE;
+    }
+    printf("[Success] AddDllDirectory / RemoveDllDirectory\n");
 
     HMODULE hDontResolve = LoadLibraryExW( L"DependencyOwner.dll",
                                            NULL,
@@ -677,6 +858,44 @@ LibraryTest (
     }
     printf("[Success] LoadLibraryExW LOAD_WITH_ALTERED_SEARCH_PATH\n");
 
+    for (DWORD Loop = 0; Loop < 16; Loop++) {
+       HMODULE hStress = LoadLibraryExW( DependencyOwnerPath,
+                                         NULL,
+                                         LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR );
+       if (!hStress) {
+          fprintf(stderr,
+                  "[Failed] Dependency graph stress LoadLibraryExW loop %lu ErrorCode = %lu\n",
+                  Loop,
+                  GetLastError());
+          return FALSE;
+       }
+       dependencyOwnerFn = (TEST_FN)GetProcAddress( hStress, "DependencyOwnerFunction" );
+       if (!dependencyOwnerFn ||
+           dependencyOwnerFn((LONG)Loop) != (LONG)Loop + 24) {
+          fprintf(stderr,
+                  "[Failed] Dependency graph stress DependencyOwnerFunction loop %lu ErrorCode = %lu\n",
+                  Loop,
+                  GetLastError());
+          FreeLibrary( hStress );
+          return FALSE;
+       }
+       if (!FreeLibrary( hStress )) {
+          fprintf(stderr,
+                  "[Failed] Dependency graph stress FreeLibrary loop %lu ErrorCode = %lu\n",
+                  Loop,
+                  GetLastError());
+          return FALSE;
+       }
+       if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+          fprintf(stderr,
+                  "[Failed] AutoDependency.dll stayed loaded after dependency stress loop %lu ErrorCode = %lu\n",
+                  Loop,
+                  GetLastError());
+          return FALSE;
+       }
+    }
+    printf("[Success] Dependency graph load/unload stress\n");
+
     if (!VerifyResourceOnlyLoad( L"Test.dll",
                                  LOAD_LIBRARY_AS_DATAFILE,
                                  "LOAD_LIBRARY_AS_DATAFILE" )) {
@@ -746,6 +965,68 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] GetModuleHandleEx PIN\n");
+
+    if (SetDefaultDllDirectories( 0 ) ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+       fprintf(stderr,
+               "[Failed] SetDefaultDllDirectories(0) was not rejected ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    DLL_DIRECTORY_COOKIE DefaultCookie = AddDllDirectory( DllDirectory );
+    if (!DefaultCookie) {
+       fprintf(stderr,
+               "[Failed] AddDllDirectory(default search directory) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (!SetDefaultDllDirectories( LOAD_LIBRARY_SEARCH_USER_DIRS )) {
+       fprintf(stderr,
+               "[Failed] SetDefaultDllDirectories(USER_DIRS) ErrorCode = %lu\n",
+               GetLastError());
+       RemoveDllDirectory( DefaultCookie );
+       return FALSE;
+    }
+
+    HMODULE hDefaultSearch = LoadLibraryW( L"DependencyOwner.dll" );
+    if (!hDefaultSearch) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(DependencyOwner.dll) with default user dirs ErrorCode = %lu\n",
+               GetLastError());
+       RemoveDllDirectory( DefaultCookie );
+       return FALSE;
+    }
+    dependencyOwnerFn = (TEST_FN)GetProcAddress( hDefaultSearch, "DependencyOwnerFunction" );
+    if (!dependencyOwnerFn ||
+        dependencyOwnerFn(10) != 34) {
+       fprintf(stderr,
+               "[Failed] default user dirs DependencyOwnerFunction ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( hDefaultSearch );
+       RemoveDllDirectory( DefaultCookie );
+       return FALSE;
+    }
+    if (!FreeLibrary( hDefaultSearch )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(DependencyOwner.dll default user dirs) ErrorCode = %lu\n",
+               GetLastError());
+       RemoveDllDirectory( DefaultCookie );
+       return FALSE;
+    }
+    if (!RemoveDllDirectory( DefaultCookie )) {
+       fprintf(stderr,
+               "[Failed] RemoveDllDirectory(default search directory) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    if (GetModuleHandleW( L"AutoDependency.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] AutoDependency.dll stayed loaded after default user dirs owner unload ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+    printf("[Success] SetDefaultDllDirectories USER_DIRS\n");
 
     printf("[Success] Library Test\n\n");
     return TRUE;

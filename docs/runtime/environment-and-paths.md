@@ -46,8 +46,15 @@ callers that accidentally include a leading quote. The current directory is
 stored in the LDK process parameters and guarded with the PEB lock where needed.
 
 `SetDllDirectoryA/W` stores one process-wide user DLL directory in the LDK PEB.
-Passing `NULL` clears that directory and restores the default LDK loader search
-state.
+`GetDllDirectoryA/W` reports that stored value. Passing `NULL` to
+`SetDllDirectoryA/W` clears the directory and restores the default LDK loader
+search state.
+
+`AddDllDirectory` adds an absolute directory to the process-wide user DLL
+directory list and returns an opaque `DLL_DIRECTORY_COOKIE`. `RemoveDllDirectory`
+removes that cookie from the list. `SetDefaultDllDirectories` stores the
+process-wide default search flags used by later `LoadLibraryA/W` calls that do
+not pass explicit `LOAD_LIBRARY_SEARCH_*` flags.
 
 ## DLL search path
 
@@ -59,9 +66,9 @@ ahead of same-named DLLs in system directories.
 Selected `LoadLibraryExW` search flags override or extend that default. The
 supported subset covers the system directory, the current image directory, the
 directory of a fully qualified DLL name, the default-directory combination, and
-`LOAD_WITH_ALTERED_SEARCH_PATH`. `LOAD_LIBRARY_SEARCH_USER_DIRS` uses the
-directory set by `SetDllDirectoryA/W`; LDK does not currently maintain the full
-Windows `AddDllDirectory` list.
+`LOAD_WITH_ALTERED_SEARCH_PATH`. `LOAD_LIBRARY_SEARCH_USER_DIRS` uses both the
+single directory set by `SetDllDirectoryA/W` and the cookie list populated by
+`AddDllDirectory`.
 
 `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` requires a fully qualified DLL path, matching
 the Win32 contract. Search flags are intentionally treated as an explicit mode:

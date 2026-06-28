@@ -8,13 +8,25 @@ LdkpCheckForSameCurdir (
     _In_ PUNICODE_STRING PathName
     );
 
+NTSTATUS
+LdkpDuplicateDllDirectoryString (
+    _In_opt_ PCUNICODE_STRING PathName,
+    _Out_ PUNICODE_STRING Directory
+    );
+
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, GetCurrentDirectoryA)
 #pragma alloc_text(PAGE, GetCurrentDirectoryW)
+#pragma alloc_text(PAGE, GetDllDirectoryA)
+#pragma alloc_text(PAGE, GetDllDirectoryW)
 #pragma alloc_text(PAGE, LdkpCheckForSameCurdir)
+#pragma alloc_text(PAGE, LdkpDuplicateDllDirectoryString)
 #pragma alloc_text(PAGE, SetCurrentDirectoryA)
 #pragma alloc_text(PAGE, SetCurrentDirectoryW)
+#pragma alloc_text(PAGE, AddDllDirectory)
+#pragma alloc_text(PAGE, RemoveDllDirectory)
+#pragma alloc_text(PAGE, SetDefaultDllDirectories)
 #pragma alloc_text(PAGE, SetDllDirectoryA)
 #pragma alloc_text(PAGE, SetDllDirectoryW)
 #pragma alloc_text(PAGE, GetEnvironmentStrings)
@@ -290,6 +302,74 @@ LdkpIsDirectorySeparator (
     return Character == L'\\' || Character == L'/';
 }
 
+BOOLEAN
+LdkpIsFullyQualifiedDllDirectory (
+    _In_ PCWSTR Path
+    )
+{
+    if (! Path || ! *Path) {
+        return FALSE;
+    }
+
+    if ((Path[0] == L'\\') &&
+        Path[1] &&
+        Path[2] &&
+        Path[3] &&
+        (Path[1] == L'?') &&
+        (Path[2] == L'?') &&
+        (Path[3] == L'\\')) {
+        Path += 4;
+    }
+
+    if (LdkpIsDirectorySeparator(Path[0]) &&
+        Path[1] &&
+        LdkpIsDirectorySeparator(Path[1])) {
+        return TRUE;
+    }
+
+    return Path[0] &&
+           Path[1] &&
+           Path[2] &&
+           Path[1] == L':' &&
+           LdkpIsDirectorySeparator(Path[2]);
+}
+
+NTSTATUS
+LdkpDuplicateDllDirectoryString (
+    _In_opt_ PCUNICODE_STRING PathName,
+    _Out_ PUNICODE_STRING Directory
+    )
+{
+    NTSTATUS Status;
+
+    Directory->Buffer = NULL;
+    Directory->Length = 0;
+    Directory->MaximumLength = 0;
+
+    if (! ARGUMENT_PRESENT(PathName) ||
+        ! PathName->Buffer ||
+        ! PathName->Length) {
+        return STATUS_SUCCESS;
+    }
+
+    if (PathName->Length > MAXUSHORT - sizeof(UNICODE_NULL)) {
+        return STATUS_NAME_TOO_LONG;
+    }
+
+    Directory->MaximumLength = PathName->Length + sizeof(UNICODE_NULL);
+    Status = LdkAllocateUnicodeString( Directory );
+    if (! NT_SUCCESS(Status)) {
+        return Status;
+    }
+
+    RtlCopyMemory( Directory->Buffer,
+                   PathName->Buffer,
+                   PathName->Length );
+    Directory->Length = PathName->Length;
+    Directory->Buffer[Directory->Length / sizeof(WCHAR)] = UNICODE_NULL;
+    return STATUS_SUCCESS;
+}
+
 BOOL
 LdkpSetDllDirectory (
     _In_opt_ PCUNICODE_STRING PathName
@@ -297,42 +377,15 @@ LdkpSetDllDirectory (
 {
     UNICODE_STRING NewDirectory;
     UNICODE_STRING OldDirectory;
-    SIZE_T PathLength;
-    BOOLEAN AppendSeparator;
+    NTSTATUS Status;
 
     PAGED_CODE();
 
-    NewDirectory.Buffer = NULL;
-    NewDirectory.Length = 0;
-    NewDirectory.MaximumLength = 0;
-
-    if (ARGUMENT_PRESENT(PathName) &&
-        PathName->Buffer &&
-        PathName->Length) {
-        AppendSeparator = ! LdkpIsDirectorySeparator(
-                              PathName->Buffer[(PathName->Length / sizeof(WCHAR)) - 1] );
-        PathLength = PathName->Length +
-                     (AppendSeparator ? sizeof(WCHAR) : 0);
-
-        if (PathLength > MAXUSHORT - sizeof(UNICODE_NULL)) {
-            LdkSetLastNTError( STATUS_NAME_TOO_LONG );
-            return FALSE;
-        }
-
-        NewDirectory.MaximumLength = (USHORT)(PathLength + sizeof(UNICODE_NULL));
-        if (! NT_SUCCESS(LdkAllocateUnicodeString( &NewDirectory ))) {
-            LdkSetLastNTError( STATUS_NO_MEMORY );
-            return FALSE;
-        }
-
-        RtlCopyMemory( NewDirectory.Buffer,
-                       PathName->Buffer,
-                       PathName->Length );
-        NewDirectory.Length = PathName->Length;
-        if (AppendSeparator) {
-            NewDirectory.Buffer[NewDirectory.Length / sizeof(WCHAR)] = L'\\';
-            NewDirectory.Length += sizeof(WCHAR);
-        }
+    Status = LdkpDuplicateDllDirectoryString( PathName,
+                                              &NewDirectory );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
     }
 
     RtlAcquirePebLock();
@@ -341,6 +394,283 @@ LdkpSetDllDirectory (
     RtlReleasePebLock();
 
     LdkFreeUnicodeString( &OldDirectory );
+    return TRUE;
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+GetDllDirectoryW (
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPWSTR lpBuffer
+    )
+{
+    UNICODE_STRING Directory;
+    DWORD Length;
+    DWORD Required;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    Directory.Buffer = NULL;
+    Directory.Length = 0;
+    Directory.MaximumLength = 0;
+
+    RtlAcquirePebLock();
+    if (NtCurrentPeb()->DllDirectory.Length) {
+        Status = LdkDuplicateUnicodeString( &NtCurrentPeb()->DllDirectory,
+                                            &Directory );
+    }
+    RtlReleasePebLock();
+
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return 0;
+    }
+
+    Length = Directory.Length / sizeof(WCHAR);
+    Required = Length + 1;
+
+    if (Length == 0) {
+        if (nBufferLength == 0) {
+            return Required;
+        }
+        if (! lpBuffer) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return 0;
+        }
+        lpBuffer[0] = UNICODE_NULL;
+        return 0;
+    }
+
+    if (nBufferLength == 0) {
+        LdkFreeUnicodeString( &Directory );
+        return Required;
+    }
+
+    if (! lpBuffer) {
+        LdkFreeUnicodeString( &Directory );
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (nBufferLength <= Length) {
+        lpBuffer[0] = UNICODE_NULL;
+        LdkFreeUnicodeString( &Directory );
+        return Required;
+    }
+
+    RtlCopyMemory( lpBuffer,
+                   Directory.Buffer,
+                   Directory.Length );
+    lpBuffer[Length] = UNICODE_NULL;
+    LdkFreeUnicodeString( &Directory );
+    return Length;
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+GetDllDirectoryA (
+    _In_ DWORD nBufferLength,
+    _Out_writes_to_opt_(nBufferLength,return + 1) LPSTR lpBuffer
+    )
+{
+    UNICODE_STRING Directory;
+    ULONG ByteCount;
+    ULONG BytesWritten;
+    DWORD Required;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    PAGED_CODE();
+
+    Directory.Buffer = NULL;
+    Directory.Length = 0;
+    Directory.MaximumLength = 0;
+
+    RtlAcquirePebLock();
+    if (NtCurrentPeb()->DllDirectory.Length) {
+        Status = LdkDuplicateUnicodeString( &NtCurrentPeb()->DllDirectory,
+                                            &Directory );
+    }
+    RtlReleasePebLock();
+
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return 0;
+    }
+
+    if (Directory.Length == 0) {
+        if (nBufferLength == 0) {
+            return 1;
+        }
+        if (! lpBuffer) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return 0;
+        }
+        lpBuffer[0] = ANSI_NULL;
+        return 0;
+    }
+
+    Status = RtlUnicodeToMultiByteSize( &ByteCount,
+                                        Directory.Buffer,
+                                        Directory.Length );
+    if (! NT_SUCCESS(Status)) {
+        LdkFreeUnicodeString( &Directory );
+        LdkSetLastNTError( Status );
+        return 0;
+    }
+
+    Required = ByteCount + 1;
+    if (nBufferLength == 0) {
+        LdkFreeUnicodeString( &Directory );
+        return Required;
+    }
+
+    if (! lpBuffer) {
+        LdkFreeUnicodeString( &Directory );
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (nBufferLength <= ByteCount) {
+        lpBuffer[0] = ANSI_NULL;
+        LdkFreeUnicodeString( &Directory );
+        return Required;
+    }
+
+    Status = RtlUnicodeToMultiByteN( lpBuffer,
+                                     nBufferLength - 1,
+                                     &BytesWritten,
+                                     Directory.Buffer,
+                                     Directory.Length );
+    if (! NT_SUCCESS(Status)) {
+        LdkFreeUnicodeString( &Directory );
+        LdkSetLastNTError( Status );
+        return 0;
+    }
+
+    lpBuffer[BytesWritten] = ANSI_NULL;
+    LdkFreeUnicodeString( &Directory );
+    return BytesWritten;
+}
+
+WINBASEAPI
+DLL_DIRECTORY_COOKIE
+WINAPI
+AddDllDirectory (
+    _In_ PCWSTR NewDirectory
+    )
+{
+    UNICODE_STRING PathName;
+    PLDK_DLL_DIRECTORY Directory;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    if (! LdkpIsFullyQualifiedDllDirectory( NewDirectory )) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return NULL;
+    }
+
+    RtlInitUnicodeString( &PathName,
+                          NewDirectory );
+
+    Directory = RtlAllocateHeap( RtlProcessHeap(),
+                                 HEAP_ZERO_MEMORY,
+                                 sizeof(*Directory) );
+    if (! Directory) {
+        LdkSetLastNTError( STATUS_NO_MEMORY );
+        return NULL;
+    }
+
+    Status = LdkpDuplicateDllDirectoryString( &PathName,
+                                              &Directory->Path );
+    if (! NT_SUCCESS(Status)) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Directory );
+        LdkSetLastNTError( Status );
+        return NULL;
+    }
+
+    RtlAcquirePebLock();
+    InsertTailList( &NtCurrentPeb()->DllDirectoryListHead,
+                    &Directory->Links );
+    RtlReleasePebLock();
+
+    return (DLL_DIRECTORY_COOKIE)Directory;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+RemoveDllDirectory (
+    _In_ DLL_DIRECTORY_COOKIE Cookie
+    )
+{
+    PLDK_DLL_DIRECTORY Directory;
+    PLIST_ENTRY Entry;
+    BOOLEAN Found = FALSE;
+
+    PAGED_CODE();
+
+    if (! Cookie) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    Directory = (PLDK_DLL_DIRECTORY)Cookie;
+
+    RtlAcquirePebLock();
+    for (Entry = NtCurrentPeb()->DllDirectoryListHead.Flink;
+         Entry != &NtCurrentPeb()->DllDirectoryListHead;
+         Entry = Entry->Flink) {
+        if (CONTAINING_RECORD( Entry,
+                               LDK_DLL_DIRECTORY,
+                               Links ) == Directory) {
+            RemoveEntryList( &Directory->Links );
+            Found = TRUE;
+            break;
+        }
+    }
+    RtlReleasePebLock();
+
+    if (! Found) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    LdkFreeUnicodeString( &Directory->Path );
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 Directory );
+    return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetDefaultDllDirectories (
+    _In_ DWORD DirectoryFlags
+    )
+{
+    const DWORD ValidFlags = LOAD_LIBRARY_SEARCH_APPLICATION_DIR |
+                             LOAD_LIBRARY_SEARCH_USER_DIRS |
+                             LOAD_LIBRARY_SEARCH_SYSTEM32 |
+                             LOAD_LIBRARY_SEARCH_DEFAULT_DIRS;
+
+    PAGED_CODE();
+
+    if (DirectoryFlags == 0 ||
+        FlagOn(DirectoryFlags, ~ValidFlags)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    RtlAcquirePebLock();
+    NtCurrentPeb()->DefaultDllDirectories = DirectoryFlags;
+    RtlReleasePebLock();
     return TRUE;
 }
 

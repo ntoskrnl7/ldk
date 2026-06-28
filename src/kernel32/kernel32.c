@@ -220,6 +220,26 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		SetDllDirectoryW
 	},
 	{
+		"GetDllDirectoryA",
+		GetDllDirectoryA
+	},
+	{
+		"GetDllDirectoryW",
+		GetDllDirectoryW
+	},
+	{
+		"AddDllDirectory",
+		AddDllDirectory
+	},
+	{
+		"RemoveDllDirectory",
+		RemoveDllDirectory
+	},
+	{
+		"SetDefaultDllDirectories",
+		SetDefaultDllDirectories
+	},
+	{
 		"GetStdHandle",
 		GetStdHandle
 	},

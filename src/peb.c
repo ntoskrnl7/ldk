@@ -13,10 +13,16 @@ LDK_PEB LdkpPeb;
 
 UNICODE_STRING NtSystemRoot;
 
+VOID
+LdkpFreeDllDirectoryList (
+    VOID
+    );
+
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializePeb)
+#pragma alloc_text(PAGE, LdkpFreeDllDirectoryList)
 #pragma alloc_text(PAGE, LdkpTerminatePeb)
 #endif
 
@@ -387,6 +393,35 @@ LdkpInitializeProcessParameters (
 }
 
 VOID
+LdkpFreeDllDirectoryList (
+    VOID
+    )
+{
+    PLIST_ENTRY Entry;
+    PLDK_DLL_DIRECTORY Directory;
+
+    PAGED_CODE();
+
+    if (! LdkpPeb.DllDirectoryListHead.Flink ||
+        ! LdkpPeb.DllDirectoryListHead.Blink) {
+        return;
+    }
+
+    while (! IsListEmpty( &LdkpPeb.DllDirectoryListHead )) {
+        Entry = RemoveHeadList( &LdkpPeb.DllDirectoryListHead );
+        Directory = CONTAINING_RECORD( Entry,
+                                       LDK_DLL_DIRECTORY,
+                                       Links );
+        LdkFreeUnicodeString( &Directory->Path );
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Directory );
+    }
+
+    InitializeListHead( &LdkpPeb.DllDirectoryListHead );
+}
+
+VOID
 LdkpUninitializeProcessParameters (
     VOID
     )
@@ -406,6 +441,8 @@ LdkpUninitializeProcessParameters (
 
     LdkFreeUnicodeString( &LdkpProcessParameters.DllPath );
     LdkFreeUnicodeString( &LdkpPeb.DllDirectory );
+    LdkpFreeDllDirectoryList();
+    LdkpPeb.DefaultDllDirectories = 0;
     LdkFreeUnicodeString( &LdkpProcessParameters.CurrentDirectory.DosPath );
     LdkFreeUnicodeString( &LdkpProcessParameters.ImagePathName );
     RtlFreeHeap( RtlProcessHeap(),
@@ -509,6 +546,9 @@ LdkpInitializePeb (
 		LdkFreeUnicodeString( &LdkpPeb.RegistryPath );
         return STATUS_INSUFFICIENT_RESOURCES;
     }
+    InitializeListHead( &LdkpPeb.DllDirectoryListHead );
+    LdkpPeb.DefaultDllDirectories = 0;
+
     Status = LdkpInitializeProcessParameters( DriverObject,
                                               RegistryPath );
 	if (! NT_SUCCESS(Status)) {
