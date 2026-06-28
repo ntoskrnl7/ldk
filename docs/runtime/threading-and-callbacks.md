@@ -75,17 +75,31 @@ The modern threadpool work APIs are implemented over kernel work items:
 - `SubmitThreadpoolWork`
 - `WaitForThreadpoolWorkCallbacks`
 - `CloseThreadpoolWork`
+- `CreateThreadpoolCleanupGroup`
+- `CloseThreadpoolCleanupGroup`
+- `CloseThreadpoolCleanupGroupMembers`
 - `FreeLibraryWhenCallbackReturns`
 
 `QueueUserWorkItem` uses `RtlQueueWorkItem`.
 
-Custom threadpool callback environments are not supported. The current
-implementation is suitable for controlled work callbacks in tests, not as a
-drop-in replacement for the full Windows threadpool.
+Callback environments are supported for the default pool work-object path.
+LDK honors long-function, persistent, priority, race-with-DLL, cleanup group,
+and cleanup group cancel callback fields for tested work callbacks. Cleanup
+groups keep a list of member work objects so
+`CloseThreadpoolCleanupGroupMembers` can wait, optionally request pending
+callback cancellation, invoke the cleanup callback for each member, and close
+the member objects without holding the cleanup group lock while callbacks run.
+`CloseThreadpoolCleanupGroup` releases only the cleanup group object; callers
+should close group members first.
+
+The current implementation remains narrower than the full Windows threadpool:
+custom pools, activation contexts, finalization callbacks, timers, waits, and
+I/O completion threadpool objects are not implemented.
 
 ## Testing
 
 The test driver covers basic thread creation, TLS callback process/thread
 notifications, DllMain thread notifications, `DisableThreadLibraryCalls`, FLS
-callback behavior, legacy work items, modern threadpool work items, and
+callback behavior, legacy work items, modern threadpool work items, threadpool
+callback environments, cleanup group member close/cancel paths, and
 wait-on-address stress paths that create and join many worker threads.

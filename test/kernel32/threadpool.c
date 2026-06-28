@@ -41,6 +41,21 @@ ThreadPoolTestDeferredFreeCallback (
     _Inout_     PTP_WORK              Work
     );
 
+VOID
+NTAPI
+ThreadPoolTestCleanupGroupWorkCallback (
+    _Inout_     PTP_CALLBACK_INSTANCE Instance,
+    _Inout_opt_ PVOID                 Context,
+    _Inout_     PTP_WORK              Work
+    );
+
+VOID
+NTAPI
+ThreadPoolTestCleanupGroupCancelCallback (
+    _Inout_opt_ PVOID ObjectContext,
+    _Inout_opt_ PVOID CleanupContext
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, LegacyThreadPoolTest)
 #pragma alloc_text(PAGE, LegacyThreadWorkFunction)
@@ -48,6 +63,8 @@ ThreadPoolTestDeferredFreeCallback (
 #pragma alloc_text(PAGE, ThreadPoolTestWorkCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestRaceDllCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestDeferredFreeCallback)
+#pragma alloc_text(PAGE, ThreadPoolTestCleanupGroupWorkCallback)
+#pragma alloc_text(PAGE, ThreadPoolTestCleanupGroupCancelCallback)
 #endif
 #else
 #include <windows.h>
@@ -62,6 +79,14 @@ typedef struct _THREADPOOL_MODULE_CONTEXT {
     LONG Count;
     LONG ModuleWasLoaded;
 } THREADPOOL_MODULE_CONTEXT, *PTHREADPOOL_MODULE_CONTEXT;
+
+typedef struct _THREADPOOL_CLEANUP_GROUP_CONTEXT {
+    LONG WorkCallbacks;
+    LONG CleanupCallbacks;
+    LONG CleanupContextMatches;
+    LONG ObjectContextMatches;
+    PVOID ExpectedCleanupContext;
+} THREADPOOL_CLEANUP_GROUP_CONTEXT, *PTHREADPOOL_CLEANUP_GROUP_CONTEXT;
 
 DWORD
 WINAPI
@@ -157,6 +182,48 @@ ThreadPoolTestDeferredFreeCallback (
     InterlockedIncrement( &ModuleContext->Count );
 }
 
+VOID
+NTAPI
+ThreadPoolTestCleanupGroupWorkCallback (
+    _Inout_     PTP_CALLBACK_INSTANCE Instance,
+    _Inout_opt_ PVOID                 Context,
+    _Inout_     PTP_WORK              Work
+    )
+{
+    PTHREADPOOL_CLEANUP_GROUP_CONTEXT CleanupContext = (PTHREADPOOL_CLEANUP_GROUP_CONTEXT)Context;
+
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(Work);
+
+    PAGED_CODE();
+
+    InterlockedIncrement( &CleanupContext->WorkCallbacks );
+}
+
+VOID
+NTAPI
+ThreadPoolTestCleanupGroupCancelCallback (
+    _Inout_opt_ PVOID ObjectContext,
+    _Inout_opt_ PVOID CleanupContext
+    )
+{
+    PTHREADPOOL_CLEANUP_GROUP_CONTEXT GroupContext = (PTHREADPOOL_CLEANUP_GROUP_CONTEXT)ObjectContext;
+
+    PAGED_CODE();
+
+    if (GroupContext == NULL) {
+        return;
+    }
+
+    InterlockedIncrement( &GroupContext->CleanupCallbacks );
+    if (CleanupContext == GroupContext->ExpectedCleanupContext) {
+        InterlockedIncrement( &GroupContext->CleanupContextMatches );
+    }
+    if (ObjectContext == GroupContext) {
+        InterlockedIncrement( &GroupContext->ObjectContextMatches );
+    }
+}
+
 BOOLEAN
 ThreadPoolTest (
     VOID
@@ -167,11 +234,16 @@ ThreadPoolTest (
     PTP_WORK work = NULL;
     TP_CALLBACK_ENVIRON CallbackEnvironment;
     THREADPOOL_MODULE_CONTEXT ModuleContext;
+    THREADPOOL_CLEANUP_GROUP_CONTEXT CleanupGroupContext;
+    PTP_CLEANUP_GROUP CleanupGroup = NULL;
+    PVOID CleanupToken = &CleanupGroupContext;
     BOOLEAN Result = FALSE;
 
     PAGED_CODE();
     RtlZeroMemory( &ModuleContext,
                    sizeof(ModuleContext) );
+    RtlZeroMemory( &CleanupGroupContext,
+                   sizeof(CleanupGroupContext) );
 
     for (int i = 0; i < ARRAYSIZE(works); ++i) {
         works[i] = CreateThreadpoolWork(ThreadPoolTestWorkCallback, &count, NULL);
@@ -314,7 +386,100 @@ ThreadPoolTest (
     }
     ModuleContext.Module = NULL;
 
-    DbgPrint("[Success] Threadpool callback environment and reuse\n");
+    CleanupGroup = CreateThreadpoolCleanupGroup();
+    if (CleanupGroup == NULL) {
+        DbgPrint("[Failed] CreateThreadpoolCleanupGroup ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+
+    TpInitializeCallbackEnviron( &CallbackEnvironment );
+    TpSetCallbackCleanupGroup( &CallbackEnvironment,
+                               CleanupGroup,
+                               NULL );
+    for (int i = 0; i < 4; i++) {
+        work = CreateThreadpoolWork(ThreadPoolTestCleanupGroupWorkCallback,
+                                    &CleanupGroupContext,
+                                    &CallbackEnvironment);
+        if (work == NULL) {
+            DbgPrint("[Failed] CreateThreadpoolWork cleanup group submit ErrorCode = %lu\n", GetLastError());
+            goto FinalCleanup;
+        }
+        SubmitThreadpoolWork(work);
+        work = NULL;
+    }
+    CloseThreadpoolCleanupGroupMembers( CleanupGroup,
+                                        FALSE,
+                                        NULL );
+    TpDestroyCallbackEnviron( &CallbackEnvironment );
+
+    if (CleanupGroupContext.WorkCallbacks != 4) {
+        DbgPrint("[Failed] Threadpool cleanup group submit WorkCallbacks = %ld\n",
+                 CleanupGroupContext.WorkCallbacks);
+        goto FinalCleanup;
+    }
+
+    CleanupGroupContext.ExpectedCleanupContext = CleanupToken;
+    TpInitializeCallbackEnviron( &CallbackEnvironment );
+    TpSetCallbackCleanupGroup( &CallbackEnvironment,
+                               CleanupGroup,
+                               ThreadPoolTestCleanupGroupCancelCallback );
+    for (int i = 0; i < 3; i++) {
+        work = CreateThreadpoolWork(ThreadPoolTestCleanupGroupWorkCallback,
+                                    &CleanupGroupContext,
+                                    &CallbackEnvironment);
+        if (work == NULL) {
+            DbgPrint("[Failed] CreateThreadpoolWork cleanup group cancel ErrorCode = %lu\n", GetLastError());
+            goto FinalCleanup;
+        }
+        work = NULL;
+    }
+    CloseThreadpoolCleanupGroupMembers( CleanupGroup,
+                                        TRUE,
+                                        CleanupToken );
+    TpDestroyCallbackEnviron( &CallbackEnvironment );
+
+    if (CleanupGroupContext.WorkCallbacks != 4 ||
+        CleanupGroupContext.CleanupCallbacks != 3 ||
+        CleanupGroupContext.CleanupContextMatches != 3 ||
+        CleanupGroupContext.ObjectContextMatches != 3) {
+        DbgPrint("[Failed] Threadpool cleanup group cancel Work = %ld Cleanup = %ld CleanupContext = %ld ObjectContext = %ld\n",
+                 CleanupGroupContext.WorkCallbacks,
+                 CleanupGroupContext.CleanupCallbacks,
+                 CleanupGroupContext.CleanupContextMatches,
+                 CleanupGroupContext.ObjectContextMatches);
+        goto FinalCleanup;
+    }
+
+    TpInitializeCallbackEnviron( &CallbackEnvironment );
+    TpSetCallbackCleanupGroup( &CallbackEnvironment,
+                               CleanupGroup,
+                               ThreadPoolTestCleanupGroupCancelCallback );
+    work = CreateThreadpoolWork(ThreadPoolTestCleanupGroupWorkCallback,
+                                &CleanupGroupContext,
+                                &CallbackEnvironment);
+    if (work == NULL) {
+        DbgPrint("[Failed] CreateThreadpoolWork cleanup group unregister ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    CloseThreadpoolWork(work);
+    work = NULL;
+    CloseThreadpoolCleanupGroupMembers( CleanupGroup,
+                                        TRUE,
+                                        CleanupToken );
+    TpDestroyCallbackEnviron( &CallbackEnvironment );
+
+    if (CleanupGroupContext.CleanupCallbacks != 3 ||
+        CleanupGroupContext.WorkCallbacks != 4) {
+        DbgPrint("[Failed] Threadpool cleanup group unregister Work = %ld Cleanup = %ld\n",
+                 CleanupGroupContext.WorkCallbacks,
+                 CleanupGroupContext.CleanupCallbacks);
+        goto FinalCleanup;
+    }
+
+    CloseThreadpoolCleanupGroup( CleanupGroup );
+    CleanupGroup = NULL;
+
+    DbgPrint("[Success] Threadpool callback environment, cleanup group, and reuse\n");
     Result = TRUE;
 
 FinalCleanup:
@@ -331,6 +496,12 @@ FinalCleanup:
     if (ModuleContext.Module != NULL &&
         GetModuleHandleW( L"Test.dll" ) != NULL) {
         FreeLibrary( ModuleContext.Module );
+    }
+    if (CleanupGroup != NULL) {
+        CloseThreadpoolCleanupGroupMembers( CleanupGroup,
+                                            TRUE,
+                                            CleanupToken );
+        CloseThreadpoolCleanupGroup( CleanupGroup );
     }
     return Result;
 }
