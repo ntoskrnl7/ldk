@@ -17,6 +17,18 @@ typedef struct _TP_POOL
 	EX_SPIN_LOCK Lock;
 } TP_POOL, *PTP_POOL;
 
+typedef struct _TP_CLEANUP_GROUP
+{
+	KSPIN_LOCK Lock;
+	LIST_ENTRY WorkList;
+	LONG Flags;
+} TP_CLEANUP_GROUP, *PTP_CLEANUP_GROUP;
+
+#define LDK_TP_CLEANUP_GROUP_FLAGS_CLOSED		0x00000001
+
+#define TAG_TP_CLEANUP_GROUP	'pCgT'
+NPAGED_LOOKASIDE_LIST LdkpThreadpoolCleanupGroupLookaside;
+
 
 typedef struct _TP_CALLBACK_INSTANCE
 {
@@ -38,6 +50,9 @@ typedef struct _TP_WORK
 	LONG OutstandingCount;
 
 	KEVENT Event;
+	LIST_ENTRY CleanupGroupLinks;
+	PTP_CLEANUP_GROUP CleanupGroup;
+	PTP_CLEANUP_GROUP_CANCEL_CALLBACK CleanupGroupCancelCallback;
 
     PVOID CallbackParameter;
     PTP_WORK_CALLBACK WorkCallback;
@@ -99,12 +114,27 @@ LdkpCompleteThreadpoolWorkItem (
 	_Inout_ PTP_WORK Work
 	);
 
+NTSTATUS
+LdkpRegisterThreadpoolCleanupGroupWork (
+	_Inout_ PTP_WORK Work
+	);
+
+VOID
+LdkpUnregisterThreadpoolCleanupGroupWork (
+	_Inout_ PTP_WORK Work
+	);
+
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeThreadpoolApiset)
 #pragma alloc_text(PAGE, LdkpTerminateThreadpoolApiset)
 #pragma alloc_text(PAGE, LdkpCaptureThreadpoolCallbackEnvironment)
+#pragma alloc_text(PAGE, LdkpRegisterThreadpoolCleanupGroupWork)
+#pragma alloc_text(PAGE, LdkpUnregisterThreadpoolCleanupGroupWork)
+#pragma alloc_text(PAGE, CreateThreadpoolCleanupGroup)
+#pragma alloc_text(PAGE, CloseThreadpoolCleanupGroup)
+#pragma alloc_text(PAGE, CloseThreadpoolCleanupGroupMembers)
 #pragma alloc_text(PAGE, CreateThreadpoolWork)
 #pragma alloc_text(PAGE, WaitForThreadpoolWorkCallbacks)
 #endif
@@ -141,6 +171,14 @@ LdkpInitializeThreadpoolApiset (
 									 TAG_WORK_ITEM,
 									 0 );
 
+	ExInitializeNPagedLookasideList( &LdkpThreadpoolCleanupGroupLookaside,
+									 NULL,
+									 NULL,
+									 0,
+									 sizeof(TP_CLEANUP_GROUP),
+									 TAG_TP_CLEANUP_GROUP,
+									 0 );
+
 	ExInitializeNPagedLookasideList( &LdkpFreeModuleEntryLookaside,
 									 NULL,
 									 NULL,
@@ -160,6 +198,7 @@ LdkpTerminateThreadpoolApiset (
 
 	ExDeleteNPagedLookasideList( &LdkpThreadpoolWorkLookaside );
 	ExDeleteNPagedLookasideList( &LdkpThreadpoolWorkQueItemLookaside );
+	ExDeleteNPagedLookasideList( &LdkpThreadpoolCleanupGroupLookaside );
 	ExDeleteNPagedLookasideList( &LdkpFreeModuleEntryLookaside );
 }
 
@@ -195,10 +234,13 @@ LdkpCaptureThreadpoolCallbackEnvironment (
 
 	if ((Source->Pool != NULL &&
 		 Source->Pool != &LdkpDefaultThreadPool) ||
-		Source->CleanupGroup != NULL ||
-		Source->CleanupGroupCancelCallback != NULL ||
 		Source->FinalizationCallback != NULL) {
 		return STATUS_NOT_SUPPORTED;
+	}
+
+	if (Source->CleanupGroup == NULL &&
+		Source->CleanupGroupCancelCallback != NULL) {
+		return STATUS_INVALID_PARAMETER;
 	}
 
 	if (Source->ActivationContext != NULL &&
@@ -240,6 +282,179 @@ LdkpCompleteThreadpoolWorkItem (
 	LdkpDereferenceThreadpoolWork( Work );
 }
 
+NTSTATUS
+LdkpRegisterThreadpoolCleanupGroupWork (
+	_Inout_ PTP_WORK Work
+	)
+{
+	PTP_CLEANUP_GROUP CleanupGroup;
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	CleanupGroup = Work->CallbackEnvironment.CleanupGroup;
+	if (CleanupGroup == NULL) {
+		return STATUS_SUCCESS;
+	}
+
+	KeAcquireSpinLock( &CleanupGroup->Lock,
+					   &OldIrql );
+	if (FlagOn( CleanupGroup->Flags,
+				LDK_TP_CLEANUP_GROUP_FLAGS_CLOSED )) {
+		KeReleaseSpinLock( &CleanupGroup->Lock,
+						   OldIrql );
+		return STATUS_DELETE_PENDING;
+	}
+
+	Work->CleanupGroup = CleanupGroup;
+	Work->CleanupGroupCancelCallback = Work->CallbackEnvironment.CleanupGroupCancelCallback;
+	InsertTailList( &CleanupGroup->WorkList,
+					&Work->CleanupGroupLinks );
+	KeReleaseSpinLock( &CleanupGroup->Lock,
+					   OldIrql );
+	return STATUS_SUCCESS;
+}
+
+VOID
+LdkpUnregisterThreadpoolCleanupGroupWork (
+	_Inout_ PTP_WORK Work
+	)
+{
+	PTP_CLEANUP_GROUP CleanupGroup;
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	CleanupGroup = Work->CleanupGroup;
+	if (CleanupGroup == NULL) {
+		return;
+	}
+
+	KeAcquireSpinLock( &CleanupGroup->Lock,
+					   &OldIrql );
+	if (Work->CleanupGroup == CleanupGroup) {
+		RemoveEntryList( &Work->CleanupGroupLinks );
+		InitializeListHead( &Work->CleanupGroupLinks );
+		Work->CleanupGroup = NULL;
+		Work->CleanupGroupCancelCallback = NULL;
+	}
+	KeReleaseSpinLock( &CleanupGroup->Lock,
+					   OldIrql );
+}
+
+
+
+WINBASEAPI
+PTP_CLEANUP_GROUP
+WINAPI
+CreateThreadpoolCleanupGroup (
+	VOID
+	)
+{
+	PTP_CLEANUP_GROUP CleanupGroup;
+
+	PAGED_CODE();
+
+	CleanupGroup = ExAllocateFromNPagedLookasideList( &LdkpThreadpoolCleanupGroupLookaside );
+	if (CleanupGroup == NULL) {
+		LdkSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
+		return NULL;
+	}
+
+	KeInitializeSpinLock( &CleanupGroup->Lock );
+	InitializeListHead( &CleanupGroup->WorkList );
+	CleanupGroup->Flags = 0;
+	return CleanupGroup;
+}
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpoolCleanupGroupMembers (
+	_Inout_ PTP_CLEANUP_GROUP ptpcg,
+	_In_ BOOL fCancelPendingCallbacks,
+	_Inout_opt_ PVOID pvCleanupContext
+	)
+{
+	LIST_ENTRY WorkList;
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	InitializeListHead( &WorkList );
+
+	KeAcquireSpinLock( &ptpcg->Lock,
+					   &OldIrql );
+	while (! IsListEmpty( &ptpcg->WorkList )) {
+		PLIST_ENTRY Entry = RemoveHeadList( &ptpcg->WorkList );
+		PTP_WORK Work = CONTAINING_RECORD(Entry,
+										   TP_WORK,
+										   CleanupGroupLinks);
+
+		Work->CleanupGroup = NULL;
+		InsertTailList( &WorkList,
+						&Work->CleanupGroupLinks );
+	}
+	KeReleaseSpinLock( &ptpcg->Lock,
+					   OldIrql );
+
+	while (! IsListEmpty( &WorkList )) {
+		PLIST_ENTRY Entry = RemoveHeadList( &WorkList );
+		PTP_WORK Work = CONTAINING_RECORD(Entry,
+										   TP_WORK,
+										   CleanupGroupLinks);
+		PTP_CLEANUP_GROUP_CANCEL_CALLBACK CancelCallback;
+		PVOID ObjectContext;
+
+		InitializeListHead( &Work->CleanupGroupLinks );
+		InterlockedOr( &Work->Flags,
+					   LDK_TP_WORK_FLAGS_DELETE_REQUESTED );
+
+		WaitForThreadpoolWorkCallbacks( Work,
+										fCancelPendingCallbacks );
+
+		CancelCallback = Work->CleanupGroupCancelCallback;
+		ObjectContext = Work->CallbackParameter;
+		Work->CleanupGroupCancelCallback = NULL;
+		if (CancelCallback != NULL) {
+			CancelCallback( ObjectContext,
+							pvCleanupContext );
+		}
+
+		LdkpDereferenceThreadpoolWork( Work );
+	}
+}
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpoolCleanupGroup (
+	_Inout_ PTP_CLEANUP_GROUP ptpcg
+	)
+{
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	KeAcquireSpinLock( &ptpcg->Lock,
+					   &OldIrql );
+	ptpcg->Flags |= LDK_TP_CLEANUP_GROUP_FLAGS_CLOSED;
+	while (! IsListEmpty( &ptpcg->WorkList )) {
+		PLIST_ENTRY Entry = RemoveHeadList( &ptpcg->WorkList );
+		PTP_WORK Work = CONTAINING_RECORD(Entry,
+										   TP_WORK,
+										   CleanupGroupLinks);
+		Work->CleanupGroup = NULL;
+		Work->CleanupGroupCancelCallback = NULL;
+		InitializeListHead( &Work->CleanupGroupLinks );
+	}
+	KeReleaseSpinLock( &ptpcg->Lock,
+					   OldIrql );
+
+	ExFreeToNPagedLookasideList( &LdkpThreadpoolCleanupGroupLookaside,
+								 ptpcg );
+}
+
 
 
 WINBASEAPI
@@ -279,12 +494,24 @@ CreateThreadpoolWork (
 	KeInitializeEvent( &work->Event,
 					   NotificationEvent,
 					   TRUE );
+	InitializeListHead( &work->CleanupGroupLinks );
 
 	work->ReferenceCount = 1;
 	work->Flags = 0;
 	work->OutstandingCount = 0;
+	work->CleanupGroup = NULL;
+	work->CleanupGroupCancelCallback = NULL;
 	work->WorkCallback = pfnwk;
 	work->CallbackParameter = pv;
+
+	Status = LdkpRegisterThreadpoolCleanupGroupWork( work );
+	if (! NT_SUCCESS(Status)) {
+		ExFreeToNPagedLookasideList( &LdkpThreadpoolWorkLookaside,
+									 work );
+		LdkSetLastNTError( Status );
+		return NULL;
+	}
+
 	return work;
 }
 
@@ -441,12 +668,10 @@ CloseThreadpoolWork (
     _Inout_ PTP_WORK pwk
     )
 {
-	if (InterlockedDecrement( &pwk->ReferenceCount ) == 0) {
-		ExFreeToNPagedLookasideList( &LdkpThreadpoolWorkLookaside,
-									 pwk );
-	} else {
-		InterlockedOr( &pwk->Flags, LDK_TP_WORK_FLAGS_DELETE_REQUESTED );
-	}
+	LdkpUnregisterThreadpoolCleanupGroupWork( pwk );
+	InterlockedOr( &pwk->Flags,
+				   LDK_TP_WORK_FLAGS_DELETE_REQUESTED );
+	LdkpDereferenceThreadpoolWork( pwk );
 }
 
 WINBASEAPI

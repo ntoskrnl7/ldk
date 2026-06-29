@@ -16,6 +16,29 @@
 EXTERN_C_START
 
 WINBASEAPI
+PTP_CLEANUP_GROUP
+WINAPI
+CreateThreadpoolCleanupGroup(
+    VOID
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpoolCleanupGroup(
+    _Inout_ PTP_CLEANUP_GROUP ptpcg
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpoolCleanupGroupMembers(
+    _Inout_ PTP_CLEANUP_GROUP ptpcg,
+    _In_ BOOL fCancelPendingCallbacks,
+    _Inout_opt_ PVOID pvCleanupContext
+    );
+
+WINBASEAPI
 _Must_inspect_result_
 PTP_WORK
 WINAPI
