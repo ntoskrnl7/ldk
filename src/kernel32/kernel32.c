@@ -592,6 +592,14 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		OpenThread
 	},
 	{
+		"SuspendThread",
+		SuspendThread
+	},
+	{
+		"ResumeThread",
+		ResumeThread
+	},
+	{
 		"GetThreadPriority",
 		GetThreadPriority
 	},

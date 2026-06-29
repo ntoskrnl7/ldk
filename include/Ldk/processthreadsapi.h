@@ -109,6 +109,20 @@ OpenThread(
     );
 
 WINBASEAPI
+DWORD
+WINAPI
+SuspendThread(
+    _In_ HANDLE hThread
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+ResumeThread(
+    _In_ HANDLE hThread
+    );
+
+WINBASEAPI
 int
 WINAPI
 GetThreadPriority(

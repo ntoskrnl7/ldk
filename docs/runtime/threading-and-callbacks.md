@@ -15,7 +15,16 @@ the start routine through `KeExpandKernelStackAndCallout`. The heap-allocated
 thread context is released before entering the callout path so an `ExitThread`
 inside the start routine does not leak that context.
 
-`CREATE_SUSPENDED` is not supported.
+`CREATE_SUSPENDED` is supported for LDK-created threads with a startup gate. The
+kernel system thread is created immediately, but the caller's thread start
+routine is not entered until the startup suspend count reaches zero through
+`ResumeThread`. `SuspendThread` can increase that startup suspend count while
+the thread is still waiting at the gate.
+
+LDK does not currently implement arbitrary asynchronous suspension of a thread
+that has already entered its start routine. `ResumeThread` on a running,
+non-gated thread returns `0`; `SuspendThread` on such a thread fails with
+`ERROR_NOT_SUPPORTED`.
 
 ## DLL thread notifications, ExitThread, and FLS callbacks
 
@@ -58,8 +67,10 @@ runs.
 ## Thread identity and handles
 
 `GetCurrentThread` returns the current thread pseudo handle. `GetCurrentThreadId`
-uses `PsGetCurrentThreadId`. `OpenThread`, priority helpers, `GetThreadTimes`,
-and `GetExitCodeThread` are thin wrappers over native thread information calls.
+uses `PsGetCurrentThreadId`. `OpenThread`, `ResumeThread`, startup-gate
+`SuspendThread`, priority helpers, `GetThreadTimes`, and `GetExitCodeThread`
+are thin wrappers over native thread information calls plus LDK's startup gate
+state.
 
 The thread itself is a real kernel thread. The LDK TEB is a sidecar attached to
 the participating `PETHREAD`, so TLS/FLS, last-error, keyed-event, and
@@ -119,9 +130,10 @@ threadpool objects are not implemented.
 
 ## Testing
 
-The test driver covers basic thread creation, TLS callback process/thread
-notifications, DllMain thread notifications, `DisableThreadLibraryCalls`, FLS
-callback behavior, legacy work items, modern threadpool work items, threadpool
-callback environments, cleanup group member close/cancel paths, threadpool
-timer/wait signal, timeout, cancel, and cleanup paths, and wait-on-address
-stress paths that create and join many worker threads.
+The test driver covers basic thread creation, `CREATE_SUSPENDED` startup-gate
+resume/suspend counts, TLS callback process/thread notifications, DllMain
+thread notifications, `DisableThreadLibraryCalls`, FLS callback behavior,
+legacy work items, modern threadpool work items, threadpool callback
+environments, cleanup group member close/cancel paths, threadpool timer/wait
+signal, timeout, cancel, and cleanup paths, and wait-on-address stress paths
+that create and join many worker threads.
