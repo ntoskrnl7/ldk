@@ -36,12 +36,12 @@ IcuTest (
     );
 
 BOOLEAN
-LegacyThreadPoolTest (
+QueueUserWorkItemTest (
     VOID
     );
 
 BOOLEAN
-ThreadPoolTest (
+ThreadpoolWorkTimerWaitCleanupGroupTest (
     VOID
     );
 
@@ -146,8 +146,8 @@ DriverEntry (
         { "IcuTest", IcuTest },
         { "CurrentDirectoryTest", CurrentDirectoryTest },
         { "EnvironmentVariableTest", EnvironmentVariableTest },
-        { "LegacyThreadPoolTest", LegacyThreadPoolTest },
-        { "ThreadPoolTest", ThreadPoolTest },
+        { "QueueUserWorkItemTest", QueueUserWorkItemTest },
+        { "ThreadpoolWorkTimerWaitCleanupGroupTest", ThreadpoolWorkTimerWaitCleanupGroupTest },
         { "ConditionVariableTest", ConditionVariableTest },
         { "WaitOnAddressTest", WaitOnAddressTest },
         { "LibraryTest", LibraryTest },

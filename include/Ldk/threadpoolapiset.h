@@ -71,6 +71,82 @@ CloseThreadpoolWork(
     );
 
 WINBASEAPI
+_Must_inspect_result_
+PTP_TIMER
+WINAPI
+CreateThreadpoolTimer(
+    _In_ PTP_TIMER_CALLBACK pfnti,
+    _Inout_opt_ PVOID pv,
+    _In_opt_ PTP_CALLBACK_ENVIRON pcbe
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+SetThreadpoolTimer(
+    _Inout_ PTP_TIMER pti,
+    _In_opt_ PFILETIME pftDueTime,
+    _In_ DWORD msPeriod,
+    _In_opt_ DWORD msWindowLength
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+IsThreadpoolTimerSet(
+    _Inout_ PTP_TIMER pti
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+WaitForThreadpoolTimerCallbacks(
+    _Inout_ PTP_TIMER pti,
+    _In_ BOOL fCancelPendingCallbacks
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpoolTimer(
+    _Inout_ PTP_TIMER pti
+    );
+
+WINBASEAPI
+_Must_inspect_result_
+PTP_WAIT
+WINAPI
+CreateThreadpoolWait(
+    _In_ PTP_WAIT_CALLBACK pfnwa,
+    _Inout_opt_ PVOID pv,
+    _In_opt_ PTP_CALLBACK_ENVIRON pcbe
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+SetThreadpoolWait(
+    _Inout_ PTP_WAIT pwa,
+    _In_opt_ HANDLE h,
+    _In_opt_ PFILETIME pftTimeout
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+WaitForThreadpoolWaitCallbacks(
+    _Inout_ PTP_WAIT pwa,
+    _In_ BOOL fCancelPendingCallbacks
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpoolWait(
+    _Inout_ PTP_WAIT pwa
+    );
+
+WINBASEAPI
 VOID
 WINAPI
 FreeLibraryWhenCallbackReturns(
