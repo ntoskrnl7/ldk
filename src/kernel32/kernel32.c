@@ -308,8 +308,16 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		DecodePointer
 	},
 	{
+		"DecodeSystemPointer",
+		DecodeSystemPointer
+	},
+	{
 		"EncodePointer",
 		EncodePointer
+	},
+	{
+		"EncodeSystemPointer",
+		EncodeSystemPointer
 	},
 
 	//

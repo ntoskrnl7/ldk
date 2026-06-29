@@ -21,6 +21,11 @@ HeapApiTest (
     );
 
 BOOLEAN
+UtilityApiTest (
+    VOID
+    );
+
+BOOLEAN
 FormatMessageTest (
     VOID
     );
@@ -141,6 +146,7 @@ DriverEntry (
         { "FileTest", FileTest },
         { "PipeTest", PipeTest },
         { "HeapApiTest", HeapApiTest },
+        { "UtilityApiTest", UtilityApiTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
         { "IcuTest", IcuTest },

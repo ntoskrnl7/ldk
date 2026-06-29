@@ -52,6 +52,11 @@ HeapApiTest (
     );
 
 BOOLEAN
+UtilityApiTest (
+    VOID
+    );
+
+BOOLEAN
 FormatMessageTest (
     VOID
     );
@@ -200,6 +205,7 @@ main (
         { "FileTest", FileTest },
         { "PipeTest", PipeTest },
         { "HeapApiTest", HeapApiTest },
+        { "UtilityApiTest", UtilityApiTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
         { "CurrentDirectoryTest", CurrentDirectoryTest },
