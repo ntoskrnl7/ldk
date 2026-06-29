@@ -19,6 +19,7 @@ set(LDK_WIN32_TEST_SOURCES
     ../kernel32/process.c
     ../kernel32/synchapi.c
     ../kernel32/threadpool.c
+    ../kernel32/util.c
     ../ntdll/curdir.c
     ../ntdll/environ.c
     ../ntdll/keyedevent.c

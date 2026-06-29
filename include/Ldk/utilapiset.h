@@ -31,6 +31,22 @@ DecodePointer(
     _In_opt_ PVOID Ptr
     );
 
+WINBASEAPI
+_Ret_maybenull_
+PVOID
+WINAPI
+EncodeSystemPointer(
+    _In_opt_ PVOID Ptr
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+PVOID
+WINAPI
+DecodeSystemPointer(
+    _In_opt_ PVOID Ptr
+    );
+
 EXTERN_C_END
 
 #endif // _APISETUTIL_
