@@ -3071,6 +3071,36 @@ SetFileInformationByHandle (
         return FALSE;
     }
 
+    if ((ULONG)FileInformationClass == LDK_FILE_IO_PRIORITY_HINT_INFO) {
+        PFILE_IO_PRIORITY_HINT_INFO PriorityInfo;
+        FILE_IO_PRIORITY_HINT_INFORMATION NativePriorityInfo;
+
+        if (dwBufferSize < sizeof(FILE_IO_PRIORITY_HINT_INFO)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        PriorityInfo = (PFILE_IO_PRIORITY_HINT_INFO)lpFileInformation;
+        if (PriorityInfo->PriorityHint < IoPriorityHintVeryLow ||
+            PriorityInfo->PriorityHint >= MaximumIoPriorityHintType) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return FALSE;
+        }
+
+        NativePriorityInfo.PriorityHint = (IO_PRIORITY_HINT)PriorityInfo->PriorityHint;
+        Status = ZwSetInformationFile( hFile,
+                                       &IoStatus,
+                                       &NativePriorityInfo,
+                                       sizeof(NativePriorityInfo),
+                                       FileIoPriorityHintInformation );
+        if (NT_SUCCESS(Status)) {
+            return TRUE;
+        }
+
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
     if (FileInformationClass == FileDispositionInfo) {
         PFILE_DISPOSITION_INFO DispositionInfo;
         FILE_DISPOSITION_INFORMATION NativeDispositionInfo;

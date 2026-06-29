@@ -221,6 +221,17 @@ typedef struct _FILE_END_OF_FILE_INFO {
     LARGE_INTEGER EndOfFile;
 } FILE_END_OF_FILE_INFO, *PFILE_END_OF_FILE_INFO;
 
+typedef enum _PRIORITY_HINT {
+    IoPriorityHintVeryLow = 0,
+    IoPriorityHintLow,
+    IoPriorityHintNormal,
+    MaximumIoPriorityHintType
+} PRIORITY_HINT;
+
+typedef struct _FILE_IO_PRIORITY_HINT_INFO {
+    PRIORITY_HINT PriorityHint;
+} FILE_IO_PRIORITY_HINT_INFO, *PFILE_IO_PRIORITY_HINT_INFO;
+
 typedef struct _FILE_STREAM_INFO {
     DWORD NextEntryOffset;
     DWORD StreamNameLength;

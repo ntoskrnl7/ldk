@@ -857,6 +857,43 @@ AfterSymlinkTest:
     }
     printf("[Success] Test SetFileInformationByHandle(FileAllocationInfo)\n\n");
 
+    printf("Test SetFileInformationByHandle(FileIoPriorityHintInfo)\n");
+    DeleteFileW( L"TestIoPriority.tmp" );
+    hFile = CreateFileW( L"TestIoPriority.tmp",
+                         GENERIC_READ | GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_ALWAYS,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileIoPriorityHintInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    /* Windows validates this buffer with pointer-size alignment on x64. */
+    ULONGLONG PriorityHintInfoStorage[(sizeof(FILE_IO_PRIORITY_HINT_INFO) +
+                                       sizeof(ULONGLONG) - 1) /
+                                      sizeof(ULONGLONG)];
+    PFILE_IO_PRIORITY_HINT_INFO PriorityHintInfo =
+        (PFILE_IO_PRIORITY_HINT_INFO)PriorityHintInfoStorage;
+    RtlZeroMemory( PriorityHintInfoStorage,
+                   sizeof(PriorityHintInfoStorage) );
+    PriorityHintInfo->PriorityHint = IoPriorityHintNormal;
+    rv = SetFileInformationByHandle( hFile,
+                                     FileIoPriorityHintInfo,
+                                     PriorityHintInfo,
+                                     sizeof(*PriorityHintInfo) );
+    CloseHandle( hFile );
+    if (!rv) {
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileIoPriorityHintInfo)\n\n");
+        goto DeleteTest;
+    }
+    printf("[Success] Test SetFileInformationByHandle(FileIoPriorityHintInfo)\n\n");
+
     printf("Test SetFileInformationByHandle(FileRenameInfo)\n");
     DeleteFileW( L"TestRenameSource.tmp" );
     DeleteFileW( L"TestRenameTarget.tmp" );
@@ -1035,6 +1072,7 @@ AfterSymlinkTest:
 
 DeleteTest:
     DeleteFileW( L"TestAllocation.tmp" );
+    DeleteFileW( L"TestIoPriority.tmp" );
     DeleteFileW( L"TestRenameSource.tmp" );
     DeleteFileW( L"TestRenameTarget.tmp" );
     DeleteFileW( L"TestRenameExSource.tmp" );

@@ -47,6 +47,7 @@ alignment flags exposed by the underlying file system stack.
 - `FileRenameInfoEx`
 - `FileAllocationInfo`
 - `FileEndOfFileInfo`
+- `FileIoPriorityHintInfo`
 - `FileDispositionInfo`
 - `FileDispositionInfoEx`
 
