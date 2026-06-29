@@ -3123,6 +3123,30 @@ SetFileInformationByHandle (
         return FALSE;
     }
 
+    if ((ULONG)FileInformationClass == LDK_FILE_CASE_SENSITIVE_INFO) {
+        if (dwBufferSize < sizeof(FILE_CASE_SENSITIVE_INFO)) {
+            SetLastError( ERROR_BAD_LENGTH );
+            return FALSE;
+        }
+
+        if (lpFileInformation == NULL) {
+            SetLastError( ERROR_NOACCESS );
+            return FALSE;
+        }
+
+        Status = ZwSetInformationFile( hFile,
+                                       &IoStatus,
+                                       lpFileInformation,
+                                       dwBufferSize,
+                                       FileCaseSensitiveInformation );
+        if (NT_SUCCESS(Status)) {
+            return TRUE;
+        }
+
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
     if (FileInformationClass == FileDispositionInfo) {
         PFILE_DISPOSITION_INFO DispositionInfo;
         FILE_DISPOSITION_INFORMATION NativeDispositionInfo;

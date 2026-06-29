@@ -232,6 +232,14 @@ typedef struct _FILE_IO_PRIORITY_HINT_INFO {
     PRIORITY_HINT PriorityHint;
 } FILE_IO_PRIORITY_HINT_INFO, *PFILE_IO_PRIORITY_HINT_INFO;
 
+#ifndef FILE_CS_FLAG_CASE_SENSITIVE_DIR
+#define FILE_CS_FLAG_CASE_SENSITIVE_DIR 0x00000001
+#endif
+
+typedef struct _FILE_CASE_SENSITIVE_INFO {
+    ULONG Flags;
+} FILE_CASE_SENSITIVE_INFO, *PFILE_CASE_SENSITIVE_INFO;
+
 typedef struct _FILE_STREAM_INFO {
     DWORD NextEntryOffset;
     DWORD StreamNameLength;
@@ -391,6 +399,9 @@ typedef struct _FILE_REMOTE_PROTOCOL_INFO {
 #endif
 #ifndef FileRenameInfoEx
 #define FileRenameInfoEx ((FILE_INFO_BY_HANDLE_CLASS)22)
+#endif
+#ifndef FileCaseSensitiveInfo
+#define FileCaseSensitiveInfo ((FILE_INFO_BY_HANDLE_CLASS)23)
 #endif
 #ifndef FileNormalizedNameInfo
 #define FileNormalizedNameInfo ((FILE_INFO_BY_HANDLE_CLASS)24)
