@@ -6,8 +6,27 @@ ProcessApiTest (
     VOID
     );
 
+DWORD
+WINAPI
+ProcessApiSuspendedThreadProc (
+    _In_ LPVOID Parameter
+    );
+
+BOOLEAN
+ProcessApiSuspendedThreadTest (
+    VOID
+    );
+
+VOID
+ProcessApiReleaseSuspendedThread (
+    _In_ HANDLE Thread
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, ProcessApiTest)
+#pragma alloc_text(PAGE, ProcessApiSuspendedThreadProc)
+#pragma alloc_text(PAGE, ProcessApiSuspendedThreadTest)
+#pragma alloc_text(PAGE, ProcessApiReleaseSuspendedThread)
 #endif
 
 #define stdout DPFLTR_INFO_LEVEL
@@ -19,6 +38,172 @@ ProcessApiTest (
 #include <stdio.h>
 #define PAGED_CODE()
 #endif
+
+#define PROCESS_API_THREAD_EXIT_CODE 0x456789ab
+#define PROCESS_API_MAX_RESUME_ATTEMPTS 128
+
+DWORD
+WINAPI
+ProcessApiSuspendedThreadProc (
+    _In_ LPVOID Parameter
+    )
+{
+    PLONG Started;
+
+    PAGED_CODE();
+
+    Started = (PLONG)Parameter;
+    InterlockedIncrement( Started );
+
+    return PROCESS_API_THREAD_EXIT_CODE;
+}
+
+VOID
+ProcessApiReleaseSuspendedThread (
+    _In_ HANDLE Thread
+    )
+{
+    DWORD SuspendCount;
+
+    PAGED_CODE();
+
+    for (DWORD Index = 0; Index < PROCESS_API_MAX_RESUME_ATTEMPTS; Index++) {
+        SuspendCount = ResumeThread( Thread );
+        if (SuspendCount == (DWORD)-1 ||
+            SuspendCount <= 1) {
+            break;
+        }
+    }
+
+    WaitForSingleObject( Thread,
+                         1000 );
+}
+
+BOOLEAN
+ProcessApiSuspendedThreadTest (
+    VOID
+    )
+{
+    LONG Started;
+    HANDLE Thread;
+    DWORD ThreadId;
+    DWORD SuspendCount;
+    DWORD WaitResult;
+    DWORD ExitCode;
+
+    PAGED_CODE();
+
+    Started = 0;
+    ThreadId = 0;
+    Thread = CreateThread( NULL,
+                           0,
+                           ProcessApiSuspendedThreadProc,
+                           &Started,
+                           CREATE_SUSPENDED,
+                           &ThreadId );
+    if (Thread == NULL ||
+        ThreadId == 0) {
+        fprintf(stderr,
+                "[Failed] CreateThread(CREATE_SUSPENDED) Thread = %p ThreadId = %lu ErrorCode = %lu\n",
+                Thread,
+                ThreadId,
+                GetLastError() );
+        if (Thread != NULL) {
+            CloseHandle( Thread );
+        }
+        return FALSE;
+    }
+
+    WaitResult = WaitForSingleObject( Thread,
+                                      20 );
+    if (WaitResult != WAIT_TIMEOUT ||
+        Started != 0) {
+        fprintf(stderr,
+                "[Failed] CREATE_SUSPENDED thread started early Wait = 0x%08lx Started = %ld ErrorCode = %lu\n",
+                WaitResult,
+                Started,
+                GetLastError() );
+        ProcessApiReleaseSuspendedThread( Thread );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    SuspendCount = SuspendThread( Thread );
+    if (SuspendCount != 1) {
+        fprintf(stderr,
+                "[Failed] SuspendThread(start gate) Count = %lu ErrorCode = %lu\n",
+                SuspendCount,
+                GetLastError() );
+        ProcessApiReleaseSuspendedThread( Thread );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    SuspendCount = ResumeThread( Thread );
+    if (SuspendCount != 2) {
+        fprintf(stderr,
+                "[Failed] ResumeThread(first) Count = %lu ErrorCode = %lu\n",
+                SuspendCount,
+                GetLastError() );
+        ProcessApiReleaseSuspendedThread( Thread );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    WaitResult = WaitForSingleObject( Thread,
+                                      20 );
+    if (WaitResult != WAIT_TIMEOUT ||
+        Started != 0) {
+        fprintf(stderr,
+                "[Failed] CREATE_SUSPENDED thread started before final resume Wait = 0x%08lx Started = %ld ErrorCode = %lu\n",
+                WaitResult,
+                Started,
+                GetLastError() );
+        ProcessApiReleaseSuspendedThread( Thread );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    SuspendCount = ResumeThread( Thread );
+    if (SuspendCount != 1) {
+        fprintf(stderr,
+                "[Failed] ResumeThread(final) Count = %lu ErrorCode = %lu\n",
+                SuspendCount,
+                GetLastError() );
+        ProcessApiReleaseSuspendedThread( Thread );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    WaitResult = WaitForSingleObject( Thread,
+                                      1000 );
+    if (WaitResult != WAIT_OBJECT_0 ||
+        Started != 1) {
+        fprintf(stderr,
+                "[Failed] Suspended thread completion Wait = 0x%08lx Started = %ld ErrorCode = %lu\n",
+                WaitResult,
+                Started,
+                GetLastError() );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    if (! GetExitCodeThread( Thread,
+                             &ExitCode ) ||
+        ExitCode != PROCESS_API_THREAD_EXIT_CODE) {
+        fprintf(stderr,
+                "[Failed] Suspended thread exit code ExitCode = 0x%08lx ErrorCode = %lu\n",
+                ExitCode,
+                GetLastError() );
+        CloseHandle( Thread );
+        return FALSE;
+    }
+
+    CloseHandle( Thread );
+    printf("[Success] CreateThread(CREATE_SUSPENDED), SuspendThread, ResumeThread\n");
+
+    return TRUE;
+}
 
 BOOLEAN
 ProcessApiTest (
@@ -147,6 +332,10 @@ CloseProcessHandle:
         if (ProcessHandle != NULL) {
             CloseHandle( ProcessHandle );
         }
+        return FALSE;
+    }
+
+    if (! ProcessApiSuspendedThreadTest()) {
         return FALSE;
     }
 
