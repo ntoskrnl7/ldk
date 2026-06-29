@@ -2743,6 +2743,28 @@ GetFileInformationByHandleEx (
         return TRUE;
     }
 
+    if ((ULONG)FileInformationClass == LDK_FILE_REMOTE_PROTOCOL_INFO) {
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        if (dwBufferSize < sizeof(FILE_REMOTE_PROTOCOL_INFO)) {
+            SetLastError( ERROR_BAD_LENGTH );
+            return FALSE;
+        }
+
+        Status = ZwQueryInformationFile( hFile,
+                                         &IoStatus,
+                                         lpFileInformation,
+                                         dwBufferSize,
+                                         FileRemoteProtocolInformation );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
     if (! GetFileInformationByHandle( hFile,
                                       &HandleInfo )) {
         return FALSE;

@@ -378,7 +378,7 @@ FileTest (
     }
     printf("[Success] Test GetFileInformationByHandleEx(FileStreamInfo)\n\n");
 
-    printf("Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n");
+    printf("Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n");
     FILE_COMPRESSION_INFO CompressionInfo;
     RtlZeroMemory( &CompressionInfo,
                    sizeof(CompressionInfo) );
@@ -390,7 +390,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileCompressionInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -398,7 +398,7 @@ FileTest (
         fprintf(stderr,
                 "[Failed] FileCompressionInfo returned negative compressed size\n");
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -414,7 +414,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileAlignmentInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -424,7 +424,7 @@ FileTest (
                 "[Failed] FileAlignmentInfo returned unexpected alignment mask = %lu\n",
                 AlignmentInfo.AlignmentRequirement);
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -440,7 +440,7 @@ FileTest (
                 "[Failed] GetFileInformationByHandleEx(FileStorageInfo) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
@@ -455,11 +455,59 @@ FileTest (
                 StorageInfo.PhysicalBytesPerSectorForPerformance,
                 StorageInfo.FileSystemEffectivePhysicalBytesPerSectorForAtomicity);
         CloseHandle( hFile );
-        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
-    printf("[Success] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo)\n\n");
+
+    FILE_REMOTE_PROTOCOL_INFO RemoteProtocolInfo;
+    RtlZeroMemory( &RemoteProtocolInfo,
+                   sizeof(RemoteProtocolInfo) );
+    SetLastError( ERROR_SUCCESS );
+    BOOL RemoteProtocolResult =
+        GetFileInformationByHandleEx( hFile,
+                                      FileRemoteProtocolInfo,
+                                      &RemoteProtocolInfo,
+                                      sizeof(RemoteProtocolInfo) );
+    if (RemoteProtocolResult) {
+        if (RemoteProtocolInfo.StructureVersion == 0 ||
+            RemoteProtocolInfo.StructureSize > sizeof(RemoteProtocolInfo)) {
+            fprintf(stderr,
+                    "[Failed] FileRemoteProtocolInfo returned invalid header Version = %hu Size = %hu\n",
+                    RemoteProtocolInfo.StructureVersion,
+                    RemoteProtocolInfo.StructureSize);
+            CloseHandle( hFile );
+            printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+    } else if (GetLastError() != ERROR_INVALID_PARAMETER) {
+        fprintf(stderr,
+                "[Failed] FileRemoteProtocolInfo ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (GetFileInformationByHandleEx( hFile,
+                                      FileRemoteProtocolInfo,
+                                      &RemoteProtocolInfo,
+                                      FIELD_OFFSET(FILE_REMOTE_PROTOCOL_INFO,
+                                                   GenericReserved) ) ||
+        GetLastError() != ERROR_BAD_LENGTH) {
+        fprintf(stderr,
+                "[Failed] FileRemoteProtocolInfo short buffer ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hFile );
+        printf("[Failed] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    printf("[Success] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
     CloseHandle( hFile );
     if (!rv || HandleInfo.nNumberOfLinks < 2) {
         fprintf(stderr,
