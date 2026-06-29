@@ -31,6 +31,7 @@ attribute helpers are backed by native file information queries and setters.
 - `FileStreamInfo`
 - `FileCompressionInfo`
 - `FileAttributeTagInfo`
+- `FileRemoteProtocolInfo`
 - `FileStorageInfo`
 - `FileAlignmentInfo`
 - `FileIdInfo`
@@ -39,6 +40,11 @@ attribute helpers are backed by native file information queries and setters.
 `FileFsSectorSizeInformation` volume query and reports the logical sector,
 physical sector, effective physical sector, alignment offsets, and storage
 alignment flags exposed by the underlying file system stack.
+
+`FileRemoteProtocolInfo` forwards to the native
+`FileRemoteProtocolInformation` query. Local file systems normally reject that
+query with `ERROR_INVALID_PARAMETER`; remote or network file systems may return
+protocol details when the underlying file system supports the native class.
 
 `SetFileInformationByHandle` currently supports:
 

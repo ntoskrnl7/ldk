@@ -286,6 +286,64 @@ typedef struct _FILE_STORAGE_INFO {
     ULONG ByteOffsetForPartitionAlignment;
 } FILE_STORAGE_INFO, *PFILE_STORAGE_INFO;
 
+#ifndef REMOTE_PROTOCOL_INFO_FLAG_LOOPBACK
+#define REMOTE_PROTOCOL_INFO_FLAG_LOOPBACK              0x00000001
+#define REMOTE_PROTOCOL_INFO_FLAG_OFFLINE               0x00000002
+#define REMOTE_PROTOCOL_INFO_FLAG_PERSISTENT_HANDLE     0x00000004
+#endif
+
+#ifndef RPI_FLAG_SMB2_SHARECAP_TIMEWARP
+#define RPI_FLAG_SMB2_SHARECAP_TIMEWARP                0x00000002
+#define RPI_FLAG_SMB2_SHARECAP_DFS                     0x00000008
+#define RPI_FLAG_SMB2_SHARECAP_CONTINUOUS_AVAILABILITY 0x00000010
+#define RPI_FLAG_SMB2_SHARECAP_SCALEOUT                0x00000020
+#define RPI_FLAG_SMB2_SHARECAP_CLUSTER                 0x00000040
+#endif
+
+#ifndef RPI_SMB2_SHAREFLAG_ENCRYPT_DATA
+#define RPI_SMB2_SHAREFLAG_ENCRYPT_DATA                0x00000001
+#define RPI_SMB2_SHAREFLAG_COMPRESS_DATA               0x00000002
+#endif
+
+#ifndef RPI_SMB2_FLAG_SERVERCAP_DFS
+#define RPI_SMB2_FLAG_SERVERCAP_DFS                    0x00000001
+#define RPI_SMB2_FLAG_SERVERCAP_LEASING                0x00000002
+#define RPI_SMB2_FLAG_SERVERCAP_LARGEMTU               0x00000004
+#define RPI_SMB2_FLAG_SERVERCAP_MULTICHANNEL           0x00000008
+#define RPI_SMB2_FLAG_SERVERCAP_PERSISTENT_HANDLES     0x00000010
+#define RPI_SMB2_FLAG_SERVERCAP_DIRECTORY_LEASING      0x00000020
+#endif
+
+typedef struct _FILE_REMOTE_PROTOCOL_INFO {
+    USHORT StructureVersion;
+    USHORT StructureSize;
+    ULONG Protocol;
+    USHORT ProtocolMajorVersion;
+    USHORT ProtocolMinorVersion;
+    USHORT ProtocolRevision;
+    USHORT Reserved;
+    ULONG Flags;
+    struct {
+        ULONG Reserved[8];
+    } GenericReserved;
+    union {
+        struct {
+            struct {
+                ULONG Capabilities;
+            } Server;
+            struct {
+                ULONG Capabilities;
+#if defined(NTDDI_WIN10_NI) && (NTDDI_VERSION >= NTDDI_WIN10_NI)
+                ULONG ShareFlags;
+#else
+                ULONG CachingFlags;
+#endif
+            } Share;
+        } Smb2;
+        ULONG Reserved[16];
+    } ProtocolSpecific;
+} FILE_REMOTE_PROTOCOL_INFO, *PFILE_REMOTE_PROTOCOL_INFO;
+
 #ifndef FileBasicInfo
 #define FileBasicInfo ((FILE_INFO_BY_HANDLE_CLASS)0)
 #endif
@@ -315,6 +373,9 @@ typedef struct _FILE_STORAGE_INFO {
 #endif
 #ifndef FileAttributeTagInfo
 #define FileAttributeTagInfo ((FILE_INFO_BY_HANDLE_CLASS)9)
+#endif
+#ifndef FileRemoteProtocolInfo
+#define FileRemoteProtocolInfo ((FILE_INFO_BY_HANDLE_CLASS)13)
 #endif
 #ifndef FileStorageInfo
 #define FileStorageInfo ((FILE_INFO_BY_HANDLE_CLASS)16)
