@@ -942,6 +942,51 @@ AfterSymlinkTest:
     }
     printf("[Success] Test SetFileInformationByHandle(FileIoPriorityHintInfo)\n\n");
 
+    printf("Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n");
+    RemoveDirectoryW( L"TestCaseSensitiveDir" );
+    if (! CreateDirectoryW( L"TestCaseSensitiveDir", NULL )) {
+        fprintf(stderr, "[Failed] CreateDirectoryW(TestCaseSensitiveDir) ErrorCode = %d\n",
+                GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    HANDLE hDirectory = CreateFileW( L"TestCaseSensitiveDir",
+                                     FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                     NULL,
+                                     OPEN_EXISTING,
+                                     FILE_FLAG_BACKUP_SEMANTICS,
+                                     NULL );
+    if (hDirectory == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] Open TestCaseSensitiveDir ErrorCode = %d\n",
+                GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FILE_CASE_SENSITIVE_INFO CaseSensitiveInfo;
+    CaseSensitiveInfo.Flags = 0;
+    rv = SetFileInformationByHandle( hDirectory,
+                                     FileCaseSensitiveInfo,
+                                     &CaseSensitiveInfo,
+                                     sizeof(CaseSensitiveInfo) - 1 );
+    DWORD CaseSensitiveError = GetLastError();
+    CloseHandle( hDirectory );
+    if (rv || CaseSensitiveError != ERROR_BAD_LENGTH) {
+        fprintf(stderr,
+                "[Failed] FileCaseSensitiveInfo short buffer rv = %d ErrorCode = %d\n",
+                rv,
+                CaseSensitiveError);
+        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    rv = TRUE;
+    printf("[Success] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+
     printf("Test SetFileInformationByHandle(FileRenameInfo)\n");
     DeleteFileW( L"TestRenameSource.tmp" );
     DeleteFileW( L"TestRenameTarget.tmp" );
@@ -1126,6 +1171,7 @@ DeleteTest:
     DeleteFileW( L"TestRenameExSource.tmp" );
     DeleteFileW( L"TestRenameExTarget.tmp" );
     DeleteFileW( L"TestDisposition.tmp" );
+    RemoveDirectoryW( L"TestCaseSensitiveDir" );
     DeleteFileW( L"TestMoved.tmp" );
     DeleteFileW( L"TestCopy.tmp" );
     DeleteFileW( L"TestHardLink.tmp" );

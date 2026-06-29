@@ -54,8 +54,15 @@ protocol details when the underlying file system supports the native class.
 - `FileAllocationInfo`
 - `FileEndOfFileInfo`
 - `FileIoPriorityHintInfo`
+- `FileCaseSensitiveInfo`
 - `FileDispositionInfo`
 - `FileDispositionInfoEx`
+
+`FileCaseSensitiveInfo` is passed through to the native
+`FileCaseSensitiveInformation` setter. The underlying file system and security
+policy decide whether enabling or disabling per-directory case sensitivity is
+allowed. LDK validates the short-buffer case to match Win32's
+`ERROR_BAD_LENGTH` behavior and otherwise preserves the native result.
 
 The fallback behavior intentionally distinguishes invalid input from missing
 LDK coverage:
