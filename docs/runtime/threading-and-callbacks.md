@@ -75,6 +75,15 @@ The modern threadpool work APIs are implemented over kernel work items:
 - `SubmitThreadpoolWork`
 - `WaitForThreadpoolWorkCallbacks`
 - `CloseThreadpoolWork`
+- `CreateThreadpoolTimer`
+- `SetThreadpoolTimer`
+- `IsThreadpoolTimerSet`
+- `WaitForThreadpoolTimerCallbacks`
+- `CloseThreadpoolTimer`
+- `CreateThreadpoolWait`
+- `SetThreadpoolWait`
+- `WaitForThreadpoolWaitCallbacks`
+- `CloseThreadpoolWait`
 - `CreateThreadpoolCleanupGroup`
 - `CloseThreadpoolCleanupGroup`
 - `CloseThreadpoolCleanupGroupMembers`
@@ -82,24 +91,37 @@ The modern threadpool work APIs are implemented over kernel work items:
 
 `QueueUserWorkItem` uses `RtlQueueWorkItem`.
 
-Callback environments are supported for the default pool work-object path.
-LDK honors long-function, persistent, priority, race-with-DLL, cleanup group,
-and cleanup group cancel callback fields for tested work callbacks. Cleanup
-groups keep a list of member work objects so
+Callback environments are supported for the default pool work, timer, and wait
+object paths. LDK honors long-function, persistent, priority, race-with-DLL,
+cleanup group, and cleanup group cancel callback fields for tested callbacks.
+Cleanup groups keep a list of member work, timer, and wait objects so
 `CloseThreadpoolCleanupGroupMembers` can wait, optionally request pending
 callback cancellation, invoke the cleanup callback for each member, and close
 the member objects without holding the cleanup group lock while callbacks run.
 `CloseThreadpoolCleanupGroup` releases only the cleanup group object; callers
 should close group members first.
 
+Timers are implemented with a per-object kernel thread that waits on the
+configured due time and then invokes the callback. One-shot timers clear their
+set state before invoking the callback. Periodic timers are supported for the
+tested default-pool path, but they are intentionally serialized per timer
+object rather than trying to queue overlapping callbacks.
+
+Wait objects are implemented with a per-object kernel thread that waits on the
+target native wait object and an internal control event. A wait registration is
+one-shot: after a signaled or timeout callback, callers must call
+`SetThreadpoolWait` again to arm it. The current wait implementation supports
+native wait handles; LDK synthetic process handles are rejected for this API.
+
 The current implementation remains narrower than the full Windows threadpool:
-custom pools, activation contexts, finalization callbacks, timers, waits, and
-I/O completion threadpool objects are not implemented.
+custom pools, activation contexts, finalization callbacks, and I/O completion
+threadpool objects are not implemented.
 
 ## Testing
 
 The test driver covers basic thread creation, TLS callback process/thread
 notifications, DllMain thread notifications, `DisableThreadLibraryCalls`, FLS
 callback behavior, legacy work items, modern threadpool work items, threadpool
-callback environments, cleanup group member close/cancel paths, and
-wait-on-address stress paths that create and join many worker threads.
+callback environments, cleanup group member close/cancel paths, threadpool
+timer/wait signal, timeout, cancel, and cleanup paths, and wait-on-address
+stress paths that create and join many worker threads.

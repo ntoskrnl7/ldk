@@ -72,12 +72,12 @@ EnvironmentVariableTest (
     );
 
 BOOLEAN
-LegacyThreadPoolTest (
+QueueUserWorkItemTest (
     VOID
     );
 
 BOOLEAN
-ThreadPoolTest (
+ThreadpoolWorkTimerWaitCleanupGroupTest (
     VOID
     );
 
@@ -204,8 +204,8 @@ main (
         { "NlsTest", NlsTest },
         { "CurrentDirectoryTest", CurrentDirectoryTest },
         { "EnvironmentVariableTest", EnvironmentVariableTest },
-        { "LegacyThreadPoolTest", LegacyThreadPoolTest },
-        { "ThreadPoolTest", ThreadPoolTest },
+        { "QueueUserWorkItemTest", QueueUserWorkItemTest },
+        { "ThreadpoolWorkTimerWaitCleanupGroupTest", ThreadpoolWorkTimerWaitCleanupGroupTest },
         { "ConditionVariableTest", ConditionVariableTest },
         { "WaitOnAddressTest", WaitOnAddressTest },
         { "LibraryTest", LibraryTest },

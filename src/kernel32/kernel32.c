@@ -673,6 +673,82 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	},
 
 	//
+	// threadpoollegacyapiset.c / threadpoolapiset.c
+	//
+	{
+		"QueueUserWorkItem",
+		QueueUserWorkItem
+	},
+	{
+		"CreateThreadpoolCleanupGroup",
+		CreateThreadpoolCleanupGroup
+	},
+	{
+		"CloseThreadpoolCleanupGroup",
+		CloseThreadpoolCleanupGroup
+	},
+	{
+		"CloseThreadpoolCleanupGroupMembers",
+		CloseThreadpoolCleanupGroupMembers
+	},
+	{
+		"CreateThreadpoolWork",
+		CreateThreadpoolWork
+	},
+	{
+		"SubmitThreadpoolWork",
+		SubmitThreadpoolWork
+	},
+	{
+		"WaitForThreadpoolWorkCallbacks",
+		WaitForThreadpoolWorkCallbacks
+	},
+	{
+		"CloseThreadpoolWork",
+		CloseThreadpoolWork
+	},
+	{
+		"CreateThreadpoolTimer",
+		CreateThreadpoolTimer
+	},
+	{
+		"SetThreadpoolTimer",
+		SetThreadpoolTimer
+	},
+	{
+		"IsThreadpoolTimerSet",
+		IsThreadpoolTimerSet
+	},
+	{
+		"WaitForThreadpoolTimerCallbacks",
+		WaitForThreadpoolTimerCallbacks
+	},
+	{
+		"CloseThreadpoolTimer",
+		CloseThreadpoolTimer
+	},
+	{
+		"CreateThreadpoolWait",
+		CreateThreadpoolWait
+	},
+	{
+		"SetThreadpoolWait",
+		SetThreadpoolWait
+	},
+	{
+		"WaitForThreadpoolWaitCallbacks",
+		WaitForThreadpoolWaitCallbacks
+	},
+	{
+		"CloseThreadpoolWait",
+		CloseThreadpoolWait
+	},
+	{
+		"FreeLibraryWhenCallbackReturns",
+		FreeLibraryWhenCallbackReturns
+	},
+
+	//
 	// libloaderapi.c
 	//
 	{
