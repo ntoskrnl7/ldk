@@ -21,6 +21,8 @@ LdkpTerminateNls (
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeNls)
+#pragma alloc_text(PAGE, GetDateFormatEx)
+#pragma alloc_text(PAGE, GetTimeFormatEx)
 #endif
 
 
@@ -2785,6 +2787,120 @@ LdkpCopyLocaleNumber (
     return Required;
 }
 
+static
+BOOL
+LdkpAnsiStringToWideForNls (
+    _In_reads_(cchSource) LPCSTR Source,
+    _In_ int cchSource,
+    _Outptr_result_z_ PWSTR *WideString,
+    _Out_ int *WideCount
+    )
+{
+    int Required;
+    int Converted;
+    PWSTR Buffer;
+
+    if (Source == NULL || cchSource < -1 || WideString == NULL || WideCount == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    *WideString = NULL;
+    *WideCount = 0;
+
+    if (cchSource == 0) {
+        Buffer = RtlAllocateHeap( RtlProcessHeap(),
+                                  HEAP_ZERO_MEMORY,
+                                  sizeof(WCHAR) );
+        if (Buffer == NULL) {
+            SetLastError( ERROR_NOT_ENOUGH_MEMORY );
+            return FALSE;
+        }
+
+        *WideString = Buffer;
+        *WideCount = 0;
+        return TRUE;
+    }
+
+    Required = MultiByteToWideChar( CP_ACP,
+                                    0,
+                                    Source,
+                                    cchSource,
+                                    NULL,
+                                    0 );
+    if (Required == 0) {
+        return FALSE;
+    }
+
+    Buffer = RtlAllocateHeap( RtlProcessHeap(),
+                              HEAP_ZERO_MEMORY,
+                              ((SIZE_T)Required + 1) * sizeof(WCHAR) );
+    if (Buffer == NULL) {
+        SetLastError( ERROR_NOT_ENOUGH_MEMORY );
+        return FALSE;
+    }
+
+    Converted = MultiByteToWideChar( CP_ACP,
+                                     0,
+                                     Source,
+                                     cchSource,
+                                     Buffer,
+                                     Required );
+    if (Converted == 0) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Buffer );
+        return FALSE;
+    }
+
+    Buffer[Converted] = UNICODE_NULL;
+    *WideString = Buffer;
+    *WideCount = cchSource == -1 ? -1 : Converted;
+    return TRUE;
+}
+
+static
+int
+LdkpWideStringToAnsiForNls (
+    _In_reads_(cchSource) LPCWSTR Source,
+    _In_ int cchSource,
+    _Out_writes_opt_(cchDest) LPSTR Destination,
+    _In_ int cchDest
+    )
+{
+    int Required;
+
+    if (cchDest < 0 || (Destination == NULL && cchDest != 0)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    Required = WideCharToMultiByte( CP_ACP,
+                                    0,
+                                    Source,
+                                    cchSource,
+                                    NULL,
+                                    0,
+                                    NULL,
+                                    NULL );
+    if (Required == 0) {
+        return 0;
+    }
+
+    if (cchDest == 0) {
+        return Required;
+    }
+
+    return WideCharToMultiByte( CP_ACP,
+                                0,
+                                Source,
+                                cchSource,
+                                Destination,
+                                cchDest,
+                                NULL,
+                                NULL );
+}
+
 typedef struct _LDKP_LOCALE_DATA {
     LCID Locale;
     PCWSTR DisplayName;
@@ -3463,6 +3579,84 @@ GetLocaleInfoW (
 WINBASEAPI
 int
 WINAPI
+GetLocaleInfoA (
+    _In_ LCID Locale,
+    _In_ LCTYPE LCType,
+    _Out_writes_opt_(cchData) LPSTR lpLCData,
+    _In_ int cchData
+    )
+{
+    PWSTR WideBuffer;
+    int WideChars;
+    int Result;
+
+    if (cchData < 0 || (lpLCData == NULL && cchData != 0)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (LCType & LOCALE_RETURN_NUMBER) {
+        DWORD Value = 0;
+
+        Result = GetLocaleInfoW( Locale,
+                                 LCType,
+                                 (LPWSTR)&Value,
+                                 sizeof(Value) / sizeof(WCHAR) );
+        if (Result == 0) {
+            return 0;
+        }
+
+        if (cchData == 0) {
+            return sizeof(Value);
+        }
+
+        if (cchData < (int)sizeof(Value)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return 0;
+        }
+
+        RtlCopyMemory( lpLCData,
+                       &Value,
+                       sizeof(Value) );
+        return sizeof(Value);
+    }
+
+    WideChars = GetLocaleInfoW( Locale,
+                                LCType,
+                                NULL,
+                                0 );
+    if (WideChars == 0) {
+        return 0;
+    }
+
+    WideBuffer = RtlAllocateHeap( RtlProcessHeap(),
+                                  HEAP_ZERO_MEMORY,
+                                  (SIZE_T)WideChars * sizeof(WCHAR) );
+    if (WideBuffer == NULL) {
+        SetLastError( ERROR_NOT_ENOUGH_MEMORY );
+        return 0;
+    }
+
+    Result = GetLocaleInfoW( Locale,
+                             LCType,
+                             WideBuffer,
+                             WideChars );
+    if (Result != 0) {
+        Result = LdkpWideStringToAnsiForNls( WideBuffer,
+                                             -1,
+                                             lpLCData,
+                                             cchData );
+    }
+
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 WideBuffer );
+    return Result;
+}
+
+WINBASEAPI
+int
+WINAPI
 GetLocaleInfoEx (
     _In_opt_ LPCWSTR lpLocaleName,
     _In_ LCTYPE LCType,
@@ -3928,6 +4122,839 @@ GetTimeFormatW (
     return LdkpCopyLocaleString( Buffer,
                                  lpTimeStr,
                                  cchTime );
+}
+
+static
+BOOL
+LdkpResolveLocaleNameForNls (
+    _In_opt_ LPCWSTR LocaleName,
+    _Out_ PLCID Locale
+    )
+{
+    if (Locale == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (LocaleName == LOCALE_NAME_USER_DEFAULT) {
+        *Locale = GetUserDefaultLCID();
+    } else if (_wcsicmp(LocaleName, LOCALE_NAME_SYSTEM_DEFAULT) == 0) {
+        *Locale = LdkpSystemLocale != 0 ? LdkpSystemLocale : 0x0409;
+    } else if (LocaleName[0] == UNICODE_NULL) {
+        *Locale = 0x0409;
+    } else {
+        *Locale = LocaleNameToLCID( LocaleName,
+                                    0 );
+    }
+
+    if (*Locale == 0 ||
+        ! IsValidLocale( *Locale,
+                         LCID_SUPPORTED )) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+WINBASEAPI
+int
+WINAPI
+GetTimeFormatEx (
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpTime,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchTime) LPWSTR lpTimeStr,
+    _In_ int cchTime
+    )
+{
+    LCID Locale;
+
+    PAGED_CODE();
+
+    if (! LdkpResolveLocaleNameForNls( lpLocaleName,
+                                       &Locale )) {
+        return 0;
+    }
+
+    return GetTimeFormatW( Locale,
+                           dwFlags,
+                           lpTime,
+                           lpFormat,
+                           lpTimeStr,
+                           cchTime );
+}
+
+WINBASEAPI
+int
+WINAPI
+GetDateFormatEx (
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpDate,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchDate) LPWSTR lpDateStr,
+    _In_ int cchDate,
+    _In_opt_ LPCWSTR lpCalendar
+    )
+{
+    LCID Locale;
+
+    PAGED_CODE();
+
+    if (lpCalendar != NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (! LdkpResolveLocaleNameForNls( lpLocaleName,
+                                       &Locale )) {
+        return 0;
+    }
+
+    return GetDateFormatW( Locale,
+                           dwFlags,
+                           lpDate,
+                           lpFormat,
+                           lpDateStr,
+                           cchDate );
+}
+
+static
+int
+LdkpCompareResultFromDifference (
+    _In_ int Difference
+    )
+{
+    if (Difference < 0) {
+        return CSTR_LESS_THAN;
+    }
+
+    if (Difference > 0) {
+        return CSTR_GREATER_THAN;
+    }
+
+    return CSTR_EQUAL;
+}
+
+static
+BOOL
+LdkpGetNlsCompareLength (
+    _In_z_count_(cchString) LPCWSTR String,
+    _In_ int cchString,
+    _Out_ int *Length
+    )
+{
+    if (String == NULL || cchString < -1 || Length == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    *Length = cchString == -1 ? (int)wcslen(String) : cchString;
+    return TRUE;
+}
+
+static
+BOOL
+LdkpGetNlsMapLength (
+    _In_z_count_(cchString) LPCWSTR String,
+    _In_ int cchString,
+    _Out_ int *Length
+    )
+{
+    if (String == NULL || cchString < -1 || Length == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    *Length = cchString == -1 ? (int)wcslen(String) + 1 : cchString;
+    return TRUE;
+}
+
+static
+WCHAR
+LdkpDowncaseUnicodeCharForNls (
+    _In_ WCHAR Ch
+    )
+{
+    if (Ch >= L'A' && Ch <= L'Z') {
+        return Ch + (L'a' - L'A');
+    }
+
+    if (Ch >= 0x0410 && Ch <= 0x042f) {
+        return Ch + 0x20;
+    }
+
+    if (Ch == 0x0401) {
+        return 0x0451;
+    }
+
+    return Ch;
+}
+
+static
+WCHAR
+LdkpFoldUnicodeCharForNls (
+    _In_ WCHAR Ch,
+    _In_ DWORD Flags
+    )
+{
+    if (Flags & (NORM_IGNORECASE | LINGUISTIC_IGNORECASE | NORM_LINGUISTIC_CASING)) {
+        return RtlUpcaseUnicodeChar( Ch );
+    }
+
+    return Ch;
+}
+
+static
+BOOL
+LdkpIsIgnorableSymbolForNls (
+    _In_ WCHAR Ch,
+    _In_ DWORD Flags
+    )
+{
+    if (! (Flags & NORM_IGNORESYMBOLS)) {
+        return FALSE;
+    }
+
+    if (Ch > 0x7f) {
+        return FALSE;
+    }
+
+    if ((Ch >= L'0' && Ch <= L'9') ||
+        (Ch >= L'A' && Ch <= L'Z') ||
+        (Ch >= L'a' && Ch <= L'z')) {
+        return FALSE;
+    }
+
+    return Ch != L' ' && Ch != L'\t' && Ch != L'\r' && Ch != L'\n';
+}
+
+static
+BOOL
+LdkpValidateCompareFlags (
+    _In_ DWORD Flags
+    )
+{
+    const DWORD ValidFlags = NORM_IGNORECASE |
+                             LINGUISTIC_IGNORECASE |
+                             NORM_LINGUISTIC_CASING |
+                             NORM_IGNORESYMBOLS |
+                             SORT_STRINGSORT;
+
+    if (Flags & ~ValidFlags) {
+        SetLastError( ERROR_INVALID_FLAGS );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+int
+LdkpCompareStringOrdinalWorker (
+    _In_reads_(Length1) LPCWSTR String1,
+    _In_ int Length1,
+    _In_reads_(Length2) LPCWSTR String2,
+    _In_ int Length2,
+    _In_ DWORD Flags
+    )
+{
+    int Index1 = 0;
+    int Index2 = 0;
+
+    while (Index1 < Length1 || Index2 < Length2) {
+        WCHAR Ch1;
+        WCHAR Ch2;
+
+        while (Index1 < Length1 &&
+               LdkpIsIgnorableSymbolForNls( String1[Index1],
+                                             Flags )) {
+            Index1++;
+        }
+
+        while (Index2 < Length2 &&
+               LdkpIsIgnorableSymbolForNls( String2[Index2],
+                                             Flags )) {
+            Index2++;
+        }
+
+        if (Index1 >= Length1 || Index2 >= Length2) {
+            return LdkpCompareResultFromDifference( (Index1 < Length1) - (Index2 < Length2) );
+        }
+
+        Ch1 = LdkpFoldUnicodeCharForNls( String1[Index1],
+                                         Flags );
+        Ch2 = LdkpFoldUnicodeCharForNls( String2[Index2],
+                                         Flags );
+        if (Ch1 != Ch2) {
+            return LdkpCompareResultFromDifference( Ch1 < Ch2 ? -1 : 1 );
+        }
+
+        Index1++;
+        Index2++;
+    }
+
+    return CSTR_EQUAL;
+}
+
+WINBASEAPI
+int
+WINAPI
+CompareStringOrdinal (
+    _In_NLS_string_(cchCount1) LPCWCH lpString1,
+    _In_ int cchCount1,
+    _In_NLS_string_(cchCount2) LPCWCH lpString2,
+    _In_ int cchCount2,
+    _In_ BOOL bIgnoreCase
+    )
+{
+    int Length1;
+    int Length2;
+
+    if (! LdkpGetNlsCompareLength( lpString1,
+                                   cchCount1,
+                                   &Length1 ) ||
+        ! LdkpGetNlsCompareLength( lpString2,
+                                   cchCount2,
+                                   &Length2 )) {
+        return 0;
+    }
+
+    return LdkpCompareStringOrdinalWorker( lpString1,
+                                           Length1,
+                                           lpString2,
+                                           Length2,
+                                           bIgnoreCase ? NORM_IGNORECASE : 0 );
+}
+
+WINBASEAPI
+int
+WINAPI
+CompareStringEx (
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwCmpFlags,
+    _In_NLS_string_(cchCount1) LPCWCH lpString1,
+    _In_ int cchCount1,
+    _In_NLS_string_(cchCount2) LPCWCH lpString2,
+    _In_ int cchCount2,
+    _Reserved_ LPNLSVERSIONINFO lpVersionInformation,
+    _Reserved_ LPVOID lpReserved,
+    _Reserved_ LPARAM lParam
+    )
+{
+    LCID Locale;
+    int Length1;
+    int Length2;
+
+    UNREFERENCED_PARAMETER(lpVersionInformation);
+
+    if (lpReserved != NULL || lParam != 0) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (! LdkpValidateCompareFlags( dwCmpFlags ) ||
+        ! LdkpResolveLocaleNameForNls( lpLocaleName,
+                                       &Locale ) ||
+        ! LdkpGetNlsCompareLength( lpString1,
+                                   cchCount1,
+                                   &Length1 ) ||
+        ! LdkpGetNlsCompareLength( lpString2,
+                                   cchCount2,
+                                   &Length2 )) {
+        return 0;
+    }
+
+    UNREFERENCED_PARAMETER(Locale);
+
+    return LdkpCompareStringOrdinalWorker( lpString1,
+                                           Length1,
+                                           lpString2,
+                                           Length2,
+                                           dwCmpFlags );
+}
+
+WINBASEAPI
+int
+WINAPI
+CompareStringW (
+    _In_ LCID Locale,
+    _In_ DWORD dwCmpFlags,
+    _In_NLS_string_(cchCount1) LPCWCH lpString1,
+    _In_ int cchCount1,
+    _In_NLS_string_(cchCount2) LPCWCH lpString2,
+    _In_ int cchCount2
+    )
+{
+    WCHAR LocaleName[LOCALE_NAME_MAX_LENGTH];
+
+    if (LCIDToLocaleName( Locale,
+                          LocaleName,
+                          RTL_NUMBER_OF(LocaleName),
+                          0 ) == 0) {
+        return 0;
+    }
+
+    return CompareStringEx( LocaleName,
+                            dwCmpFlags,
+                            lpString1,
+                            cchCount1,
+                            lpString2,
+                            cchCount2,
+                            NULL,
+                            NULL,
+                            0 );
+}
+
+WINBASEAPI
+int
+WINAPI
+CompareStringA (
+    _In_ LCID Locale,
+    _In_ DWORD dwCmpFlags,
+    _In_reads_(cchCount1) LPCSTR lpString1,
+    _In_ int cchCount1,
+    _In_reads_(cchCount2) LPCSTR lpString2,
+    _In_ int cchCount2
+    )
+{
+    PWSTR WideString1;
+    PWSTR WideString2;
+    int WideCount1;
+    int WideCount2;
+    int Result;
+
+    if (! LdkpAnsiStringToWideForNls( lpString1,
+                                      cchCount1,
+                                      &WideString1,
+                                      &WideCount1 )) {
+        return 0;
+    }
+
+    if (! LdkpAnsiStringToWideForNls( lpString2,
+                                      cchCount2,
+                                      &WideString2,
+                                      &WideCount2 )) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     WideString1 );
+        return 0;
+    }
+
+    Result = CompareStringW( Locale,
+                             dwCmpFlags,
+                             WideString1,
+                             WideCount1,
+                             WideString2,
+                             WideCount2 );
+
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 WideString2 );
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 WideString1 );
+    return Result;
+}
+
+static
+BOOL
+LdkpValidateMapFlags (
+    _In_ DWORD Flags
+    )
+{
+    const DWORD CaseMask = LCMAP_TITLECASE;
+    DWORD CaseFlags = Flags & CaseMask;
+
+    if (Flags & LCMAP_SORTKEY) {
+        const DWORD ValidSortKeyFlags = LCMAP_SORTKEY |
+                                        NORM_IGNORECASE |
+                                        LINGUISTIC_IGNORECASE |
+                                        NORM_LINGUISTIC_CASING |
+                                        NORM_IGNORESYMBOLS |
+                                        SORT_STRINGSORT;
+
+        if (Flags & ~ValidSortKeyFlags) {
+            SetLastError( ERROR_INVALID_FLAGS );
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
+    if (CaseFlags != 0 &&
+        CaseFlags != LCMAP_LOWERCASE &&
+        CaseFlags != LCMAP_UPPERCASE &&
+        CaseFlags != LCMAP_TITLECASE) {
+        SetLastError( ERROR_INVALID_FLAGS );
+        return FALSE;
+    }
+
+    if (Flags & ~(LCMAP_TITLECASE | LCMAP_BYTEREV | LCMAP_LINGUISTIC_CASING)) {
+        SetLastError( ERROR_INVALID_FLAGS );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+WCHAR
+LdkpMapUnicodeCharForNls (
+    _In_ WCHAR Ch,
+    _In_ DWORD Flags,
+    _In_ BOOL WordStart
+    )
+{
+    DWORD CaseFlags = Flags & LCMAP_TITLECASE;
+
+    if (CaseFlags == LCMAP_UPPERCASE) {
+        Ch = RtlUpcaseUnicodeChar( Ch );
+    } else if (CaseFlags == LCMAP_LOWERCASE) {
+        Ch = LdkpDowncaseUnicodeCharForNls( Ch );
+    } else if (CaseFlags == LCMAP_TITLECASE) {
+        Ch = WordStart ? RtlUpcaseUnicodeChar( Ch ) : LdkpDowncaseUnicodeCharForNls( Ch );
+    }
+
+    if (Flags & LCMAP_BYTEREV) {
+        Ch = (WCHAR)(((Ch & 0x00ff) << 8) | ((Ch & 0xff00) >> 8));
+    }
+
+    return Ch;
+}
+
+static
+int
+LdkpMapSortKeyForNls (
+    _In_reads_(SourceLength) LPCWSTR Source,
+    _In_ int SourceLength,
+    _In_ DWORD Flags,
+    _Out_writes_bytes_opt_(DestinationLength) PBYTE Destination,
+    _In_ int DestinationLength
+    )
+{
+    int Required = 1;
+    int Output = 0;
+
+    for (int Index = 0; Index < SourceLength; Index++) {
+        if (! LdkpIsIgnorableSymbolForNls( Source[Index],
+                                           Flags )) {
+            Required++;
+        }
+    }
+
+    if (Destination == NULL || DestinationLength == 0) {
+        return Required;
+    }
+
+    if (DestinationLength < Required) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    for (int Index = 0; Index < SourceLength; Index++) {
+        WCHAR Ch;
+
+        if (LdkpIsIgnorableSymbolForNls( Source[Index],
+                                         Flags )) {
+            continue;
+        }
+
+        Ch = LdkpFoldUnicodeCharForNls( Source[Index],
+                                        Flags );
+        Destination[Output++] = Ch <= 0xff ? (BYTE)Ch : (BYTE)'?';
+    }
+
+    Destination[Output++] = 0;
+    return Output;
+}
+
+WINBASEAPI
+int
+WINAPI
+LCMapStringEx (
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwMapFlags,
+    _In_reads_(cchSrc) LPCWSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_writes_opt_(cchDest) LPWSTR lpDestStr,
+    _In_ int cchDest,
+    _In_opt_ LPNLSVERSIONINFO lpVersionInformation,
+    _In_opt_ LPVOID lpReserved,
+    _In_opt_ LPARAM sortHandle
+    )
+{
+    LCID Locale;
+    int SourceLength;
+    BOOL WordStart = TRUE;
+
+    UNREFERENCED_PARAMETER(lpVersionInformation);
+
+    if (lpReserved != NULL || sortHandle != 0 ||
+        cchDest < 0 || (lpDestStr == NULL && cchDest != 0)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (! LdkpValidateMapFlags( dwMapFlags ) ||
+        ! LdkpResolveLocaleNameForNls( lpLocaleName,
+                                       &Locale ) ||
+        ! LdkpGetNlsMapLength( lpSrcStr,
+                               cchSrc,
+                               &SourceLength )) {
+        return 0;
+    }
+
+    UNREFERENCED_PARAMETER(Locale);
+
+    if (dwMapFlags & LCMAP_SORTKEY) {
+        if (cchSrc == -1 && SourceLength > 0) {
+            SourceLength--;
+        }
+
+        return LdkpMapSortKeyForNls( lpSrcStr,
+                                     SourceLength,
+                                     dwMapFlags,
+                                     (PBYTE)lpDestStr,
+                                     cchDest );
+    }
+
+    if (lpDestStr == NULL || cchDest == 0) {
+        return SourceLength;
+    }
+
+    if (cchDest < SourceLength) {
+        SetLastError( ERROR_INSUFFICIENT_BUFFER );
+        return 0;
+    }
+
+    for (int Index = 0; Index < SourceLength; Index++) {
+        WCHAR Source = lpSrcStr[Index];
+
+        lpDestStr[Index] = LdkpMapUnicodeCharForNls( Source,
+                                                     dwMapFlags,
+                                                     WordStart );
+        WordStart = Source == L' ' || Source == L'\t' ||
+                    Source == L'\r' || Source == L'\n' ||
+                    Source == L'-' || Source == L'_';
+    }
+
+    return SourceLength;
+}
+
+WINBASEAPI
+int
+WINAPI
+LCMapStringW (
+    _In_ LCID Locale,
+    _In_ DWORD dwMapFlags,
+    _In_reads_(cchSrc) LPCWSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_writes_opt_(cchDest) LPWSTR lpDestStr,
+    _In_ int cchDest
+    )
+{
+    WCHAR LocaleName[LOCALE_NAME_MAX_LENGTH];
+
+    if (LCIDToLocaleName( Locale,
+                          LocaleName,
+                          RTL_NUMBER_OF(LocaleName),
+                          0 ) == 0) {
+        return 0;
+    }
+
+    return LCMapStringEx( LocaleName,
+                          dwMapFlags,
+                          lpSrcStr,
+                          cchSrc,
+                          lpDestStr,
+                          cchDest,
+                          NULL,
+                          NULL,
+                          0 );
+}
+
+WINBASEAPI
+int
+WINAPI
+LCMapStringA (
+    _In_ LCID Locale,
+    _In_ DWORD dwMapFlags,
+    _In_reads_(cchSrc) LPCSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_writes_opt_(cchDest) LPSTR lpDestStr,
+    _In_ int cchDest
+    )
+{
+    PWSTR WideSource;
+    PWSTR WideDestination;
+    int WideSourceCount;
+    int WideDestinationCount;
+    int Result;
+
+    if (cchDest < 0 || (lpDestStr == NULL && cchDest != 0)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (! LdkpAnsiStringToWideForNls( lpSrcStr,
+                                      cchSrc,
+                                      &WideSource,
+                                      &WideSourceCount )) {
+        return 0;
+    }
+
+    if (dwMapFlags & LCMAP_SORTKEY) {
+        Result = LCMapStringW( Locale,
+                               dwMapFlags,
+                               WideSource,
+                               WideSourceCount,
+                               (LPWSTR)lpDestStr,
+                               cchDest );
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     WideSource );
+        return Result;
+    }
+
+    WideDestinationCount = LCMapStringW( Locale,
+                                         dwMapFlags,
+                                         WideSource,
+                                         WideSourceCount,
+                                         NULL,
+                                         0 );
+    if (WideDestinationCount == 0) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     WideSource );
+        return 0;
+    }
+
+    WideDestination = RtlAllocateHeap( RtlProcessHeap(),
+                                       HEAP_ZERO_MEMORY,
+                                       (SIZE_T)WideDestinationCount * sizeof(WCHAR) );
+    if (WideDestination == NULL) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     WideSource );
+        SetLastError( ERROR_NOT_ENOUGH_MEMORY );
+        return 0;
+    }
+
+    Result = LCMapStringW( Locale,
+                           dwMapFlags,
+                           WideSource,
+                           WideSourceCount,
+                           WideDestination,
+                           WideDestinationCount );
+    if (Result != 0) {
+        Result = LdkpWideStringToAnsiForNls( WideDestination,
+                                             Result,
+                                             lpDestStr,
+                                             cchDest );
+    }
+
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 WideDestination );
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 WideSource );
+    return Result;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+IsValidLocaleName (
+    _In_ LPCWSTR lpLocaleName
+    )
+{
+    LCID Locale;
+
+    if (lpLocaleName == NULL) {
+        return FALSE;
+    }
+
+    return LdkpResolveLocaleNameForNls( lpLocaleName,
+                                        &Locale );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetStringTypeExW (
+    _In_ LCID Locale,
+    _In_ DWORD dwInfoType,
+    _In_NLS_string_(cchSrc) LPCWCH lpSrcStr,
+    _In_ int cchSrc,
+    _Out_ LPWORD lpCharType
+    )
+{
+    if (! IsValidLocale( Locale,
+                         LCID_SUPPORTED )) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    return GetStringTypeW( dwInfoType,
+                           lpSrcStr,
+                           cchSrc,
+                           lpCharType );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetStringTypeA (
+    _In_ LCID Locale,
+    _In_ DWORD dwInfoType,
+    _In_NLS_string_(cchSrc) LPCSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_ LPWORD lpCharType
+    )
+{
+    PWSTR WideSource;
+    int WideCount;
+    BOOL Result;
+
+    if (! LdkpAnsiStringToWideForNls( lpSrcStr,
+                                      cchSrc,
+                                      &WideSource,
+                                      &WideCount )) {
+        return FALSE;
+    }
+
+    Result = GetStringTypeExW( Locale,
+                               dwInfoType,
+                               WideSource,
+                               WideCount,
+                               lpCharType );
+
+    RtlFreeHeap( RtlProcessHeap(),
+                 0,
+                 WideSource );
+    return Result;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetStringTypeExA (
+    _In_ LCID Locale,
+    _In_ DWORD dwInfoType,
+    _In_NLS_string_(cchSrc) LPCSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_ LPWORD lpCharType
+    )
+{
+    return GetStringTypeA( Locale,
+                           dwInfoType,
+                           lpSrcStr,
+                           cchSrc,
+                           lpCharType );
 }
 
 WINBASEAPI

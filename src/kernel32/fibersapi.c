@@ -57,6 +57,19 @@ FlsGetValue (
 }
 
 WINBASEAPI
+PVOID
+WINAPI
+FlsGetValue2 (
+    _In_ DWORD dwFlsIndex
+    )
+{
+	if (dwFlsIndex < LDK_FLS_SLOTS_SIZE) {
+		return NtCurrentTeb()->FlsSlots[dwFlsIndex];
+	}
+	return NULL;
+}
+
+WINBASEAPI
 BOOL
 WINAPI
 FlsSetValue (

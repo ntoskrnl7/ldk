@@ -35,6 +35,13 @@ FlsGetValue(
     _In_ DWORD dwFlsIndex
     );
 
+WINBASEAPI
+PVOID
+WINAPI
+FlsGetValue2(
+    _In_ DWORD dwFlsIndex
+    );
+
 
 WINBASEAPI
 BOOL

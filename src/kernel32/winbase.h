@@ -53,9 +53,37 @@ LdkResolveProcessHandleForNativeDuplicate (
 	);
 
 BOOL
+LdkResolveProcessHandleForNativeQuery (
+	_In_ HANDLE ProcessHandle,
+	_Out_ PHANDLE NativeProcessHandle
+	);
+
+BOOL
+LdkGetProcessIdHandle (
+	_In_ HANDLE ProcessHandle,
+	_Out_ LPDWORD ProcessId,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
+LdkGetProcessImageNameHandle (
+	_In_ HANDLE ProcessHandle,
+	_In_ DWORD Flags,
+	_Out_ PCUNICODE_STRING *ImageName,
+	_Out_ PANSI_STRING NativeImageName,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
 LdkGetExitCodeProcessHandle (
 	_In_ HANDLE ProcessHandle,
 	_Out_ LPDWORD ExitCode,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
+LdkValidateProcessHandleForSetInformation (
+	_In_ HANDLE ProcessHandle,
 	_Out_ PBOOL Handled
 	);
 

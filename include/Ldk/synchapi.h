@@ -37,6 +37,25 @@ CreateEventW(
     _In_opt_ LPCWSTR lpName
     );
 
+#ifndef CREATE_EVENT_MANUAL_RESET
+#define CREATE_EVENT_MANUAL_RESET 0x00000001
+#endif
+
+#ifndef CREATE_EVENT_INITIAL_SET
+#define CREATE_EVENT_INITIAL_SET 0x00000002
+#endif
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateEventExW(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
+    _In_opt_ LPCWSTR lpName,
+    _In_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    );
+
 WINBASEAPI
 _Ret_maybenull_
 HANDLE
@@ -77,6 +96,28 @@ BOOL
 WINAPI
 PulseEvent(
     _In_ HANDLE hEvent
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateSemaphoreExW(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpSemaphoreAttributes,
+    _In_ LONG lInitialCount,
+    _In_ LONG lMaximumCount,
+    _In_opt_ LPCWSTR lpName,
+    _Reserved_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+ReleaseSemaphore(
+    _In_ HANDLE hSemaphore,
+    _In_ LONG lReleaseCount,
+    _Out_opt_ LPLONG lpPreviousCount
     );
 
 
@@ -366,6 +407,16 @@ WaitForMultipleObjectsEx(
     _In_ DWORD nCount,
     _In_reads_(nCount) CONST HANDLE* lpHandles,
     _In_ BOOL bWaitAll,
+    _In_ DWORD dwMilliseconds,
+    _In_ BOOL bAlertable
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+SignalObjectAndWait(
+    _In_ HANDLE hObjectToSignal,
+    _In_ HANDLE hObjectToWaitOn,
     _In_ DWORD dwMilliseconds,
     _In_ BOOL bAlertable
     );

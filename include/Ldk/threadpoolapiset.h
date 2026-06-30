@@ -16,6 +16,52 @@
 EXTERN_C_START
 
 WINBASEAPI
+PTP_POOL
+WINAPI
+CreateThreadpool(
+    _Reserved_ PVOID reserved
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+SetThreadpoolThreadMaximum(
+    _Inout_ PTP_POOL ptpp,
+    _In_ DWORD cthrdMost
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadpoolThreadMinimum(
+    _Inout_ PTP_POOL ptpp,
+    _In_ DWORD cthrdMic
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+QueryThreadpoolStackInformation(
+    _In_ PTP_POOL ptpp,
+    _Out_ PTP_POOL_STACK_INFORMATION ptpsi
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadpoolStackInformation(
+    _Inout_ PTP_POOL ptpp,
+    _In_ PTP_POOL_STACK_INFORMATION ptpsi
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpool(
+    _Inout_ PTP_POOL ptpp
+    );
+
+WINBASEAPI
 PTP_CLEANUP_GROUP
 WINAPI
 CreateThreadpoolCleanupGroup(

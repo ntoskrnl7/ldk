@@ -80,6 +80,26 @@ CreateFileW(
     _In_opt_ HANDLE hTemplateFile
     );
 
+typedef struct _CREATEFILE2_EXTENDED_PARAMETERS {
+    DWORD dwSize;
+    DWORD dwFileAttributes;
+    DWORD dwFileFlags;
+    DWORD dwSecurityQosFlags;
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes;
+    HANDLE hTemplateFile;
+} CREATEFILE2_EXTENDED_PARAMETERS, *PCREATEFILE2_EXTENDED_PARAMETERS, *LPCREATEFILE2_EXTENDED_PARAMETERS;
+
+WINBASEAPI
+HANDLE
+WINAPI
+CreateFile2(
+    _In_ LPCWSTR lpFileName,
+    _In_ DWORD dwDesiredAccess,
+    _In_ DWORD dwShareMode,
+    _In_ DWORD dwCreationDisposition,
+    _In_opt_ LPCREATEFILE2_EXTENDED_PARAMETERS pCreateExParams
+    );
+
 #ifdef UNICODE
 #define CreateFile  CreateFileW
 #else
@@ -191,12 +211,27 @@ typedef struct _WIN32_FILE_ATTRIBUTE_DATA {
 WINBASEAPI
 BOOL
 WINAPI
+GetFileAttributesExA(
+    _In_ LPCSTR lpFileName,
+    _In_ GET_FILEEX_INFO_LEVELS fInfoLevelId,
+    _Out_writes_bytes_(sizeof(WIN32_FILE_ATTRIBUTE_DATA)) LPVOID lpFileInformation
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
 GetFileAttributesExW(
     _In_ LPCWSTR lpFileName,
     _In_ GET_FILEEX_INFO_LEVELS fInfoLevelId,
     _Out_writes_bytes_(sizeof(WIN32_FILE_ATTRIBUTE_DATA)) LPVOID lpFileInformation
     );
 #define LDK_HAS_GET_FILE_ATTRIBUTES_EXW 1
+
+#ifdef UNICODE
+#define GetFileAttributesEx  GetFileAttributesExW
+#else
+#define GetFileAttributesEx  GetFileAttributesExA
+#endif // !UNICODE
 
 
 WINBASEAPI
@@ -352,6 +387,16 @@ GetFileInformationByHandleEx(
 WINBASEAPI
 BOOL
 WINAPI
+GetFileInformationByName(
+    _In_ PCWSTR FileName,
+    _In_ FILE_INFO_BY_NAME_CLASS FileInformationClass,
+    _Out_writes_bytes_(FileInfoBufferSize) PVOID FileInfoBuffer,
+    _In_ ULONG FileInfoBufferSize
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
 SetFileInformationByHandle(
     _In_ HANDLE hFile,
     _In_ FILE_INFO_BY_HANDLE_CLASS FileInformationClass,
@@ -408,10 +453,24 @@ FindNextFileW(
 WINBASEAPI
 BOOL
 WINAPI
+SetFileAttributesA(
+    _In_ LPCSTR lpFileName,
+    _In_ DWORD dwFileAttributes
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
 SetFileAttributesW(
     _In_ LPCWSTR lpFileName,
     _In_ DWORD dwFileAttributes
     );
+
+#ifdef UNICODE
+#define SetFileAttributes  SetFileAttributesW
+#else
+#define SetFileAttributes  SetFileAttributesA
+#endif // !UNICODE
 
 WINBASEAPI
 _Success_(return != 0 && return < nBufferLength)

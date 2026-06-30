@@ -68,6 +68,10 @@ LDK_FUNCTION_REGISTRATION LdkpNtdllFunctionRegistration[] = {
         RtlWakeAddressAll
     },
     {
+        "RtlIsEcCode",
+        RtlIsEcCode
+    },
+    {
         "NtAlertThreadByThreadId",
         NtAlertThreadByThreadId
     },

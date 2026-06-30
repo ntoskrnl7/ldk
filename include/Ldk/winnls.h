@@ -1165,6 +1165,39 @@ GetCPInfoExW(
     _Out_ LPCPINFOEXW  lpCPInfoEx);
 
 WINBASEAPI
+int
+WINAPI
+CompareStringA(
+    _In_ LCID Locale,
+    _In_ DWORD dwCmpFlags,
+    _In_reads_(cchCount1) LPCSTR lpString1,
+    _In_ int cchCount1,
+    _In_reads_(cchCount2) LPCSTR lpString2,
+    _In_ int cchCount2);
+
+WINBASEAPI
+int
+WINAPI
+LCMapStringW(
+    _In_ LCID Locale,
+    _In_ DWORD dwMapFlags,
+    _In_reads_(cchSrc) LPCWSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_writes_opt_(cchDest) LPWSTR lpDestStr,
+    _In_ int cchDest);
+
+WINBASEAPI
+int
+WINAPI
+LCMapStringA(
+    _In_ LCID Locale,
+    _In_ DWORD dwMapFlags,
+    _In_reads_(cchSrc) LPCSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_writes_opt_(cchDest) LPSTR lpDestStr,
+    _In_ int cchDest);
+
+WINBASEAPI
 BOOL
 WINAPI
 IsValidLocale(
@@ -1215,6 +1248,15 @@ GetLocaleInfoW(
 WINBASEAPI
 int
 WINAPI
+GetLocaleInfoA(
+    _In_ LCID Locale,
+    _In_ LCTYPE LCType,
+    _Out_writes_opt_(cchData) LPSTR lpLCData,
+    _In_ int cchData);
+
+WINBASEAPI
+int
+WINAPI
 GetLocaleInfoEx(
     _In_opt_ LPCWSTR lpLocaleName,
     _In_ LCTYPE LCType,
@@ -1242,6 +1284,49 @@ GetTimeFormatW(
     _In_opt_ LPCWSTR lpFormat,
     _Out_writes_opt_(cchTime) LPWSTR lpTimeStr,
     _In_ int cchTime);
+
+WINBASEAPI
+int
+WINAPI
+GetTimeFormatEx(
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpTime,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchTime) LPWSTR lpTimeStr,
+    _In_ int cchTime);
+
+WINBASEAPI
+int
+WINAPI
+GetDateFormatEx(
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwFlags,
+    _In_opt_ CONST SYSTEMTIME* lpDate,
+    _In_opt_ LPCWSTR lpFormat,
+    _Out_writes_opt_(cchDate) LPWSTR lpDateStr,
+    _In_ int cchDate,
+    _In_opt_ LPCWSTR lpCalendar);
+
+WINBASEAPI
+int
+WINAPI
+LCMapStringEx(
+    _In_opt_ LPCWSTR lpLocaleName,
+    _In_ DWORD dwMapFlags,
+    _In_reads_(cchSrc) LPCWSTR lpSrcStr,
+    _In_ int cchSrc,
+    _Out_writes_opt_(cchDest) LPWSTR lpDestStr,
+    _In_ int cchDest,
+    _In_opt_ LPNLSVERSIONINFO lpVersionInformation,
+    _In_opt_ LPVOID lpReserved,
+    _In_opt_ LPARAM sortHandle);
+
+WINBASEAPI
+BOOL
+WINAPI
+IsValidLocaleName(
+    _In_ LPCWSTR lpLocaleName);
 
 WINBASEAPI
 BOOL
