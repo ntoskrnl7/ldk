@@ -61,10 +61,12 @@ by `GetDateFormatW`.
 
 ## Date and time formatting
 
-`GetDateFormatW` and `GetTimeFormatW` format dates and times using the internal
-locale data table. They support the common year, month, day, hour, minute,
-second, and AM/PM pattern tokens used by the current tests and runtime paths.
-They are not a complete NLS format-engine clone.
+`GetDateFormatW`, `GetDateFormatEx`, `GetTimeFormatW`, and `GetTimeFormatEx`
+format dates and times using the internal locale data table. The `Ex` variants
+resolve locale names through the same locale-name mapping used by
+`GetLocaleInfoEx`. The formatter supports the common year, month, day, hour,
+minute, second, and AM/PM pattern tokens used by the current tests and runtime
+paths. It is not a complete NLS format-engine clone.
 
 `FileTimeToSystemTime`, `SystemTimeToFileTime`, `GetTimeZoneInformation`, and
 `SystemTimeToTzSpecificLocalTime` are backed by RTL time conversion helpers and
@@ -81,6 +83,7 @@ category database.
 ## Tests
 
 `NlsTest` covers representative locale-name/LCID round trips, locale
-enumeration, `GetLocaleInfoEx`, date/time formatting, and script classification
-for `ko-KR`, `zh-CN`, `ja-JP`, and `ru-RU`. Additional code-page conversions and
-format tokens should still get direct tests when expanded.
+enumeration, `GetLocaleInfoEx`, `GetDateFormatW/Ex`, `GetTimeFormatW/Ex`, and
+script classification for `ko-KR`, `zh-CN`, `ja-JP`, and `ru-RU`. Additional
+code-page conversions and format tokens should still get direct tests when
+expanded.

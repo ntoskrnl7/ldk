@@ -72,6 +72,17 @@ uses `PsGetCurrentThreadId`. `OpenThread`, `ResumeThread`, startup-gate
 are thin wrappers over native thread information calls plus LDK's startup gate
 state.
 
+`SetThreadDescription` and `GetThreadDescription` keep an LDK-owned
+thread-id-to-description table. `GetThreadDescription` returns a `LocalAlloc`
+buffer, matching the Win32 caller contract that the result is released with
+`LocalFree`.
+
+`GetThreadGroupAffinity` reports the active processor mask for the current
+processor group after validating the supplied thread handle. `SetThreadGroupAffinity`
+validates the target handle, group, and mask, and returns the previous
+LDK-observable group affinity when requested. It is a compatibility hint for
+runtime libraries such as ConCRT; it does not force native scheduler affinity.
+
 The thread itself is a real kernel thread. The LDK TEB is a sidecar attached to
 the participating `PETHREAD`, so TLS/FLS, last-error, keyed-event, and
 alert-by-thread-id state can follow that kernel execution context. The process
@@ -82,6 +93,12 @@ runtime, while `RealClientId` keeps the host kernel process id.
 
 The modern threadpool work APIs are implemented over kernel work items:
 
+- `CreateThreadpool`
+- `CloseThreadpool`
+- `SetThreadpoolThreadMinimum`
+- `SetThreadpoolThreadMaximum`
+- `QueryThreadpoolStackInformation`
+- `SetThreadpoolStackInformation`
 - `CreateThreadpoolWork`
 - `SubmitThreadpoolWork`
 - `WaitForThreadpoolWorkCallbacks`
@@ -100,11 +117,21 @@ The modern threadpool work APIs are implemented over kernel work items:
 - `CloseThreadpoolCleanupGroupMembers`
 - `FreeLibraryWhenCallbackReturns`
 
-`QueueUserWorkItem` uses `RtlQueueWorkItem`.
+`QueueUserWorkItem` uses `RtlQueueWorkItem`. The legacy timer/wait APIs
+`CreateTimerQueueTimer`, `DeleteTimerQueueTimer`,
+`RegisterWaitForSingleObject`, `UnregisterWait`, and `UnregisterWaitEx` are
+implemented as compatibility wrappers over the modern threadpool timer and
+wait objects. They support the default timer queue and the tested one-shot,
+signal, timeout, unregister, and delete paths. Custom timer queue handles are
+not implemented and return `ERROR_NOT_SUPPORTED`.
 
-Callback environments are supported for the default pool work, timer, and wait
-object paths. LDK honors long-function, persistent, priority, race-with-DLL,
-cleanup group, and cleanup group cancel callback fields for tested callbacks.
+Callback environments are supported for the work, timer, and wait object paths.
+LDK honors custom pool handles, long-function, persistent, priority,
+race-with-DLL, finalization callback, cleanup group, and cleanup group cancel
+callback fields for tested callbacks. Custom pool min/max thread counts and
+stack information are stored so APIs can round-trip the configuration, but the
+current scheduler does not use them to limit kernel work items or watcher
+threads.
 Cleanup groups keep a list of member work, timer, and wait objects so
 `CloseThreadpoolCleanupGroupMembers` can wait, optionally request pending
 callback cancellation, invoke the cleanup callback for each member, and close
@@ -125,8 +152,7 @@ one-shot: after a signaled or timeout callback, callers must call
 native wait handles; LDK synthetic process handles are rejected for this API.
 
 The current implementation remains narrower than the full Windows threadpool:
-custom pools, activation contexts, finalization callbacks, and I/O completion
-threadpool objects are not implemented.
+activation contexts and I/O completion threadpool objects are not implemented.
 
 ## Testing
 
@@ -134,6 +160,7 @@ The test driver covers basic thread creation, `CREATE_SUSPENDED` startup-gate
 resume/suspend counts, TLS callback process/thread notifications, DllMain
 thread notifications, `DisableThreadLibraryCalls`, FLS callback behavior,
 legacy work items, modern threadpool work items, threadpool callback
-environments, cleanup group member close/cancel paths, threadpool timer/wait
-signal, timeout, cancel, and cleanup paths, and wait-on-address stress paths
-that create and join many worker threads.
+environments, custom pool callback routing, finalization callbacks, cleanup
+group member close/cancel paths, threadpool timer/wait signal, timeout, cancel,
+and cleanup paths, processor topology and affinity compatibility helpers, and
+wait-on-address stress paths that create and join many worker threads.

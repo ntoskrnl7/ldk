@@ -88,8 +88,14 @@ normal wildcard enumeration path. `FindFirstFileExW` accepts the documented
 query path; LDK does not add a stricter case policy than the underlying file
 system namespace provides.
 
-`CreateHardLinkW` and `CreateSymbolicLinkW` are implemented for the tested file
-scenarios. Symbolic-link tests verify the reparse tag path and target reads.
+`CopyFileA/W`, `MoveFileA/W`, and `MoveFileExA/W` cover the tested copy and
+rename paths. `MoveFileExA/W` currently accepts `MOVEFILE_REPLACE_EXISTING`,
+`MOVEFILE_COPY_ALLOWED`, and `MOVEFILE_WRITE_THROUGH`; the native rename path is
+used for the actual move.
+
+`CreateHardLinkA/W` and `CreateSymbolicLinkA/W` are implemented for the tested
+file scenarios. Symbolic-link tests verify the reparse tag path and target
+reads.
 
 ## Temporary paths and files
 
@@ -111,14 +117,16 @@ hexadecimal unique component followed by `.TMP`.
 ## Device I/O
 
 `DeviceIoControl` supports synchronous `ZwFsControlFile` and
-`ZwDeviceIoControlFile` calls. Overlapped `DeviceIoControl` is intentionally
-not implemented yet because correct behavior requires asynchronous IRP
-completion semantics rather than a synchronous approximation.
+`ZwDeviceIoControlFile` calls. It also accepts an `OVERLAPPED` structure for the
+tested file-system-control path, sets the overlapped status fields, and returns
+the native completion status through Win32 error mapping. Broad completion-port
+integration is still outside the current compatibility target.
 
 ## Tests
 
-`FileTest` covers the common file path, copy, move, hard-link, symbolic-link,
-final-path, temp-path, temp-file, `FileNameInfo`, `FindFirstFileExW` flags,
-selected `GetFileInformationByHandleEx` query classes, `FileAllocationInfo`,
-rename, and disposition paths. Runtime validation still requires loading
-`LdkTest.sys` in a driver test VM.
+`FileTest` covers the common file path, copy, `MoveFileA/W`,
+`MoveFileExA/W`, ANSI attribute wrappers, hard-link, symbolic-link, final-path,
+temp-path, temp-file, `FileNameInfo`, `FindFirstFileExW` flags, selected
+`GetFileInformationByHandleEx` query classes, `FileAllocationInfo`, rename, and
+disposition paths. Runtime validation still requires loading `LdkTest.sys` in a
+driver test VM.

@@ -42,16 +42,14 @@ real key handle.
 
 ## Export visibility
 
-The registry functions are declared in `include/Ldk/winreg.h` and compiled in
-the Kernel32 source tree. They are not currently registered in the Kernel32
-pseudo-module export table, so DLL import resolution through `kernel32.dll`
-does not expose them yet.
-
-Callers that link directly against LDK headers can use the symbols when linked
-with the library, but loader-visible compatibility should be treated as pending
-until the export table is updated and tested.
+The registry functions are declared in `include/Ldk/winreg.h`, compiled in the
+Kernel32 source tree, and registered in the Kernel32 pseudo-module export
+table. DLL import resolution and `GetProcAddress(kernel32.dll, ...)` can see
+the implemented wide-character functions.
 
 ## Tests
 
-There is no dedicated registry test yet. Add one before broadening registry
-coverage or making these functions loader-visible.
+`RegistryApiTest` opens
+`HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion`, queries the
+`SystemRoot` value size/data path, and closes the key. Keep registry tests
+read-only unless a future feature explicitly needs write behavior.

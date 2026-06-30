@@ -36,11 +36,18 @@ loaded through the loader are added to the same list.
 
 LDK's Win32 process identity is runtime-local. `GetCurrentProcessId` returns a
 synthetic id owned by the current LDK runtime instance, not
-`PsGetCurrentProcessId`. `OpenProcess` returns an LDK process handle for that
-synthetic id and falls back to native process opening for other process ids.
-That handle is understood by LDK handle, wait, exit-code, and terminate helpers.
-The real host process id is still kept separately for diagnostics and native
-thread client-id bookkeeping.
+`PsGetCurrentProcessId`. `GetProcessId` preserves that synthetic id for LDK
+process handles. `OpenProcess` returns an LDK process handle for that synthetic
+id and falls back to native process opening for other process ids. That handle
+is understood by LDK handle, wait, id, image-name, timing, exit-code, and
+terminate helpers. `QueryFullProcessImageNameA/W` returns the LDK process image
+path from process parameters, or the runtime's native module path when
+`PROCESS_NAME_NATIVE` is requested. `GetProcessTimes` maps LDK process handles
+to the current native process for the timing query. The real host process id is
+still kept separately for diagnostics and native thread client-id bookkeeping.
+`GetProcessAffinityMask` reports the active primary processor-group mask for
+this runtime view. `SetProcessAffinityMask` validates LDK/current-process
+handles and masks, but stores no native EPROCESS affinity change.
 
 ## Process parameters
 
