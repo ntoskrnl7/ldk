@@ -316,6 +316,163 @@ LdkResolveProcessHandleForNativeDuplicate (
 }
 
 BOOL
+LdkResolveProcessHandleForNativeQuery (
+	_In_ HANDLE ProcessHandle,
+	_Out_ PHANDLE NativeProcessHandle
+	)
+{
+	PLDK_PROCESS_HANDLE LdkProcessHandle;
+	KIRQL OldIrql;
+	ACCESS_MASK GrantedAccess = 0;
+
+	if (LdkpIsCurrentProcessPseudoHandle( ProcessHandle )) {
+		*NativeProcessHandle = ZwCurrentProcess();
+		return TRUE;
+	}
+
+	if (! LdkpIsTaggedProcessHandle( ProcessHandle )) {
+		*NativeProcessHandle = ProcessHandle;
+		return TRUE;
+	}
+
+	OldIrql = ExAcquireSpinLockShared( &LdkpProcessHandleListLock );
+	LdkProcessHandle = LdkpLookupProcessHandleLocked( ProcessHandle );
+	if (LdkProcessHandle != NULL) {
+		GrantedAccess = LdkProcessHandle->GrantedAccess;
+	}
+	ExReleaseSpinLockShared( &LdkpProcessHandleListLock,
+							 OldIrql );
+
+	if (LdkProcessHandle == NULL) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	if (! LdkpHasAccess( GrantedAccess,
+						 PROCESS_QUERY_LIMITED_INFORMATION ) &&
+		! LdkpHasAccess( GrantedAccess,
+						 PROCESS_QUERY_INFORMATION )) {
+		SetLastError( ERROR_ACCESS_DENIED );
+		return FALSE;
+	}
+
+	*NativeProcessHandle = ZwCurrentProcess();
+	return TRUE;
+}
+
+BOOL
+LdkGetProcessIdHandle (
+	_In_ HANDLE ProcessHandle,
+	_Out_ LPDWORD ProcessId,
+	_Out_ PBOOL Handled
+	)
+{
+	PLDK_PROCESS_HANDLE LdkProcessHandle;
+	KIRQL OldIrql;
+	ACCESS_MASK GrantedAccess = 0;
+
+	*Handled = FALSE;
+
+	if (LdkpIsCurrentProcessPseudoHandle( ProcessHandle )) {
+		*Handled = TRUE;
+		*ProcessId = LdkCurrentPeb()->ProcessId;
+		return TRUE;
+	}
+
+	if (! LdkpIsTaggedProcessHandle( ProcessHandle )) {
+		return FALSE;
+	}
+
+	*Handled = TRUE;
+	OldIrql = ExAcquireSpinLockShared( &LdkpProcessHandleListLock );
+	LdkProcessHandle = LdkpLookupProcessHandleLocked( ProcessHandle );
+	if (LdkProcessHandle != NULL) {
+		GrantedAccess = LdkProcessHandle->GrantedAccess;
+	}
+	ExReleaseSpinLockShared( &LdkpProcessHandleListLock,
+							 OldIrql );
+
+	if (LdkProcessHandle == NULL) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	if (! LdkpHasAccess( GrantedAccess,
+						 PROCESS_QUERY_LIMITED_INFORMATION ) &&
+		! LdkpHasAccess( GrantedAccess,
+						 PROCESS_QUERY_INFORMATION )) {
+		SetLastError( ERROR_ACCESS_DENIED );
+		return FALSE;
+	}
+
+	*ProcessId = LdkCurrentPeb()->ProcessId;
+	return TRUE;
+}
+
+BOOL
+LdkGetProcessImageNameHandle (
+	_In_ HANDLE ProcessHandle,
+	_In_ DWORD Flags,
+	_Out_ PCUNICODE_STRING *ImageName,
+	_Out_ PANSI_STRING NativeImageName,
+	_Out_ PBOOL Handled
+	)
+{
+	PLDK_PROCESS_HANDLE LdkProcessHandle;
+	KIRQL OldIrql;
+	ACCESS_MASK GrantedAccess = 0;
+
+	*Handled = FALSE;
+	*ImageName = NULL;
+	RtlZeroMemory( NativeImageName,
+				   sizeof(*NativeImageName) );
+
+	if (LdkpIsCurrentProcessPseudoHandle( ProcessHandle )) {
+		*Handled = TRUE;
+	} else if (LdkpIsTaggedProcessHandle( ProcessHandle )) {
+		*Handled = TRUE;
+		OldIrql = ExAcquireSpinLockShared( &LdkpProcessHandleListLock );
+		LdkProcessHandle = LdkpLookupProcessHandleLocked( ProcessHandle );
+		if (LdkProcessHandle != NULL) {
+			GrantedAccess = LdkProcessHandle->GrantedAccess;
+		}
+		ExReleaseSpinLockShared( &LdkpProcessHandleListLock,
+								 OldIrql );
+
+		if (LdkProcessHandle == NULL) {
+			SetLastError( ERROR_INVALID_HANDLE );
+			return FALSE;
+		}
+
+		if (! LdkpHasAccess( GrantedAccess,
+							 PROCESS_QUERY_LIMITED_INFORMATION ) &&
+			! LdkpHasAccess( GrantedAccess,
+							 PROCESS_QUERY_INFORMATION )) {
+			SetLastError( ERROR_ACCESS_DENIED );
+			return FALSE;
+		}
+	} else {
+		return FALSE;
+	}
+
+	if (Flags == PROCESS_NAME_NATIVE) {
+		*NativeImageName = LdkCurrentPeb()->FullPathName;
+		if (NativeImageName->Length == 0) {
+			SetLastError( ERROR_NOT_FOUND );
+			return FALSE;
+		}
+		return TRUE;
+	}
+
+	*ImageName = &LdkCurrentPeb()->ProcessParameters->ImagePathName;
+	if ((*ImageName)->Length == 0) {
+		SetLastError( ERROR_NOT_FOUND );
+		return FALSE;
+	}
+	return TRUE;
+}
+
+BOOL
 LdkGetExitCodeProcessHandle (
 	_In_ HANDLE ProcessHandle,
 	_Out_ LPDWORD ExitCode,
@@ -361,6 +518,50 @@ LdkGetExitCodeProcessHandle (
 	}
 
 	*ExitCode = LdkpGetProcessExitCode();
+	return TRUE;
+}
+
+BOOL
+LdkValidateProcessHandleForSetInformation (
+	_In_ HANDLE ProcessHandle,
+	_Out_ PBOOL Handled
+	)
+{
+	PLDK_PROCESS_HANDLE LdkProcessHandle;
+	KIRQL OldIrql;
+	ACCESS_MASK GrantedAccess = 0;
+
+	*Handled = FALSE;
+
+	if (LdkpIsCurrentProcessPseudoHandle( ProcessHandle )) {
+		*Handled = TRUE;
+		return TRUE;
+	}
+
+	if (! LdkpIsTaggedProcessHandle( ProcessHandle )) {
+		return FALSE;
+	}
+
+	*Handled = TRUE;
+	OldIrql = ExAcquireSpinLockShared( &LdkpProcessHandleListLock );
+	LdkProcessHandle = LdkpLookupProcessHandleLocked( ProcessHandle );
+	if (LdkProcessHandle != NULL) {
+		GrantedAccess = LdkProcessHandle->GrantedAccess;
+	}
+	ExReleaseSpinLockShared( &LdkpProcessHandleListLock,
+							 OldIrql );
+
+	if (LdkProcessHandle == NULL) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return FALSE;
+	}
+
+	if (! LdkpHasAccess( GrantedAccess,
+						 PROCESS_SET_INFORMATION )) {
+		SetLastError( ERROR_ACCESS_DENIED );
+		return FALSE;
+	}
+
 	return TRUE;
 }
 

@@ -50,6 +50,30 @@ GetNativeSystemInfo(
     _Out_ LPSYSTEM_INFO lpSystemInfo
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+GetLogicalProcessorInformation(
+    _Out_writes_bytes_to_opt_(*ReturnedLength, *ReturnedLength) PSYSTEM_LOGICAL_PROCESSOR_INFORMATION Buffer,
+    _Inout_ PDWORD ReturnedLength
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+GetLogicalProcessorInformationEx(
+    _In_ LOGICAL_PROCESSOR_RELATIONSHIP RelationshipType,
+    _Out_writes_bytes_to_opt_(*ReturnedLength, *ReturnedLength) PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX Buffer,
+    _Inout_ PDWORD ReturnedLength
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+GetNumaHighestNodeNumber(
+    _Out_ PULONG HighestNodeNumber
+    );
+
 
 
 WINBASEAPI

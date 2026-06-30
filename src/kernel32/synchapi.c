@@ -9,16 +9,39 @@
 #define THREAD_WAIT_OBJECTS 3
 #endif
 
+NTSYSAPI
+NTSTATUS
+NTAPI
+ZwCreateSemaphore(
+    _Out_ PHANDLE SemaphoreHandle,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
+    _In_ LONG InitialCount,
+    _In_ LONG MaximumCount
+    );
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+ZwReleaseSemaphore(
+    _In_ HANDLE SemaphoreHandle,
+    _In_ LONG ReleaseCount,
+    _Out_opt_ PLONG PreviousCount
+    );
+
 
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, CreateEventA)
 #pragma alloc_text(PAGE, CreateEventW)
+#pragma alloc_text(PAGE, CreateEventExW)
 #pragma alloc_text(PAGE, OpenEventA)
 #pragma alloc_text(PAGE, OpenEventA)
 #pragma alloc_text(PAGE, SetEvent)
 #pragma alloc_text(PAGE, ResetEvent)
 #pragma alloc_text(PAGE, PulseEvent)
+#pragma alloc_text(PAGE, CreateSemaphoreExW)
+#pragma alloc_text(PAGE, ReleaseSemaphore)
 #pragma alloc_text(PAGE, InitializeSRWLock)
 #pragma alloc_text(PAGE, ReleaseSRWLockExclusive)
 #pragma alloc_text(PAGE, ReleaseSRWLockShared)
@@ -46,6 +69,7 @@
 #pragma alloc_text(PAGE, WaitForMultipleObjects)
 #pragma alloc_text(PAGE, WaitForSingleObjectEx)
 #pragma alloc_text(PAGE, WaitForMultipleObjectsEx)
+#pragma alloc_text(PAGE, SignalObjectAndWait)
 #pragma alloc_text(PAGE, Sleep)
 #pragma alloc_text(PAGE, SleepEx)
 #pragma alloc_text(PAGE, WaitOnAddress)
@@ -128,6 +152,72 @@ CreateEventW (
                             &ObjectAttributes,
                             bManualReset ? NotificationEvent : SynchronizationEvent,
                             (BOOLEAN)bInitialState );
+
+    if (NT_SUCCESS(Status)) {
+        if (Status == STATUS_OBJECT_NAME_EXISTS) {
+            SetLastError( ERROR_ALREADY_EXISTS );
+        } else {
+            SetLastError( ERROR_SUCCESS );
+        }
+        return Handle;
+    }
+    LdkSetLastNTError( Status );
+    return NULL;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateEventExW (
+    _In_opt_ LPSECURITY_ATTRIBUTES lpEventAttributes,
+    _In_opt_ LPCWSTR lpName,
+    _In_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    )
+{
+    NTSTATUS Status;
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+    DWORD ValidFlags = CREATE_EVENT_MANUAL_RESET | CREATE_EVENT_INITIAL_SET;
+
+    PAGED_CODE();
+
+    if (FlagOn(dwFlags, ~ValidFlags)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return NULL;
+    }
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        RtlInitUnicodeString( &Name,
+                              lpName );
+        InitializeObjectAttributes( &ObjectAttributes,
+                                    &Name,
+                                    OBJ_OPENIF | OBJ_KERNEL_HANDLE,
+                                    NULL,
+                                    NULL );
+    } else {
+        InitializeObjectAttributes( &ObjectAttributes,
+                                    NULL,
+                                    OBJ_KERNEL_HANDLE,
+                                    NULL,
+                                    NULL );
+    }
+    if (ARGUMENT_PRESENT(lpEventAttributes)) {
+        ObjectAttributes.SecurityDescriptor = lpEventAttributes->lpSecurityDescriptor;
+        if (lpEventAttributes->bInheritHandle) {
+            SetFlag(ObjectAttributes.Attributes, OBJ_INHERIT);
+        }
+    }
+
+    Status = ZwCreateEvent( &Handle,
+                            (ACCESS_MASK)dwDesiredAccess,
+                            &ObjectAttributes,
+                            FlagOn(dwFlags, CREATE_EVENT_MANUAL_RESET) ?
+                                NotificationEvent :
+                                SynchronizationEvent,
+                            (BOOLEAN)FlagOn(dwFlags, CREATE_EVENT_INITIAL_SET) );
 
     if (NT_SUCCESS(Status)) {
         if (Status == STATUS_OBJECT_NAME_EXISTS) {
@@ -253,6 +343,96 @@ PulseEvent (
         return TRUE;
     }
     LdkSetLastNTError(Status);
+    return FALSE;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateSemaphoreExW (
+    _In_opt_ LPSECURITY_ATTRIBUTES lpSemaphoreAttributes,
+    _In_ LONG lInitialCount,
+    _In_ LONG lMaximumCount,
+    _In_opt_ LPCWSTR lpName,
+    _Reserved_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    )
+{
+    NTSTATUS Status;
+    UNICODE_STRING Name;
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    HANDLE Handle;
+
+    PAGED_CODE();
+
+    if (dwFlags != 0 ||
+        lMaximumCount <= 0 ||
+        lInitialCount < 0 ||
+        lInitialCount > lMaximumCount) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return NULL;
+    }
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        RtlInitUnicodeString( &Name,
+                              lpName );
+        InitializeObjectAttributes( &ObjectAttributes,
+                                    &Name,
+                                    OBJ_OPENIF | OBJ_KERNEL_HANDLE,
+                                    NULL,
+                                    NULL );
+    } else {
+        InitializeObjectAttributes( &ObjectAttributes,
+                                    NULL,
+                                    OBJ_KERNEL_HANDLE,
+                                    NULL,
+                                    NULL );
+    }
+    if (ARGUMENT_PRESENT(lpSemaphoreAttributes)) {
+        ObjectAttributes.SecurityDescriptor = lpSemaphoreAttributes->lpSecurityDescriptor;
+        if (lpSemaphoreAttributes->bInheritHandle) {
+            SetFlag(ObjectAttributes.Attributes, OBJ_INHERIT);
+        }
+    }
+
+    Status = ZwCreateSemaphore( &Handle,
+                                (ACCESS_MASK)dwDesiredAccess,
+                                &ObjectAttributes,
+                                lInitialCount,
+                                lMaximumCount );
+    if (NT_SUCCESS(Status)) {
+        if (Status == STATUS_OBJECT_NAME_EXISTS) {
+            SetLastError( ERROR_ALREADY_EXISTS );
+        } else {
+            SetLastError( ERROR_SUCCESS );
+        }
+        return Handle;
+    }
+    LdkSetLastNTError( Status );
+    return NULL;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+ReleaseSemaphore (
+    _In_ HANDLE hSemaphore,
+    _In_ LONG lReleaseCount,
+    _Out_opt_ LPLONG lpPreviousCount
+    )
+{
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    Status = ZwReleaseSemaphore( hSemaphore,
+                                 lReleaseCount,
+                                 lpPreviousCount );
+    if (NT_SUCCESS(Status)) {
+        return TRUE;
+    }
+    LdkSetLastNTError( Status );
     return FALSE;
 }
 
@@ -939,6 +1119,37 @@ WaitForMultipleObjectsEx (
                            TAG_TMP_POOL );
     }
 	return (DWORD)Status;
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+SignalObjectAndWait (
+    _In_ HANDLE hObjectToSignal,
+    _In_ HANDLE hObjectToWaitOn,
+    _In_ DWORD dwMilliseconds,
+    _In_ BOOL bAlertable
+    )
+{
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    Status = ZwSetEvent( hObjectToSignal,
+                         NULL );
+    if (Status == STATUS_OBJECT_TYPE_MISMATCH) {
+        Status = ZwReleaseSemaphore( hObjectToSignal,
+                                     1,
+                                     NULL );
+    }
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return WAIT_FAILED;
+    }
+
+    return WaitForSingleObjectEx( hObjectToWaitOn,
+                                  dwMilliseconds,
+                                  bAlertable );
 }
 
 

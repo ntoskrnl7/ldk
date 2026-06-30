@@ -37,6 +37,15 @@ LdkpInitializeSListHead (
 	InitializeSListHead( SListHead );
 }
 
+#if (NTDDI_VERSION < NTDDI_WIN8)
+WINBASEAPI
+VOID
+WINAPI
+GetSystemTimePreciseAsFileTime(
+    _Out_ LPFILETIME lpSystemTimeAsFileTime
+    );
+#endif
+
 
 #pragma warning(disable:4152)
 LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
@@ -44,12 +53,24 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	// fileapi.c
 	//
 	{
+		"CreateDirectoryA",
+		CreateDirectoryA
+	},
+	{
+		"CreateDirectoryW",
+		CreateDirectoryW
+	},
+	{
 		"CreateFileA",
 		CreateFileA
 	},
 	{
 		"CreateFileW",
 		CreateFileW
+	},
+	{
+		"CreateFile2",
+		CreateFile2
 	},
 	{
 		"ReadFile",
@@ -64,8 +85,48 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		FlushFileBuffers
 	},
 	{
+		"SetEndOfFile",
+		SetEndOfFile
+	},
+	{
+		"SetFilePointer",
+		SetFilePointer
+	},
+	{
+		"SetFilePointerEx",
+		SetFilePointerEx
+	},
+	{
+		"LocalFileTimeToFileTime",
+		LocalFileTimeToFileTime
+	},
+	{
+		"LockFile",
+		LockFile
+	},
+	{
+		"LockFileEx",
+		LockFileEx
+	},
+	{
+		"UnlockFile",
+		UnlockFile
+	},
+	{
+		"UnlockFileEx",
+		UnlockFileEx
+	},
+	{
+		"CopyFileA",
+		CopyFileA
+	},
+	{
 		"CopyFileW",
 		CopyFileW
+	},
+	{
+		"CopyFile2",
+		CopyFile2
 	},
 	{
 		"CreateDirectoryExW",
@@ -80,20 +141,64 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		RemoveDirectoryW
 	},
 	{
+		"CreateHardLinkA",
+		CreateHardLinkA
+	},
+	{
 		"CreateHardLinkW",
 		CreateHardLinkW
+	},
+	{
+		"CreateSymbolicLinkA",
+		CreateSymbolicLinkA
 	},
 	{
 		"CreateSymbolicLinkW",
 		CreateSymbolicLinkW
 	},
 	{
+		"MoveFileA",
+		MoveFileA
+	},
+	{
+		"MoveFileW",
+		MoveFileW
+	},
+	{
+		"MoveFileExA",
+		MoveFileExA
+	},
+	{
 		"MoveFileExW",
 		MoveFileExW
 	},
 	{
+		"DeleteFileA",
+		DeleteFileA
+	},
+	{
+		"DeleteFileW",
+		DeleteFileW
+	},
+	{
+		"GetFileAttributesA",
+		GetFileAttributesA
+	},
+	{
+		"GetFileAttributesW",
+		GetFileAttributesW
+	},
+	{
+		"GetFileAttributesExA",
+		GetFileAttributesExA
+	},
+	{
 		"GetFileAttributesExW",
 		GetFileAttributesExW
+	},
+	{
+		"SetFileAttributesA",
+		SetFileAttributesA
 	},
 	{
 		"SetFileAttributesW",
@@ -108,8 +213,28 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetFileInformationByHandleEx
 	},
 	{
+		"GetFileInformationByName",
+		GetFileInformationByName
+	},
+	{
 		"SetFileInformationByHandle",
 		SetFileInformationByHandle
+	},
+	{
+		"GetFileSize",
+		GetFileSize
+	},
+	{
+		"GetFileSizeEx",
+		GetFileSizeEx
+	},
+	{
+		"GetFileType",
+		GetFileType
+	},
+	{
+		"SetFileTime",
+		SetFileTime
 	},
 	{
 		"GetFinalPathNameByHandleW",
@@ -130,6 +255,14 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"FindNextFileW",
 		FindNextFileW
+	},
+	{
+		"GetFullPathNameA",
+		GetFullPathNameA
+	},
+	{
+		"GetFullPathNameW",
+		GetFullPathNameW
 	},
 	{
 		"GetDriveTypeA",
@@ -167,6 +300,18 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		"DeviceIoControl",
 		DeviceIoControl
 	},
+	{
+		"AreFileApisANSI",
+		AreFileApisANSI
+	},
+	{
+		"SetFileApisToOEM",
+		SetFileApisToOEM
+	},
+	{
+		"SetFileApisToANSI",
+		SetFileApisToANSI
+	},
 
 	//
 	// processenv.c
@@ -194,6 +339,14 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"GetEnvironmentVariableW",
 		GetEnvironmentVariableW
+	},
+	{
+		"SetEnvironmentVariableA",
+		SetEnvironmentVariableA
+	},
+	{
+		"SetEnvironmentVariableW",
+		SetEnvironmentVariableW
 	},
 	{
 		"GetCurrentDirectoryA",
@@ -443,6 +596,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		"VirtualProtect",
 		VirtualProtect
 	},
+	{
+		"VirtualFree",
+		VirtualFree
+	},
 
 	//
 	// profileapi.c
@@ -492,6 +649,74 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	// synchapi.h
 	//
 	{
+		"CreateEventA",
+		CreateEventA
+	},
+	{
+		"CreateEventW",
+		CreateEventW
+	},
+	{
+		"CreateEventExW",
+		CreateEventExW
+	},
+	{
+		"OpenEventA",
+		OpenEventA
+	},
+	{
+		"OpenEventW",
+		OpenEventW
+	},
+	{
+		"SetEvent",
+		SetEvent
+	},
+	{
+		"ResetEvent",
+		ResetEvent
+	},
+	{
+		"PulseEvent",
+		PulseEvent
+	},
+	{
+		"CreateSemaphoreExW",
+		CreateSemaphoreExW
+	},
+	{
+		"ReleaseSemaphore",
+		ReleaseSemaphore
+	},
+	{
+		"InitializeSRWLock",
+		InitializeSRWLock
+	},
+	{
+		"ReleaseSRWLockExclusive",
+		ReleaseSRWLockExclusive
+	},
+	{
+		"ReleaseSRWLockShared",
+		ReleaseSRWLockShared
+	},
+	{
+		"AcquireSRWLockExclusive",
+		AcquireSRWLockExclusive
+	},
+	{
+		"AcquireSRWLockShared",
+		AcquireSRWLockShared
+	},
+	{
+		"TryAcquireSRWLockExclusive",
+		TryAcquireSRWLockExclusive
+	},
+	{
+		"TryAcquireSRWLockShared",
+		TryAcquireSRWLockShared
+	},
+	{
 		"InitializeConditionVariable",
 		InitializeConditionVariable
 	},
@@ -520,6 +745,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		InitializeCriticalSectionAndSpinCount
 	},
 	{
+		"InitializeCriticalSectionEx",
+		InitializeCriticalSectionEx
+	},
+	{
 		"DeleteCriticalSection",
 		DeleteCriticalSection
 	},
@@ -528,12 +757,28 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		EnterCriticalSection
 	},
 	{
+		"TryEnterCriticalSection",
+		TryEnterCriticalSection
+	},
+	{
 		"LeaveCriticalSection",
 		LeaveCriticalSection
 	},
 	{
+		"InitOnceInitialize",
+		InitOnceInitialize
+	},
+	{
 		"InitOnceExecuteOnce",
 		InitOnceExecuteOnce
+	},
+	{
+		"InitOnceBeginInitialize",
+		InitOnceBeginInitialize
+	},
+	{
+		"InitOnceComplete",
+		InitOnceComplete
 	},
 	{
 		"WaitForSingleObject",
@@ -552,8 +797,16 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		WaitForMultipleObjectsEx
 	},
 	{
+		"SignalObjectAndWait",
+		SignalObjectAndWait
+	},
+	{
 		"Sleep",
 		Sleep
+	},
+	{
+		"SleepEx",
+		SleepEx
 	},
     {
         "WaitOnAddress",
@@ -582,6 +835,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"FlsGetValue",
 		FlsGetValue
+	},
+	{
+		"FlsGetValue2",
+		FlsGetValue2
 	},
 	{
 		"FlsSetValue",
@@ -640,8 +897,28 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetCurrentThreadStackLimits
 	},
 	{
+		"TlsAlloc",
+		TlsAlloc
+	},
+	{
+		"TlsFree",
+		TlsFree
+	},
+	{
+		"TlsGetValue",
+		TlsGetValue
+	},
+	{
+		"TlsSetValue",
+		TlsSetValue
+	},
+	{
 		"GetThreadTimes",
 		GetThreadTimes
+	},
+	{
+		"GetProcessTimes",
+		GetProcessTimes
 	},
 	{
 		"GetCurrentThread",
@@ -652,12 +929,52 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetCurrentThreadId
 	},
 	{
+		"GetThreadId",
+		GetThreadId
+	},
+	{
+		"GetThreadGroupAffinity",
+		GetThreadGroupAffinity
+	},
+	{
+		"SetThreadGroupAffinity",
+		SetThreadGroupAffinity
+	},
+	{
+		"SetThreadDescription",
+		SetThreadDescription
+	},
+	{
+		"GetThreadDescription",
+		GetThreadDescription
+	},
+	{
 		"GetCurrentProcess",
 		GetCurrentProcess
 	},
 	{
 		"GetCurrentProcessId",
 		GetCurrentProcessId
+	},
+	{
+		"GetProcessId",
+		GetProcessId
+	},
+	{
+		"GetProcessAffinityMask",
+		GetProcessAffinityMask
+	},
+	{
+		"SetProcessAffinityMask",
+		SetProcessAffinityMask
+	},
+	{
+		"QueryFullProcessImageNameA",
+		QueryFullProcessImageNameA
+	},
+	{
+		"QueryFullProcessImageNameW",
+		QueryFullProcessImageNameW
 	},
 	{
 		"OpenProcess",
@@ -694,6 +1011,50 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"QueueUserWorkItem",
 		QueueUserWorkItem
+	},
+	{
+		"RegisterWaitForSingleObject",
+		RegisterWaitForSingleObject
+	},
+	{
+		"UnregisterWait",
+		UnregisterWait
+	},
+	{
+		"UnregisterWaitEx",
+		UnregisterWaitEx
+	},
+	{
+		"CreateTimerQueueTimer",
+		CreateTimerQueueTimer
+	},
+	{
+		"DeleteTimerQueueTimer",
+		DeleteTimerQueueTimer
+	},
+	{
+		"CreateThreadpool",
+		CreateThreadpool
+	},
+	{
+		"SetThreadpoolThreadMaximum",
+		SetThreadpoolThreadMaximum
+	},
+	{
+		"SetThreadpoolThreadMinimum",
+		SetThreadpoolThreadMinimum
+	},
+	{
+		"QueryThreadpoolStackInformation",
+		QueryThreadpoolStackInformation
+	},
+	{
+		"SetThreadpoolStackInformation",
+		SetThreadpoolStackInformation
+	},
+	{
+		"CloseThreadpool",
+		CloseThreadpool
 	},
 	{
 		"CreateThreadpoolCleanupGroup",
@@ -784,6 +1145,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		FreeLibrary
 	},
 	{
+		"FreeLibraryAndExitThread",
+		FreeLibraryAndExitThread
+	},
+	{
 		"LoadLibraryExA",
 		LoadLibraryExA
 	},
@@ -829,6 +1194,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetSystemTime
 	},
 	{
+		"GetSystemTimePreciseAsFileTime",
+		GetSystemTimePreciseAsFileTime
+	},
+	{
 		"GetLocalTime",
 		GetLocalTime
 	},
@@ -839,6 +1208,46 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"GetSystemInfo",
 		GetSystemInfo
+	},
+	{
+		"GetNativeSystemInfo",
+		GetNativeSystemInfo
+	},
+	{
+		"GetLogicalProcessorInformation",
+		GetLogicalProcessorInformation
+	},
+	{
+		"GetLogicalProcessorInformationEx",
+		GetLogicalProcessorInformationEx
+	},
+	{
+		"GetNumaHighestNodeNumber",
+		GetNumaHighestNodeNumber
+	},
+	{
+		"GetCurrentProcessorNumber",
+		GetCurrentProcessorNumber
+	},
+	{
+		"GetCurrentProcessorNumberEx",
+		GetCurrentProcessorNumberEx
+	},
+	{
+		"GetActiveProcessorGroupCount",
+		GetActiveProcessorGroupCount
+	},
+	{
+		"GetMaximumProcessorGroupCount",
+		GetMaximumProcessorGroupCount
+	},
+	{
+		"GetActiveProcessorCount",
+		GetActiveProcessorCount
+	},
+	{
+		"GetMaximumProcessorCount",
+		GetMaximumProcessorCount
 	},
 	{
 		"GetSystemTimeAsFileTime",
@@ -859,6 +1268,10 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"GetVersionExA",
 		GetVersionExA
+	},
+	{
+		"GetVersionExW",
+		GetVersionExW
 	},
 	{
 		"GlobalMemoryStatusEx",
@@ -945,8 +1358,40 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetCPInfoExW
 	},
 	{
+		"CompareStringA",
+		CompareStringA
+	},
+	{
+		"CompareStringEx",
+		CompareStringEx
+	},
+	{
+		"CompareStringOrdinal",
+		CompareStringOrdinal
+	},
+	{
+		"CompareStringW",
+		CompareStringW
+	},
+	{
+		"LCMapStringA",
+		LCMapStringA
+	},
+	{
+		"LCMapStringEx",
+		LCMapStringEx
+	},
+	{
+		"LCMapStringW",
+		LCMapStringW
+	},
+	{
 		"GetLocaleInfoW",
 		GetLocaleInfoW
+	},
+	{
+		"GetLocaleInfoA",
+		GetLocaleInfoA
 	},
 	{
 		"GetLocaleInfoEx",
@@ -957,12 +1402,40 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		GetDateFormatW
 	},
 	{
+		"GetDateFormatEx",
+		GetDateFormatEx
+	},
+	{
 		"GetTimeFormatW",
 		GetTimeFormatW
 	},
 	{
+		"GetTimeFormatEx",
+		GetTimeFormatEx
+	},
+	{
 		"GetStringTypeW",
 		GetStringTypeW
+	},
+	{
+		"GetStringTypeA",
+		GetStringTypeA
+	},
+	{
+		"GetStringTypeExA",
+		GetStringTypeExA
+	},
+	{
+		"GetStringTypeExW",
+		GetStringTypeExW
+	},
+	{
+		"MultiByteToWideChar",
+		MultiByteToWideChar
+	},
+	{
+		"WideCharToMultiByte",
+		WideCharToMultiByte
 	},
 	{
 		"EnumSystemLocalesW",
@@ -985,12 +1458,32 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		LocaleNameToLCID
 	},
 	{
+		"IsValidLocaleName",
+		IsValidLocaleName
+	},
+	{
 		"GetUserDefaultLCID",
 		GetUserDefaultLCID
 	},
 	{
 		"GetUserDefaultLocaleName",
 		GetUserDefaultLocaleName
+	},
+
+	//
+	// winreg.c
+	//
+	{
+		"RegOpenKeyExW",
+		RegOpenKeyExW
+	},
+	{
+		"RegQueryValueExW",
+		RegQueryValueExW
+	},
+	{
+		"RegCloseKey",
+		RegCloseKey
 	},
 
 	//

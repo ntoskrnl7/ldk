@@ -6,6 +6,11 @@ ConditionVariableTest (
     VOID
     );
 
+BOOLEAN
+KernelObjectSynchronizationApiTest(
+    VOID
+    );
+
 DWORD
 WINAPI
 CondTestThreadProc(
@@ -104,6 +109,7 @@ SyncWaitForThreads(
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, ConditionVariableTest)
+#pragma alloc_text(PAGE, KernelObjectSynchronizationApiTest)
 #pragma alloc_text(PAGE, CondTestThreadProc)
 #pragma alloc_text(PAGE, CriticalSectionCounterThreadProc)
 #pragma alloc_text(PAGE, SRWLockCounterThreadProc)
@@ -1303,11 +1309,215 @@ Cleanup:
 }
 
 BOOLEAN
+KernelObjectSynchronizationApiTest(
+    VOID
+    )
+{
+    HANDLE Event = NULL;
+    HANDLE WaitEvent = NULL;
+    HANDLE SignalEvent = NULL;
+    HANDLE Semaphore = NULL;
+    HANDLE SignalSemaphore = NULL;
+    DWORD WaitResult;
+    LONG PreviousCount = -1;
+    BOOLEAN Result = FALSE;
+
+    PAGED_CODE();
+
+    Event = CreateEventExW( NULL,
+                            NULL,
+                            CREATE_EVENT_MANUAL_RESET | CREATE_EVENT_INITIAL_SET,
+                            EVENT_ALL_ACCESS );
+    if (! Event) {
+        fprintf(stderr,
+                "[Failed] CreateEventExW ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( Event,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] CreateEventExW initial wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ResetEvent( Event )) {
+        fprintf(stderr,
+                "[Failed] ResetEvent(CreateEventExW) ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( Event,
+                                      0 );
+    if (WaitResult != WAIT_TIMEOUT) {
+        fprintf(stderr,
+                "[Failed] CreateEventExW reset wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    Semaphore = CreateSemaphoreExW( NULL,
+                                    0,
+                                    2,
+                                    NULL,
+                                    0,
+                                    SEMAPHORE_ALL_ACCESS );
+    if (! Semaphore) {
+        fprintf(stderr,
+                "[Failed] CreateSemaphoreExW ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ReleaseSemaphore( Semaphore,
+                            1,
+                            &PreviousCount ) ||
+        PreviousCount != 0) {
+        fprintf(stderr,
+                "[Failed] ReleaseSemaphore Previous = %ld ErrorCode = %lu\n",
+                PreviousCount,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( Semaphore,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] Semaphore wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( Semaphore,
+                                      0 );
+    if (WaitResult != WAIT_TIMEOUT) {
+        fprintf(stderr,
+                "[Failed] Semaphore drained wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitEvent = CreateEventExW( NULL,
+                                NULL,
+                                CREATE_EVENT_INITIAL_SET,
+                                EVENT_ALL_ACCESS );
+    SignalEvent = CreateEventExW( NULL,
+                                  NULL,
+                                  CREATE_EVENT_MANUAL_RESET,
+                                  EVENT_ALL_ACCESS );
+    if (! WaitEvent ||
+        ! SignalEvent) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait event setup ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = SignalObjectAndWait( SignalEvent,
+                                      WaitEvent,
+                                      0,
+                                      FALSE );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait(event) Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( SignalEvent,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait event signal Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    SignalSemaphore = CreateSemaphoreExW( NULL,
+                                          0,
+                                          1,
+                                          NULL,
+                                          0,
+                                          SEMAPHORE_ALL_ACCESS );
+    if (! SignalSemaphore) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait semaphore setup ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! SetEvent( WaitEvent )) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait semaphore wait setup ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = SignalObjectAndWait( SignalSemaphore,
+                                      WaitEvent,
+                                      0,
+                                      FALSE );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait(semaphore) Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( SignalSemaphore,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait semaphore signal Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    printf("[Success] kernel object synchronization API test\n\n");
+    Result = TRUE;
+
+Cleanup:
+    if (SignalSemaphore) {
+        CloseHandle( SignalSemaphore );
+    }
+    if (SignalEvent) {
+        CloseHandle( SignalEvent );
+    }
+    if (WaitEvent) {
+        CloseHandle( WaitEvent );
+    }
+    if (Semaphore) {
+        CloseHandle( Semaphore );
+    }
+    if (Event) {
+        CloseHandle( Event );
+    }
+    return Result;
+}
+
+BOOLEAN
 ConditionVariableTest (
     VOID
     )
 {
     PAGED_CODE();
+
+    if (! KernelObjectSynchronizationApiTest()) {
+        return FALSE;
+    }
 
     if (! CriticalSectionRegressionTest()) {
         return FALSE;

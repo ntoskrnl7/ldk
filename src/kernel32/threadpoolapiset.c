@@ -16,10 +16,18 @@ NPAGED_LOOKASIDE_LIST LdkpFreeModuleEntryLookaside;
 
 
 
+#define TAG_TP_POOL		'lPpT'
+
 typedef struct _TP_POOL
 {
 	EX_SPIN_LOCK Lock;
+	DWORD MinimumThreads;
+	DWORD MaximumThreads;
+	TP_POOL_STACK_INFORMATION StackInformation;
+	BOOLEAN IsDefaultPool;
 } TP_POOL, *PTP_POOL;
+
+NPAGED_LOOKASIDE_LIST LdkpThreadpoolPoolLookaside;
 
 typedef struct _TP_CLEANUP_GROUP
 {
@@ -216,6 +224,13 @@ LdkpEndThreadpoolCallback (
 	);
 
 VOID
+LdkpFinalizeThreadpoolCallback (
+	_In_ PTP_CALLBACK_ENVIRON CallbackEnvironment,
+	_Inout_ PTP_CALLBACK_INSTANCE Instance,
+	_Inout_opt_ PVOID CallbackParameter
+	);
+
+VOID
 LdkpDereferenceThreadpoolWork (
 	_Inout_ PTP_WORK Work
 	);
@@ -275,6 +290,12 @@ LdkpUnregisterThreadpoolCleanupGroupMember (
 #pragma alloc_text(INIT, LdkpInitializeThreadpoolApiset)
 #pragma alloc_text(PAGE, LdkpTerminateThreadpoolApiset)
 #pragma alloc_text(PAGE, LdkpCaptureThreadpoolCallbackEnvironment)
+#pragma alloc_text(PAGE, CreateThreadpool)
+#pragma alloc_text(PAGE, SetThreadpoolThreadMaximum)
+#pragma alloc_text(PAGE, SetThreadpoolThreadMinimum)
+#pragma alloc_text(PAGE, QueryThreadpoolStackInformation)
+#pragma alloc_text(PAGE, SetThreadpoolStackInformation)
+#pragma alloc_text(PAGE, CloseThreadpool)
 #pragma alloc_text(PAGE, LdkpRegisterThreadpoolCleanupGroupMember)
 #pragma alloc_text(PAGE, LdkpUnregisterThreadpoolCleanupGroupMember)
 #pragma alloc_text(PAGE, CreateThreadpoolCleanupGroup)
@@ -302,6 +323,13 @@ LdkpInitializeThreadpoolApiset (
 {
 	PAGED_CODE();
 
+	LdkpDefaultThreadPool.Lock = 0;
+	LdkpDefaultThreadPool.MinimumThreads = 0;
+	LdkpDefaultThreadPool.MaximumThreads = MAXULONG;
+	LdkpDefaultThreadPool.StackInformation.StackReserve = 0;
+	LdkpDefaultThreadPool.StackInformation.StackCommit = 0;
+	LdkpDefaultThreadPool.IsDefaultPool = TRUE;
+
 	TpInitializeCallbackEnviron( &LdkpDefaultCallbackEnviron );
 
 	TpSetCallbackThreadpool( &LdkpDefaultCallbackEnviron,
@@ -315,6 +343,14 @@ LdkpInitializeThreadpoolApiset (
 									 0,
 									 sizeof(TP_WORK),
 									 TAG_TP_WORK,
+									 0 );
+
+	ExInitializeNPagedLookasideList( &LdkpThreadpoolPoolLookaside,
+									 NULL,
+									 NULL,
+									 0,
+									 sizeof(TP_POOL),
+									 TAG_TP_POOL,
 									 0 );
 
 	ExInitializeNPagedLookasideList( &LdkpThreadpoolWorkQueItemLookaside,
@@ -367,6 +403,7 @@ LdkpTerminateThreadpoolApiset (
 	PAGED_CODE();
 
 	ExDeleteNPagedLookasideList( &LdkpThreadpoolWorkLookaside );
+	ExDeleteNPagedLookasideList( &LdkpThreadpoolPoolLookaside );
 	ExDeleteNPagedLookasideList( &LdkpThreadpoolWorkQueItemLookaside );
 	ExDeleteNPagedLookasideList( &LdkpThreadpoolCleanupGroupLookaside );
 	ExDeleteNPagedLookasideList( &LdkpThreadpoolTimerLookaside );
@@ -404,12 +441,6 @@ LdkpCaptureThreadpoolCallbackEnvironment (
 	}
 #endif
 
-	if ((Source->Pool != NULL &&
-		 Source->Pool != &LdkpDefaultThreadPool) ||
-		Source->FinalizationCallback != NULL) {
-		return STATUS_NOT_SUPPORTED;
-	}
-
 	if (Source->CleanupGroup == NULL &&
 		Source->CleanupGroupCancelCallback != NULL) {
 		return STATUS_INVALID_PARAMETER;
@@ -425,6 +456,164 @@ LdkpCaptureThreadpoolCallbackEnvironment (
 		Destination->Pool = &LdkpDefaultThreadPool;
 	}
 	return STATUS_SUCCESS;
+}
+
+WINBASEAPI
+PTP_POOL
+WINAPI
+CreateThreadpool (
+	_Reserved_ PVOID reserved
+	)
+{
+	PTP_POOL Pool;
+
+	PAGED_CODE();
+
+	if (reserved != NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return NULL;
+	}
+
+	Pool = ExAllocateFromNPagedLookasideList( &LdkpThreadpoolPoolLookaside );
+	if (Pool == NULL) {
+		LdkSetLastNTError( STATUS_INSUFFICIENT_RESOURCES );
+		return NULL;
+	}
+
+	RtlZeroMemory( Pool,
+				   sizeof(TP_POOL) );
+	Pool->Lock = 0;
+	Pool->MinimumThreads = 0;
+	Pool->MaximumThreads = MAXULONG;
+	Pool->IsDefaultPool = FALSE;
+	return Pool;
+}
+
+WINBASEAPI
+VOID
+WINAPI
+SetThreadpoolThreadMaximum (
+	_Inout_ PTP_POOL ptpp,
+	_In_ DWORD cthrdMost
+	)
+{
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	if (ptpp == NULL) {
+		LdkSetLastNTError( STATUS_INVALID_PARAMETER );
+		return;
+	}
+
+	OldIrql = ExAcquireSpinLockExclusive( &ptpp->Lock );
+	ptpp->MaximumThreads = cthrdMost;
+	if (ptpp->MaximumThreads < ptpp->MinimumThreads) {
+		ptpp->MinimumThreads = ptpp->MaximumThreads;
+	}
+	ExReleaseSpinLockExclusive( &ptpp->Lock,
+								OldIrql );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadpoolThreadMinimum (
+	_Inout_ PTP_POOL ptpp,
+	_In_ DWORD cthrdMic
+	)
+{
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	if (ptpp == NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+	OldIrql = ExAcquireSpinLockExclusive( &ptpp->Lock );
+	ptpp->MinimumThreads = cthrdMic;
+	if (ptpp->MaximumThreads < ptpp->MinimumThreads) {
+		ptpp->MaximumThreads = ptpp->MinimumThreads;
+	}
+	ExReleaseSpinLockExclusive( &ptpp->Lock,
+								OldIrql );
+	return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+QueryThreadpoolStackInformation (
+	_In_ PTP_POOL ptpp,
+	_Out_ PTP_POOL_STACK_INFORMATION ptpsi
+	)
+{
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	if (ptpp == NULL ||
+		ptpsi == NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+	OldIrql = ExAcquireSpinLockShared( &ptpp->Lock );
+	*ptpsi = ptpp->StackInformation;
+	ExReleaseSpinLockShared( &ptpp->Lock,
+							 OldIrql );
+	return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadpoolStackInformation (
+	_Inout_ PTP_POOL ptpp,
+	_In_ PTP_POOL_STACK_INFORMATION ptpsi
+	)
+{
+	KIRQL OldIrql;
+
+	PAGED_CODE();
+
+	if (ptpp == NULL ||
+		ptpsi == NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+	if (ptpsi->StackReserve != 0 &&
+		ptpsi->StackCommit > ptpsi->StackReserve) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+	OldIrql = ExAcquireSpinLockExclusive( &ptpp->Lock );
+	ptpp->StackInformation = *ptpsi;
+	ExReleaseSpinLockExclusive( &ptpp->Lock,
+								OldIrql );
+	return TRUE;
+}
+
+WINBASEAPI
+VOID
+WINAPI
+CloseThreadpool (
+	_Inout_ PTP_POOL ptpp
+	)
+{
+	PAGED_CODE();
+
+	if (ptpp == NULL ||
+		ptpp == &LdkpDefaultThreadPool) {
+		return;
+	}
+
+	ExFreeToNPagedLookasideList( &LdkpThreadpoolPoolLookaside,
+								 ptpp );
 }
 
 BOOLEAN
@@ -485,6 +674,19 @@ LdkpEndThreadpoolCallback (
 
 	if (ReleaseRaceDll) {
 		FreeLibrary( RaceDll );
+	}
+}
+
+VOID
+LdkpFinalizeThreadpoolCallback (
+	_In_ PTP_CALLBACK_ENVIRON CallbackEnvironment,
+	_Inout_ PTP_CALLBACK_INSTANCE Instance,
+	_Inout_opt_ PVOID CallbackParameter
+	)
+{
+	if (CallbackEnvironment->FinalizationCallback != NULL) {
+		CallbackEnvironment->FinalizationCallback( Instance,
+												   CallbackParameter );
 	}
 }
 
@@ -977,6 +1179,9 @@ LdkpThreadpoolWokerThreadRoutine (
 		Work->WorkCallback( &Instance,
 							Work->CallbackParameter,
 							Work );
+		LdkpFinalizeThreadpoolCallback( &Work->CallbackEnvironment,
+										&Instance,
+										Work->CallbackParameter );
 	}
 
 	LdkpEndThreadpoolCallback( &Instance,
@@ -1174,6 +1379,9 @@ LdkpThreadpoolTimerThreadRoutine (
 			Timer->TimerCallback( &Instance,
 								  Timer->CallbackParameter,
 								  Timer );
+			LdkpFinalizeThreadpoolCallback( &Timer->CallbackEnvironment,
+											&Instance,
+											Timer->CallbackParameter );
 			LdkpEndThreadpoolCallback( &Instance,
 									   RaceDll,
 									   ReleaseRaceDll );
@@ -1501,6 +1709,9 @@ LdkpThreadpoolWaitThreadRoutine (
 							Wait->CallbackParameter,
 							Wait,
 							WaitResult );
+		LdkpFinalizeThreadpoolCallback( &Wait->CallbackEnvironment,
+										&Instance,
+										Wait->CallbackParameter );
 		LdkpEndThreadpoolCallback( &Instance,
 								   RaceDll,
 								   ReleaseRaceDll );

@@ -36,6 +36,27 @@ LdkpQueryFullFileAttributes (
      FILE_RENAME_FLAG_POSIX_SEMANTICS | \
      FILE_RENAME_FLAG_SUPPRESS_PIN_STATE_INHERITANCE)
 #define LDK_FILE_RENAME_INFORMATION_EX_CLASS ((FILE_INFORMATION_CLASS)65)
+#define LDK_COPY_FILE2_SUPPORTED_FLAGS \
+    (COPY_FILE_FAIL_IF_EXISTS | \
+     COPY_FILE_RESTARTABLE | \
+     COPY_FILE_OPEN_SOURCE_FOR_WRITE | \
+     COPY_FILE_ALLOW_DECRYPTED_DESTINATION | \
+     COPY_FILE_COPY_SYMLINK | \
+     COPY_FILE_NO_BUFFERING | \
+     COPY_FILE_REQUEST_SECURITY_PRIVILEGES | \
+     COPY_FILE_RESUME_FROM_PAUSE | \
+     COPY_FILE_NO_OFFLOAD | \
+     COPY_FILE_IGNORE_EDP_BLOCK | \
+     COPY_FILE_IGNORE_SOURCE_ENCRYPTION | \
+     COPY_FILE_DONT_REQUEST_DEST_WRITE_DAC)
+
+#ifndef ERROR_REQUEST_ABORTED
+#define ERROR_REQUEST_ABORTED 1235L
+#endif
+
+#ifndef ERROR_REQUEST_PAUSED
+#define ERROR_REQUEST_PAUSED 3050L
+#endif
 
 typedef union _LDK_FIND_QUERY_BUFFER {
     FILE_BOTH_DIR_INFORMATION Alignment;
@@ -138,6 +159,45 @@ LdkpSetFileInformationClassError (
     }
 }
 
+static
+BOOL
+LdkpCaptureAnsiFileNamePair (
+    _In_ LPCSTR FirstFileNameA,
+    _In_ LPCSTR SecondFileNameA,
+    _Out_ PUNICODE_STRING FirstFileNameW,
+    _Out_ PUNICODE_STRING SecondFileNameW
+    )
+{
+    RtlZeroMemory( FirstFileNameW,
+                   sizeof(*FirstFileNameW) );
+    RtlZeroMemory( SecondFileNameW,
+                   sizeof(*SecondFileNameW) );
+
+    if (! Ldk8BitStringToDynamicUnicodeString( FirstFileNameW,
+                                               FirstFileNameA )) {
+        return FALSE;
+    }
+
+    if (! Ldk8BitStringToDynamicUnicodeString( SecondFileNameW,
+                                               SecondFileNameA )) {
+        RtlFreeUnicodeString( FirstFileNameW );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+VOID
+LdkpReleaseAnsiFileNamePair (
+    _Inout_ PUNICODE_STRING FirstFileNameW,
+    _Inout_ PUNICODE_STRING SecondFileNameW
+    )
+{
+    RtlFreeUnicodeString( SecondFileNameW );
+    RtlFreeUnicodeString( FirstFileNameW );
+}
+
 
 
 #ifdef ALLOC_PRAGMA
@@ -145,6 +205,7 @@ LdkpSetFileInformationClassError (
 #pragma alloc_text(PAGE, CreateDirectoryW)
 #pragma alloc_text(PAGE, CreateFileA)
 #pragma alloc_text(PAGE, CreateFileW)
+#pragma alloc_text(PAGE, CreateFile2)
 #pragma alloc_text(PAGE, ReadFile)
 #pragma alloc_text(PAGE, WriteFile)
 #pragma alloc_text(PAGE, LockFile)
@@ -157,7 +218,9 @@ LdkpSetFileInformationClassError (
 #pragma alloc_text(PAGE, SetFilePointerEx)
 #pragma alloc_text(PAGE, GetFileAttributesA)
 #pragma alloc_text(PAGE, GetFileAttributesW)
+#pragma alloc_text(PAGE, GetFileAttributesExA)
 #pragma alloc_text(PAGE, GetFileAttributesExW)
+#pragma alloc_text(PAGE, SetFileAttributesA)
 #pragma alloc_text(PAGE, SetFileAttributesW)
 #pragma alloc_text(PAGE, GetFileSize)
 #pragma alloc_text(PAGE, GetFileSizeEx)
@@ -169,6 +232,7 @@ LdkpSetFileInformationClassError (
 #pragma alloc_text(PAGE, RemoveDirectoryW)
 #pragma alloc_text(PAGE, GetFileInformationByHandle)
 #pragma alloc_text(PAGE, GetFileInformationByHandleEx)
+#pragma alloc_text(PAGE, GetFileInformationByName)
 #pragma alloc_text(PAGE, SetFileInformationByHandle)
 #pragma alloc_text(PAGE, GetFinalPathNameByHandleW)
 #pragma alloc_text(PAGE, FindClose)
@@ -185,10 +249,17 @@ LdkpSetFileInformationClassError (
 #pragma alloc_text(PAGE, GetTempPath2W)
 #pragma alloc_text(PAGE, GetTempFileNameA)
 #pragma alloc_text(PAGE, GetTempFileNameW)
+#pragma alloc_text(PAGE, CopyFileA)
 #pragma alloc_text(PAGE, CopyFileW)
+#pragma alloc_text(PAGE, CopyFile2)
 #pragma alloc_text(PAGE, CreateDirectoryExW)
+#pragma alloc_text(PAGE, CreateHardLinkA)
 #pragma alloc_text(PAGE, CreateHardLinkW)
+#pragma alloc_text(PAGE, MoveFileA)
+#pragma alloc_text(PAGE, MoveFileW)
+#pragma alloc_text(PAGE, MoveFileExA)
 #pragma alloc_text(PAGE, MoveFileExW)
+#pragma alloc_text(PAGE, CreateSymbolicLinkA)
 #pragma alloc_text(PAGE, CreateSymbolicLinkW)
 #pragma alloc_text(PAGE, DeviceIoControl)
 #pragma alloc_text(PAGE, IsThisARootDirectory)
@@ -636,6 +707,49 @@ CreateFileW (
 		}
 	}
 	return FileHandle;
+}
+
+WINBASEAPI
+HANDLE
+WINAPI
+CreateFile2 (
+    _In_ LPCWSTR lpFileName,
+    _In_ DWORD dwDesiredAccess,
+    _In_ DWORD dwShareMode,
+    _In_ DWORD dwCreationDisposition,
+    _In_opt_ LPCREATEFILE2_EXTENDED_PARAMETERS pCreateExParams
+    )
+{
+    DWORD FlagsAndAttributes = FILE_ATTRIBUTE_NORMAL;
+    LPSECURITY_ATTRIBUTES SecurityAttributes = NULL;
+    HANDLE TemplateFile = NULL;
+
+    PAGED_CODE();
+
+    if (pCreateExParams != NULL) {
+        if (pCreateExParams->dwSize < sizeof(*pCreateExParams)) {
+            SetLastError( ERROR_INVALID_PARAMETER );
+            return INVALID_HANDLE_VALUE;
+        }
+
+        FlagsAndAttributes = pCreateExParams->dwFileAttributes |
+                             pCreateExParams->dwFileFlags |
+                             pCreateExParams->dwSecurityQosFlags;
+        if ((FlagsAndAttributes & FILE_ATTRIBUTE_VALID_FLAGS) == 0) {
+            FlagsAndAttributes |= FILE_ATTRIBUTE_NORMAL;
+        }
+
+        SecurityAttributes = pCreateExParams->lpSecurityAttributes;
+        TemplateFile = pCreateExParams->hTemplateFile;
+    }
+
+    return CreateFileW( lpFileName,
+                        dwDesiredAccess,
+                        dwShareMode,
+                        SecurityAttributes,
+                        dwCreationDisposition,
+                        FlagsAndAttributes,
+                        TemplateFile );
 }
 
 WINBASEAPI
@@ -1171,6 +1285,29 @@ GetFileAttributesW (
 WINBASEAPI
 BOOL
 WINAPI
+GetFileAttributesExA (
+    _In_ LPCSTR lpFileName,
+    _In_ GET_FILEEX_INFO_LEVELS fInfoLevelId,
+    _Out_writes_bytes_(sizeof(WIN32_FILE_ATTRIBUTE_DATA)) LPVOID lpFileInformation
+    )
+{
+    PUNICODE_STRING Unicode;
+
+	PAGED_CODE();
+
+    Unicode = Ldk8BitStringToStaticUnicodeString( lpFileName );
+    if (Unicode == NULL) {
+        return FALSE;
+    }
+
+    return GetFileAttributesExW( Unicode->Buffer,
+                                 fInfoLevelId,
+                                 lpFileInformation );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
 GetFileAttributesExW (
     _In_ LPCWSTR lpFileName,
     _In_ GET_FILEEX_INFO_LEVELS fInfoLevelId,
@@ -1203,6 +1340,27 @@ GetFileAttributesExW (
     AttributeData->nFileSizeHigh = FileInformation.EndOfFile.HighPart;
     AttributeData->nFileSizeLow = FileInformation.EndOfFile.LowPart;
     return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+SetFileAttributesA (
+    _In_ LPCSTR lpFileName,
+    _In_ DWORD dwFileAttributes
+    )
+{
+    PUNICODE_STRING Unicode;
+
+	PAGED_CODE();
+
+    Unicode = Ldk8BitStringToStaticUnicodeString( lpFileName );
+    if (Unicode == NULL) {
+        return FALSE;
+    }
+
+    return SetFileAttributesW( Unicode->Buffer,
+                               dwFileAttributes );
 }
 
 WINBASEAPI
@@ -1927,6 +2085,119 @@ RemoveDirectoryW (
 
 #define LDK_COPY_FILE_BUFFER_SIZE (64 * 1024)
 
+static
+HRESULT
+LdkpHresultFromWin32 (
+    _In_ DWORD ErrorCode
+    )
+{
+    if ((LONG)ErrorCode <= 0) {
+        return (HRESULT)ErrorCode;
+    }
+
+    return (HRESULT)(((ErrorCode) & 0x0000FFFF) | (7 << 16) | 0x80000000);
+}
+
+static
+BOOLEAN
+LdkpFailedHresult (
+    _In_ HRESULT Result
+    )
+{
+    return (Result < 0) ? TRUE : FALSE;
+}
+
+static
+HRESULT
+LdkpCopyFile2CheckCancel (
+    _In_opt_ BOOL *Cancel
+    )
+{
+    if (Cancel != NULL && *Cancel) {
+        return LdkpHresultFromWin32( ERROR_REQUEST_ABORTED );
+    }
+
+    return (HRESULT)0;
+}
+
+static
+HRESULT
+LdkpCopyFile2InvokeProgress (
+    _In_opt_ PCOPYFILE2_PROGRESS_ROUTINE ProgressRoutine,
+    _In_opt_ PVOID CallbackContext,
+    _In_ const COPYFILE2_MESSAGE *Message,
+    _Inout_ PBOOLEAN Quiet
+    )
+{
+    COPYFILE2_MESSAGE_ACTION Action;
+
+    if (*Quiet || ProgressRoutine == NULL) {
+        return (HRESULT)0;
+    }
+
+    Action = ProgressRoutine( Message,
+                              CallbackContext );
+    switch (Action) {
+    case COPYFILE2_PROGRESS_CONTINUE:
+        return (HRESULT)0;
+    case COPYFILE2_PROGRESS_QUIET:
+        *Quiet = TRUE;
+        return (HRESULT)0;
+    case COPYFILE2_PROGRESS_PAUSE:
+        return LdkpHresultFromWin32( ERROR_REQUEST_PAUSED );
+    case COPYFILE2_PROGRESS_CANCEL:
+    case COPYFILE2_PROGRESS_STOP:
+    default:
+        return LdkpHresultFromWin32( ERROR_REQUEST_ABORTED );
+    }
+}
+
+static
+VOID
+LdkpCopyFile2SetSize (
+    _Out_ PULARGE_INTEGER Destination,
+    _In_ LARGE_INTEGER Source
+    )
+{
+    Destination->QuadPart = Source.QuadPart >= 0 ? (ULONGLONG)Source.QuadPart : 0;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+CopyFileA (
+    _In_ LPCSTR lpExistingFileName,
+    _In_ LPCSTR lpNewFileName,
+    _In_ BOOL bFailIfExists
+    )
+{
+    UNICODE_STRING ExistingFileName;
+    UNICODE_STRING NewFileName;
+    BOOL Result;
+
+	PAGED_CODE();
+
+    if (lpExistingFileName == NULL ||
+        lpNewFileName == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (! LdkpCaptureAnsiFileNamePair( lpExistingFileName,
+                                       lpNewFileName,
+                                       &ExistingFileName,
+                                       &NewFileName )) {
+        return FALSE;
+    }
+
+    Result = CopyFileW( ExistingFileName.Buffer,
+                        NewFileName.Buffer,
+                        bFailIfExists );
+    LdkpReleaseAnsiFileNamePair( &ExistingFileName,
+                                 &NewFileName );
+    return Result;
+}
+
 WINBASEAPI
 BOOL
 WINAPI
@@ -2027,6 +2298,265 @@ Exit:
 }
 
 WINBASEAPI
+HRESULT
+WINAPI
+CopyFile2 (
+    _In_ PCWSTR pwszExistingFileName,
+    _In_ PCWSTR pwszNewFileName,
+    _In_opt_ COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters
+    )
+{
+    DWORD CopyFlags = 0;
+    BOOL *Cancel = NULL;
+    PCOPYFILE2_PROGRESS_ROUTINE ProgressRoutine = NULL;
+    PVOID CallbackContext = NULL;
+    DWORD SourceAttributes;
+    HANDLE SourceHandle = INVALID_HANDLE_VALUE;
+    HANDLE DestinationHandle = INVALID_HANDLE_VALUE;
+    PVOID Buffer = NULL;
+    LARGE_INTEGER FileSize = { 0 };
+    ULARGE_INTEGER TotalSize = { 0 };
+    ULARGE_INTEGER BytesTransferred = { 0 };
+    ULARGE_INTEGER ChunkNumber = { 0 };
+    BOOLEAN Quiet = FALSE;
+    HRESULT Result = (HRESULT)0;
+
+    PAGED_CODE();
+
+    if (pwszExistingFileName == NULL || pwszNewFileName == NULL) {
+        return LdkpHresultFromWin32( ERROR_INVALID_PARAMETER );
+    }
+
+    if (pExtendedParameters != NULL) {
+        if (pExtendedParameters->dwSize < sizeof(*pExtendedParameters)) {
+            return LdkpHresultFromWin32( ERROR_INVALID_PARAMETER );
+        }
+
+        CopyFlags = pExtendedParameters->dwCopyFlags;
+        Cancel = pExtendedParameters->pfCancel;
+        ProgressRoutine = pExtendedParameters->pProgressRoutine;
+        CallbackContext = pExtendedParameters->pvCallbackContext;
+    }
+
+    if (CopyFlags & ~LDK_COPY_FILE2_SUPPORTED_FLAGS) {
+        return LdkpHresultFromWin32( ERROR_INVALID_PARAMETER );
+    }
+
+    Result = LdkpCopyFile2CheckCancel( Cancel );
+    if (LdkpFailedHresult( Result )) {
+        return Result;
+    }
+
+    SourceAttributes = GetFileAttributesW( pwszExistingFileName );
+    if (SourceAttributes == INVALID_FILE_ATTRIBUTES) {
+        return LdkpHresultFromWin32( GetLastError() );
+    }
+
+    if (FlagOn(SourceAttributes, FILE_ATTRIBUTE_DIRECTORY)) {
+        return LdkpHresultFromWin32( ERROR_ACCESS_DENIED );
+    }
+
+    SourceHandle = CreateFileW( pwszExistingFileName,
+                                GENERIC_READ |
+                                    (FlagOn(CopyFlags, COPY_FILE_OPEN_SOURCE_FOR_WRITE) ? GENERIC_WRITE : 0),
+                                FILE_SHARE_READ,
+                                NULL,
+                                OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL,
+                                NULL );
+    if (SourceHandle == INVALID_HANDLE_VALUE) {
+        return LdkpHresultFromWin32( GetLastError() );
+    }
+
+    DestinationHandle = CreateFileW( pwszNewFileName,
+                                     GENERIC_WRITE,
+                                     0,
+                                     NULL,
+                                     FlagOn(CopyFlags, COPY_FILE_FAIL_IF_EXISTS) ? CREATE_NEW : CREATE_ALWAYS,
+                                     FILE_ATTRIBUTE_NORMAL,
+                                     SourceHandle );
+    if (DestinationHandle == INVALID_HANDLE_VALUE) {
+        Result = LdkpHresultFromWin32( GetLastError() );
+        goto Exit;
+    }
+
+    if (GetFileSizeEx( SourceHandle,
+                       &FileSize )) {
+        LdkpCopyFile2SetSize( &TotalSize,
+                              FileSize );
+    }
+
+    if (ProgressRoutine != NULL) {
+        COPYFILE2_MESSAGE Message;
+
+        RtlZeroMemory( &Message,
+                       sizeof(Message) );
+        Message.Type = COPYFILE2_CALLBACK_STREAM_STARTED;
+        Message.Info.StreamStarted.dwStreamNumber = 1;
+        Message.Info.StreamStarted.hSourceFile = SourceHandle;
+        Message.Info.StreamStarted.hDestinationFile = DestinationHandle;
+        Message.Info.StreamStarted.uliStreamSize = TotalSize;
+        Message.Info.StreamStarted.uliTotalFileSize = TotalSize;
+
+        Result = LdkpCopyFile2InvokeProgress( ProgressRoutine,
+                                              CallbackContext,
+                                              &Message,
+                                              &Quiet );
+        if (LdkpFailedHresult( Result )) {
+            goto Exit;
+        }
+    }
+
+    Buffer = RtlAllocateHeap( RtlProcessHeap(),
+                              MAKE_TAG( TMP_TAG ),
+                              LDK_COPY_FILE_BUFFER_SIZE );
+    if (Buffer == NULL) {
+        Result = LdkpHresultFromWin32( ERROR_NOT_ENOUGH_MEMORY );
+        goto Exit;
+    }
+
+    for (;;) {
+        DWORD BytesRead = 0;
+        DWORD BytesWritten = 0;
+
+        Result = LdkpCopyFile2CheckCancel( Cancel );
+        if (LdkpFailedHresult( Result )) {
+            goto Exit;
+        }
+
+        if (ProgressRoutine != NULL) {
+            COPYFILE2_MESSAGE Message;
+
+            RtlZeroMemory( &Message,
+                           sizeof(Message) );
+            Message.Type = COPYFILE2_CALLBACK_POLL_CONTINUE;
+
+            Result = LdkpCopyFile2InvokeProgress( ProgressRoutine,
+                                                  CallbackContext,
+                                                  &Message,
+                                                  &Quiet );
+            if (LdkpFailedHresult( Result )) {
+                goto Exit;
+            }
+        }
+
+        if (! ReadFile( SourceHandle,
+                        Buffer,
+                        LDK_COPY_FILE_BUFFER_SIZE,
+                        &BytesRead,
+                        NULL )) {
+            Result = LdkpHresultFromWin32( GetLastError() );
+            goto Exit;
+        }
+
+        if (BytesRead == 0) {
+            Result = (HRESULT)0;
+            break;
+        }
+
+        ChunkNumber.QuadPart++;
+
+        if (ProgressRoutine != NULL) {
+            COPYFILE2_MESSAGE Message;
+
+            RtlZeroMemory( &Message,
+                           sizeof(Message) );
+            Message.Type = COPYFILE2_CALLBACK_CHUNK_STARTED;
+            Message.Info.ChunkStarted.dwStreamNumber = 1;
+            Message.Info.ChunkStarted.hSourceFile = SourceHandle;
+            Message.Info.ChunkStarted.hDestinationFile = DestinationHandle;
+            Message.Info.ChunkStarted.uliChunkNumber = ChunkNumber;
+            Message.Info.ChunkStarted.uliChunkSize.QuadPart = BytesRead;
+            Message.Info.ChunkStarted.uliStreamSize = TotalSize;
+            Message.Info.ChunkStarted.uliTotalFileSize = TotalSize;
+
+            Result = LdkpCopyFile2InvokeProgress( ProgressRoutine,
+                                                  CallbackContext,
+                                                  &Message,
+                                                  &Quiet );
+            if (LdkpFailedHresult( Result )) {
+                goto Exit;
+            }
+        }
+
+        if (! WriteFile( DestinationHandle,
+                         Buffer,
+                         BytesRead,
+                         &BytesWritten,
+                         NULL )) {
+            Result = LdkpHresultFromWin32( GetLastError() );
+            goto Exit;
+        }
+
+        if (BytesWritten != BytesRead) {
+            Result = LdkpHresultFromWin32( ERROR_WRITE_FAULT );
+            goto Exit;
+        }
+
+        BytesTransferred.QuadPart += BytesWritten;
+
+        if (ProgressRoutine != NULL) {
+            COPYFILE2_MESSAGE Message;
+
+            RtlZeroMemory( &Message,
+                           sizeof(Message) );
+            Message.Type = COPYFILE2_CALLBACK_CHUNK_FINISHED;
+            Message.Info.ChunkFinished.dwStreamNumber = 1;
+            Message.Info.ChunkFinished.hSourceFile = SourceHandle;
+            Message.Info.ChunkFinished.hDestinationFile = DestinationHandle;
+            Message.Info.ChunkFinished.uliChunkNumber = ChunkNumber;
+            Message.Info.ChunkFinished.uliChunkSize.QuadPart = BytesWritten;
+            Message.Info.ChunkFinished.uliStreamSize = TotalSize;
+            Message.Info.ChunkFinished.uliStreamBytesTransferred = BytesTransferred;
+            Message.Info.ChunkFinished.uliTotalFileSize = TotalSize;
+            Message.Info.ChunkFinished.uliTotalBytesTransferred = BytesTransferred;
+
+            Result = LdkpCopyFile2InvokeProgress( ProgressRoutine,
+                                                  CallbackContext,
+                                                  &Message,
+                                                  &Quiet );
+            if (LdkpFailedHresult( Result )) {
+                goto Exit;
+            }
+        }
+    }
+
+    if (ProgressRoutine != NULL) {
+        COPYFILE2_MESSAGE Message;
+
+        RtlZeroMemory( &Message,
+                       sizeof(Message) );
+        Message.Type = COPYFILE2_CALLBACK_STREAM_FINISHED;
+        Message.Info.StreamFinished.dwStreamNumber = 1;
+        Message.Info.StreamFinished.hSourceFile = SourceHandle;
+        Message.Info.StreamFinished.hDestinationFile = DestinationHandle;
+        Message.Info.StreamFinished.uliStreamSize = TotalSize;
+        Message.Info.StreamFinished.uliStreamBytesTransferred = BytesTransferred;
+        Message.Info.StreamFinished.uliTotalFileSize = TotalSize;
+        Message.Info.StreamFinished.uliTotalBytesTransferred = BytesTransferred;
+
+        Result = LdkpCopyFile2InvokeProgress( ProgressRoutine,
+                                              CallbackContext,
+                                              &Message,
+                                              &Quiet );
+    }
+
+Exit:
+    if (Buffer != NULL) {
+        RtlFreeHeap( RtlProcessHeap(),
+                     0,
+                     Buffer );
+    }
+    if (DestinationHandle != INVALID_HANDLE_VALUE) {
+        CloseHandle( DestinationHandle );
+    }
+    if (SourceHandle != INVALID_HANDLE_VALUE) {
+        CloseHandle( SourceHandle );
+    }
+    return Result;
+}
+
+WINBASEAPI
 BOOL
 WINAPI
 CreateDirectoryExW (
@@ -2053,6 +2583,42 @@ CreateDirectoryExW (
     }
 
     return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+CreateHardLinkA (
+    _In_ LPCSTR lpFileName,
+    _In_ LPCSTR lpExistingFileName,
+    _Reserved_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
+    )
+{
+    UNICODE_STRING FileName;
+    UNICODE_STRING ExistingFileName;
+    BOOL Result;
+
+	PAGED_CODE();
+
+    if (lpFileName == NULL ||
+        lpExistingFileName == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (! LdkpCaptureAnsiFileNamePair( lpFileName,
+                                       lpExistingFileName,
+                                       &FileName,
+                                       &ExistingFileName )) {
+        return FALSE;
+    }
+
+    Result = CreateHardLinkW( FileName.Buffer,
+                              ExistingFileName.Buffer,
+                              lpSecurityAttributes );
+    LdkpReleaseAnsiFileNamePair( &FileName,
+                                 &ExistingFileName );
+    return Result;
 }
 
 WINBASEAPI
@@ -2173,6 +2739,73 @@ CreateHardLinkW (
 WINBASEAPI
 BOOL
 WINAPI
+MoveFileA (
+    _In_ LPCSTR lpExistingFileName,
+    _In_ LPCSTR lpNewFileName
+    )
+{
+    PAGED_CODE();
+
+    return MoveFileExA( lpExistingFileName,
+                        lpNewFileName,
+                        0 );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+MoveFileW (
+    _In_ LPCWSTR lpExistingFileName,
+    _In_ LPCWSTR lpNewFileName
+    )
+{
+    PAGED_CODE();
+
+    return MoveFileExW( lpExistingFileName,
+                        lpNewFileName,
+                        0 );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+MoveFileExA (
+    _In_ LPCSTR lpExistingFileName,
+    _In_opt_ LPCSTR lpNewFileName,
+    _In_ DWORD dwFlags
+    )
+{
+    UNICODE_STRING ExistingFileName;
+    UNICODE_STRING NewFileName;
+    BOOL Result;
+
+    PAGED_CODE();
+
+    if (lpExistingFileName == NULL ||
+        lpNewFileName == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (! LdkpCaptureAnsiFileNamePair( lpExistingFileName,
+                                       lpNewFileName,
+                                       &ExistingFileName,
+                                       &NewFileName )) {
+        return FALSE;
+    }
+
+    Result = MoveFileExW( ExistingFileName.Buffer,
+                          NewFileName.Buffer,
+                          dwFlags );
+
+    LdkpReleaseAnsiFileNamePair( &ExistingFileName,
+                                 &NewFileName );
+    return Result;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
 MoveFileExW (
     _In_ LPCWSTR lpExistingFileName,
     _In_opt_ LPCWSTR lpNewFileName,
@@ -2279,6 +2912,42 @@ MoveFileExW (
 
     LdkSetLastNTError( Status );
     return FALSE;
+}
+
+WINBASEAPI
+BOOLEAN
+WINAPI
+CreateSymbolicLinkA (
+    _In_ LPCSTR lpSymlinkFileName,
+    _In_ LPCSTR lpTargetFileName,
+    _In_ DWORD dwFlags
+    )
+{
+    UNICODE_STRING SymlinkFileName;
+    UNICODE_STRING TargetFileName;
+    BOOLEAN Result;
+
+	PAGED_CODE();
+
+    if (lpSymlinkFileName == NULL ||
+        lpTargetFileName == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    if (! LdkpCaptureAnsiFileNamePair( lpSymlinkFileName,
+                                       lpTargetFileName,
+                                       &SymlinkFileName,
+                                       &TargetFileName )) {
+        return FALSE;
+    }
+
+    Result = CreateSymbolicLinkW( SymlinkFileName.Buffer,
+                                  TargetFileName.Buffer,
+                                  dwFlags );
+    LdkpReleaseAnsiFileNamePair( &SymlinkFileName,
+                                 &TargetFileName );
+    return Result;
 }
 
 WINBASEAPI
@@ -2646,6 +3315,54 @@ GetFileInformationByHandleEx (
         return TRUE;
     }
 
+    if ((ULONG)FileInformationClass == LDK_FILE_FULL_DIRECTORY_INFO ||
+        (ULONG)FileInformationClass == LDK_FILE_FULL_DIRECTORY_RESTART_INFO ||
+        (ULONG)FileInformationClass == LDK_FILE_ID_BOTH_DIRECTORY_INFO ||
+        (ULONG)FileInformationClass == LDK_FILE_ID_BOTH_DIRECTORY_RESTART_INFO ||
+        (ULONG)FileInformationClass == LDK_FILE_ID_EXTD_DIRECTORY_INFO ||
+        (ULONG)FileInformationClass == LDK_FILE_ID_EXTD_DIRECTORY_RESTART_INFO) {
+        FILE_INFORMATION_CLASS NativeInformationClass;
+        BOOLEAN RestartScan;
+        IO_STATUS_BLOCK IoStatus;
+        NTSTATUS Status;
+
+        switch ((ULONG)FileInformationClass) {
+        case LDK_FILE_FULL_DIRECTORY_INFO:
+        case LDK_FILE_FULL_DIRECTORY_RESTART_INFO:
+            NativeInformationClass = FileFullDirectoryInformation;
+            break;
+        case LDK_FILE_ID_BOTH_DIRECTORY_INFO:
+        case LDK_FILE_ID_BOTH_DIRECTORY_RESTART_INFO:
+            NativeInformationClass = FileIdBothDirectoryInformation;
+            break;
+        default:
+            NativeInformationClass = FileIdExtdDirectoryInformation;
+            break;
+        }
+
+        RestartScan = ((ULONG)FileInformationClass == LDK_FILE_FULL_DIRECTORY_RESTART_INFO ||
+                       (ULONG)FileInformationClass == LDK_FILE_ID_BOTH_DIRECTORY_RESTART_INFO ||
+                       (ULONG)FileInformationClass == LDK_FILE_ID_EXTD_DIRECTORY_RESTART_INFO);
+
+        Status = ZwQueryDirectoryFile( hFile,
+                                       NULL,
+                                       NULL,
+                                       NULL,
+                                       &IoStatus,
+                                       lpFileInformation,
+                                       dwBufferSize,
+                                       NativeInformationClass,
+                                       FALSE,
+                                       NULL,
+                                       RestartScan );
+        if (! NT_SUCCESS(Status)) {
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
+        return TRUE;
+    }
+
     if (FileInformationClass == FileCompressionInfo) {
         PFILE_COMPRESSION_INFO CompressionInfo;
         FILE_COMPRESSION_INFORMATION NativeCompressionInfo;
@@ -2859,6 +3576,251 @@ GetFileInformationByHandleEx (
     LdkpSetFileInformationClassError(
         LdkpIsGetFileInformationByHandleExClass( FileInformationClass ) );
     return FALSE;
+}
+
+static
+VOID
+LdkpFileIdFromHandleInfo (
+    _Out_ PLARGE_INTEGER FileId,
+    _In_ const BY_HANDLE_FILE_INFORMATION *HandleInfo
+    )
+{
+    FileId->LowPart = HandleInfo->nFileIndexLow;
+    FileId->HighPart = (LONG)HandleInfo->nFileIndexHigh;
+}
+
+static
+VOID
+LdkpFillFileStatInformation (
+    _Out_ PFILE_STAT_INFORMATION StatInfo,
+    _In_ const BY_HANDLE_FILE_INFORMATION *HandleInfo,
+    _In_ const FILE_BASIC_INFO *BasicInfo,
+    _In_ const FILE_STANDARD_INFO *StandardInfo,
+    _In_ const FILE_ATTRIBUTE_TAG_INFO *TagInfo
+    )
+{
+    RtlZeroMemory( StatInfo,
+                   sizeof(*StatInfo) );
+    LdkpFileIdFromHandleInfo( &StatInfo->FileId,
+                              HandleInfo );
+    StatInfo->CreationTime = BasicInfo->CreationTime;
+    StatInfo->LastAccessTime = BasicInfo->LastAccessTime;
+    StatInfo->LastWriteTime = BasicInfo->LastWriteTime;
+    StatInfo->ChangeTime = BasicInfo->ChangeTime;
+    StatInfo->AllocationSize = StandardInfo->AllocationSize;
+    StatInfo->EndOfFile = StandardInfo->EndOfFile;
+    StatInfo->FileAttributes = BasicInfo->FileAttributes;
+    StatInfo->ReparseTag = TagInfo->ReparseTag;
+    StatInfo->NumberOfLinks = StandardInfo->NumberOfLinks;
+}
+
+static
+VOID
+LdkpFillFileStatLxInformation (
+    _Out_ PFILE_STAT_LX_INFORMATION StatLxInfo,
+    _In_ const BY_HANDLE_FILE_INFORMATION *HandleInfo,
+    _In_ const FILE_BASIC_INFO *BasicInfo,
+    _In_ const FILE_STANDARD_INFO *StandardInfo,
+    _In_ const FILE_ATTRIBUTE_TAG_INFO *TagInfo
+    )
+{
+    RtlZeroMemory( StatLxInfo,
+                   sizeof(*StatLxInfo) );
+    LdkpFileIdFromHandleInfo( &StatLxInfo->FileId,
+                              HandleInfo );
+    StatLxInfo->CreationTime = BasicInfo->CreationTime;
+    StatLxInfo->LastAccessTime = BasicInfo->LastAccessTime;
+    StatLxInfo->LastWriteTime = BasicInfo->LastWriteTime;
+    StatLxInfo->ChangeTime = BasicInfo->ChangeTime;
+    StatLxInfo->AllocationSize = StandardInfo->AllocationSize;
+    StatLxInfo->EndOfFile = StandardInfo->EndOfFile;
+    StatLxInfo->FileAttributes = BasicInfo->FileAttributes;
+    StatLxInfo->ReparseTag = TagInfo->ReparseTag;
+    StatLxInfo->NumberOfLinks = StandardInfo->NumberOfLinks;
+}
+
+static
+VOID
+LdkpFillFileStatBasicInformation (
+    _Out_ PFILE_STAT_BASIC_INFORMATION StatBasicInfo,
+    _In_ HANDLE FileHandle,
+    _In_ const BY_HANDLE_FILE_INFORMATION *HandleInfo,
+    _In_ const FILE_BASIC_INFO *BasicInfo,
+    _In_ const FILE_STANDARD_INFO *StandardInfo,
+    _In_ const FILE_ATTRIBUTE_TAG_INFO *TagInfo,
+    _In_opt_ const FILE_ID_INFO *IdInfo
+    )
+{
+    FILE_FS_DEVICE_INFORMATION DeviceInfo;
+    IO_STATUS_BLOCK IoStatus;
+    NTSTATUS Status;
+
+    RtlZeroMemory( StatBasicInfo,
+                   sizeof(*StatBasicInfo) );
+    LdkpFileIdFromHandleInfo( &StatBasicInfo->FileId,
+                              HandleInfo );
+    StatBasicInfo->CreationTime = BasicInfo->CreationTime;
+    StatBasicInfo->LastAccessTime = BasicInfo->LastAccessTime;
+    StatBasicInfo->LastWriteTime = BasicInfo->LastWriteTime;
+    StatBasicInfo->ChangeTime = BasicInfo->ChangeTime;
+    StatBasicInfo->AllocationSize = StandardInfo->AllocationSize;
+    StatBasicInfo->EndOfFile = StandardInfo->EndOfFile;
+    StatBasicInfo->FileAttributes = BasicInfo->FileAttributes;
+    StatBasicInfo->ReparseTag = TagInfo->ReparseTag;
+    StatBasicInfo->NumberOfLinks = StandardInfo->NumberOfLinks;
+    StatBasicInfo->VolumeSerialNumber.QuadPart = HandleInfo->dwVolumeSerialNumber;
+
+    if (IdInfo != NULL) {
+        StatBasicInfo->VolumeSerialNumber.QuadPart = IdInfo->VolumeSerialNumber;
+        StatBasicInfo->FileId128 = IdInfo->FileId;
+    } else {
+        RtlCopyMemory( &StatBasicInfo->FileId128.Identifier[0],
+                       &HandleInfo->nFileIndexLow,
+                       sizeof(HandleInfo->nFileIndexLow) );
+        RtlCopyMemory( &StatBasicInfo->FileId128.Identifier[sizeof(HandleInfo->nFileIndexLow)],
+                       &HandleInfo->nFileIndexHigh,
+                       sizeof(HandleInfo->nFileIndexHigh) );
+    }
+
+    Status = ZwQueryVolumeInformationFile( FileHandle,
+                                           &IoStatus,
+                                           &DeviceInfo,
+                                           sizeof(DeviceInfo),
+                                           FileFsDeviceInformation );
+    if (NT_SUCCESS(Status)) {
+        StatBasicInfo->DeviceType = DeviceInfo.DeviceType;
+        StatBasicInfo->DeviceCharacteristics = DeviceInfo.Characteristics;
+    }
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+GetFileInformationByName (
+    _In_ PCWSTR FileName,
+    _In_ FILE_INFO_BY_NAME_CLASS FileInformationClass,
+    _Out_writes_bytes_(FileInfoBufferSize) PVOID FileInfoBuffer,
+    _In_ ULONG FileInfoBufferSize
+    )
+{
+    HANDLE FileHandle;
+    BY_HANDLE_FILE_INFORMATION HandleInfo;
+    FILE_BASIC_INFO BasicInfo;
+    FILE_STANDARD_INFO StandardInfo;
+    FILE_ATTRIBUTE_TAG_INFO TagInfo;
+    FILE_ID_INFO IdInfo;
+    BOOL HasIdInfo = FALSE;
+    BOOL Result = FALSE;
+
+    PAGED_CODE();
+
+    if (FileName == NULL || FileInfoBuffer == NULL) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    FileHandle = CreateFileW( FileName,
+                              FILE_READ_ATTRIBUTES,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              NULL,
+                              OPEN_EXISTING,
+                              FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                              NULL );
+    if (FileHandle == INVALID_HANDLE_VALUE) {
+        return FALSE;
+    }
+
+    if (! GetFileInformationByHandle( FileHandle,
+                                      &HandleInfo ) ||
+        ! GetFileInformationByHandleEx( FileHandle,
+                                        FileBasicInfo,
+                                        &BasicInfo,
+                                        sizeof(BasicInfo) ) ||
+        ! GetFileInformationByHandleEx( FileHandle,
+                                        FileStandardInfo,
+                                        &StandardInfo,
+                                        sizeof(StandardInfo) )) {
+        goto Exit;
+    }
+
+    RtlZeroMemory( &TagInfo,
+                   sizeof(TagInfo) );
+    (VOID)GetFileInformationByHandleEx( FileHandle,
+                                        FileAttributeTagInfo,
+                                        &TagInfo,
+                                        sizeof(TagInfo) );
+
+    RtlZeroMemory( &IdInfo,
+                   sizeof(IdInfo) );
+    HasIdInfo = GetFileInformationByHandleEx( FileHandle,
+                                              FileIdInfo,
+                                              &IdInfo,
+                                              sizeof(IdInfo) );
+
+    switch (FileInformationClass) {
+    case FileStatByNameInfo:
+        if (FileInfoBufferSize < sizeof(FILE_STAT_INFORMATION)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            goto Exit;
+        }
+
+        LdkpFillFileStatInformation( (PFILE_STAT_INFORMATION)FileInfoBuffer,
+                                     &HandleInfo,
+                                     &BasicInfo,
+                                     &StandardInfo,
+                                     &TagInfo );
+        Result = TRUE;
+        break;
+
+    case FileStatLxByNameInfo:
+        if (FileInfoBufferSize < sizeof(FILE_STAT_LX_INFORMATION)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            goto Exit;
+        }
+
+        LdkpFillFileStatLxInformation( (PFILE_STAT_LX_INFORMATION)FileInfoBuffer,
+                                       &HandleInfo,
+                                       &BasicInfo,
+                                       &StandardInfo,
+                                       &TagInfo );
+        Result = TRUE;
+        break;
+
+    case FileCaseSensitiveByNameInfo:
+        if (FileInfoBufferSize < sizeof(FILE_CASE_SENSITIVE_INFO)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            goto Exit;
+        }
+
+        RtlZeroMemory( FileInfoBuffer,
+                       sizeof(FILE_CASE_SENSITIVE_INFO) );
+        Result = TRUE;
+        break;
+
+    case FileStatBasicByNameInfo:
+        if (FileInfoBufferSize < sizeof(FILE_STAT_BASIC_INFORMATION)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            goto Exit;
+        }
+
+        LdkpFillFileStatBasicInformation( (PFILE_STAT_BASIC_INFORMATION)FileInfoBuffer,
+                                          FileHandle,
+                                          &HandleInfo,
+                                          &BasicInfo,
+                                          &StandardInfo,
+                                          &TagInfo,
+                                          HasIdInfo ? &IdInfo : NULL );
+        Result = TRUE;
+        break;
+
+    default:
+        SetLastError( ERROR_INVALID_PARAMETER );
+        break;
+    }
+
+Exit:
+    CloseHandle( FileHandle );
+    return Result;
 }
 
 WINBASEAPI
@@ -3187,6 +4149,30 @@ SetFileInformationByHandle (
                                        &NativeDispositionInfoEx,
                                        sizeof(NativeDispositionInfoEx),
                                        FileDispositionInformationEx );
+        if (NT_SUCCESS(Status)) {
+            return TRUE;
+        }
+
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    if ((ULONG)FileInformationClass == LDK_FILE_CASE_SENSITIVE_INFO) {
+        PFILE_CASE_SENSITIVE_INFO CaseSensitiveInfo;
+        FILE_CASE_SENSITIVE_INFORMATION NativeCaseSensitiveInfo;
+
+        if (dwBufferSize < sizeof(FILE_CASE_SENSITIVE_INFO)) {
+            SetLastError( ERROR_INSUFFICIENT_BUFFER );
+            return FALSE;
+        }
+
+        CaseSensitiveInfo = (PFILE_CASE_SENSITIVE_INFO)lpFileInformation;
+        NativeCaseSensitiveInfo.Flags = CaseSensitiveInfo->Flags;
+        Status = ZwSetInformationFile( hFile,
+                                       &IoStatus,
+                                       &NativeCaseSensitiveInfo,
+                                       sizeof(NativeCaseSensitiveInfo),
+                                       FileCaseSensitiveInformation );
         if (NT_SUCCESS(Status)) {
             return TRUE;
         }
@@ -4652,13 +5638,32 @@ DeviceIoControl (
         *lpBytesReturned = 0;
     }
 
-    if (ARGUMENT_PRESENT(lpOverlapped)) {
-        LDK_DIAGNOSTIC_BREAK();
-        LdkSetLastNTError( STATUS_NOT_IMPLEMENTED );
-        return FALSE;
-    }
-
     if (DEVICE_TYPE_FROM_CTL_CODE(dwIoControlCode) == FILE_DEVICE_FILE_SYSTEM) {
+        if (ARGUMENT_PRESENT(lpOverlapped)) {
+            lpOverlapped->Internal = (ULONG_PTR)STATUS_PENDING;
+            lpOverlapped->InternalHigh = 0;
+
+            Status = ZwFsControlFile( hDevice,
+                                      lpOverlapped->hEvent,
+                                      NULL,
+                                      (ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
+                                      (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+                                      dwIoControlCode,
+                                      lpInBuffer,
+                                      nInBufferSize,
+                                      lpOutBuffer,
+                                      nOutBufferSize );
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING) {
+                if (ARGUMENT_PRESENT(lpBytesReturned)) {
+                    *lpBytesReturned = (DWORD)lpOverlapped->InternalHigh;
+                }
+                return TRUE;
+            }
+
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
         Status = ZwFsControlFile( hDevice,
                                   NULL,
                                   NULL,
@@ -4670,6 +5675,31 @@ DeviceIoControl (
                                   lpOutBuffer,
                                   nOutBufferSize );
     } else {
+        if (ARGUMENT_PRESENT(lpOverlapped)) {
+            lpOverlapped->Internal = (ULONG_PTR)STATUS_PENDING;
+            lpOverlapped->InternalHigh = 0;
+
+            Status = ZwDeviceIoControlFile( hDevice,
+                                            lpOverlapped->hEvent,
+                                            NULL,
+                                            (ULONG_PTR)lpOverlapped->hEvent & 1 ? NULL : lpOverlapped,
+                                            (PIO_STATUS_BLOCK)&lpOverlapped->Internal,
+                                            dwIoControlCode,
+                                            lpInBuffer,
+                                            nInBufferSize,
+                                            lpOutBuffer,
+                                            nOutBufferSize );
+            if (NT_SUCCESS(Status) && Status != STATUS_PENDING) {
+                if (ARGUMENT_PRESENT(lpBytesReturned)) {
+                    *lpBytesReturned = (DWORD)lpOverlapped->InternalHigh;
+                }
+                return TRUE;
+            }
+
+            LdkSetLastNTError( Status );
+            return FALSE;
+        }
+
         Status = ZwDeviceIoControlFile( hDevice,
                                         NULL,
                                         NULL,

@@ -36,7 +36,17 @@ NlsTest (
     );
 
 BOOLEAN
+RegistryApiTest (
+    VOID
+    );
+
+BOOLEAN
 IcuTest (
+    VOID
+    );
+
+BOOLEAN
+CombaseCompatibilityTest (
     VOID
     );
 
@@ -96,6 +106,11 @@ NtdllEnvironmentVariableTest (
     );
 
 BOOLEAN
+NtdllEcCodeCompatibilityTest (
+    VOID
+    );
+
+BOOLEAN
 LdrTest (
     VOID
     );
@@ -140,6 +155,7 @@ DriverEntry (
     LDK_TEST_ENTRY Tests[] = {
         { "NtdllCurrentDirectoryTest", NtdllCurrentDirectoryTest },
         { "NtdllEnvironmentVariableTest", NtdllEnvironmentVariableTest },
+        { "NtdllEcCodeCompatibilityTest", NtdllEcCodeCompatibilityTest },
         { "KeyedEventTest", KeyedEventTest },
         { "LdrTest", LdrTest },
         { "FibersTest", FibersTest },
@@ -149,7 +165,9 @@ DriverEntry (
         { "UtilityApiTest", UtilityApiTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
+        { "RegistryApiTest", RegistryApiTest },
         { "IcuTest", IcuTest },
+        { "CombaseCompatibilityTest", CombaseCompatibilityTest },
         { "CurrentDirectoryTest", CurrentDirectoryTest },
         { "EnvironmentVariableTest", EnvironmentVariableTest },
         { "QueueUserWorkItemTest", QueueUserWorkItemTest },

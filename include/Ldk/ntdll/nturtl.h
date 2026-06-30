@@ -175,8 +175,12 @@ RtlWakeAddressAll(
 #define WT_EXECUTEINPERSISTENTTHREAD 0x00000080                      // winnt
 #define WT_TRANSFER_IMPERSONATION 0x00000100                         // winnt
 #define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16) // winnt
+#define WT_EXECUTEINLONGTHREAD  0x00000010                           // winnt
+#define WT_EXECUTEDELETEWAIT    0x00000008                           // winnt
 
 typedef VOID (NTAPI * WORKERCALLBACKFUNC) (PVOID );                 // winnt
+typedef VOID (NTAPI * WAITORTIMERCALLBACKFUNC) (PVOID, BOOLEAN );   // winnt
+typedef WAITORTIMERCALLBACKFUNC WAITORTIMERCALLBACK;                // winnt
 #endif // !defined(_WINNT_)
 
 NTSTATUS
@@ -185,6 +189,12 @@ RtlQueueWorkItem (
     _In_ WORKERCALLBACKFUNC Function,
     _In_ PVOID Context,
     _In_ ULONG Flags
+    );
+
+BOOLEAN
+NTAPI
+RtlIsEcCode (
+    _In_ ULONG64 CodeAddress
     );
 
 

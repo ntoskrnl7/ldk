@@ -86,6 +86,565 @@ LdkpTestPointerCodec (
     return TRUE;
 }
 
+static
+BOOLEAN
+LdkpTestLogicalProcessorInformation (
+    VOID
+    )
+{
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ProcessorInformation = NULL;
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX ProcessorInformationEx = NULL;
+    DWORD Length = 0;
+    DWORD EntryCount;
+    DWORD CoreCount = 0;
+    DWORD NodeCount = 0;
+    DWORD PackageCount = 0;
+    DWORD GroupCount = 0;
+    DWORD Offset;
+    ULONG HighestNodeNumber;
+    BOOL Result;
+
+    Result = GetLogicalProcessorInformation( NULL,
+                                             &Length );
+    if (Result ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
+        Length < sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION)) {
+        fprintf(stderr,
+                "[Failed] GetLogicalProcessorInformation sizing Result = %lu ErrorCode = %lu Length = %lu\n",
+                (DWORD)Result,
+                GetLastError(),
+                Length );
+        return FALSE;
+    }
+
+    ProcessorInformation = HeapAlloc( GetProcessHeap(),
+                                      HEAP_ZERO_MEMORY,
+                                      Length );
+    if (ProcessorInformation == NULL) {
+        fprintf(stderr,
+                "[Failed] HeapAlloc logical processor information Length = %lu ErrorCode = %lu\n",
+                Length,
+                GetLastError() );
+        return FALSE;
+    }
+
+    Result = GetLogicalProcessorInformation( ProcessorInformation,
+                                             &Length );
+    if (! Result) {
+        fprintf(stderr,
+                "[Failed] GetLogicalProcessorInformation ErrorCode = %lu Length = %lu\n",
+                GetLastError(),
+                Length );
+        HeapFree( GetProcessHeap(),
+                  0,
+                  ProcessorInformation );
+        return FALSE;
+    }
+
+    EntryCount = Length / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+    for (DWORD Index = 0; Index < EntryCount; Index++) {
+        if (ProcessorInformation[Index].ProcessorMask == 0) {
+            fprintf(stderr,
+                    "[Failed] GetLogicalProcessorInformation empty mask Index = %lu Relationship = %lu\n",
+                    Index,
+                    (DWORD)ProcessorInformation[Index].Relationship );
+            HeapFree( GetProcessHeap(),
+                      0,
+                      ProcessorInformation );
+            return FALSE;
+        }
+
+        switch (ProcessorInformation[Index].Relationship) {
+        case RelationProcessorCore:
+            CoreCount++;
+            break;
+
+        case RelationNumaNode:
+            NodeCount++;
+            break;
+
+        case RelationProcessorPackage:
+            PackageCount++;
+            break;
+
+        default:
+            break;
+        }
+    }
+
+    HeapFree( GetProcessHeap(),
+              0,
+              ProcessorInformation );
+
+    if (CoreCount == 0 ||
+        NodeCount == 0 ||
+        PackageCount == 0) {
+        fprintf(stderr,
+                "[Failed] GetLogicalProcessorInformation relationships Core = %lu Node = %lu Package = %lu Length = %lu\n",
+                CoreCount,
+                NodeCount,
+                PackageCount,
+                Length );
+        return FALSE;
+    }
+
+    if (! GetNumaHighestNodeNumber( &HighestNodeNumber )) {
+        fprintf(stderr,
+                "[Failed] GetNumaHighestNodeNumber ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    Length = 0;
+    Result = GetLogicalProcessorInformationEx( RelationAll,
+                                               NULL,
+                                               &Length );
+    if (Result ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER ||
+        Length < sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)) {
+        fprintf(stderr,
+                "[Failed] GetLogicalProcessorInformationEx sizing Result = %lu ErrorCode = %lu Length = %lu\n",
+                (DWORD)Result,
+                GetLastError(),
+                Length );
+        return FALSE;
+    }
+
+    ProcessorInformationEx = HeapAlloc( GetProcessHeap(),
+                                        HEAP_ZERO_MEMORY,
+                                        Length );
+    if (ProcessorInformationEx == NULL) {
+        fprintf(stderr,
+                "[Failed] HeapAlloc logical processor information ex Length = %lu ErrorCode = %lu\n",
+                Length,
+                GetLastError() );
+        return FALSE;
+    }
+
+    Result = GetLogicalProcessorInformationEx( RelationAll,
+                                               ProcessorInformationEx,
+                                               &Length );
+    if (! Result) {
+        fprintf(stderr,
+                "[Failed] GetLogicalProcessorInformationEx ErrorCode = %lu Length = %lu\n",
+                GetLastError(),
+                Length );
+        HeapFree( GetProcessHeap(),
+                  0,
+                  ProcessorInformationEx );
+        return FALSE;
+    }
+
+    CoreCount = 0;
+    NodeCount = 0;
+    PackageCount = 0;
+    GroupCount = 0;
+    Offset = 0;
+
+    while (Offset < Length) {
+        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX Entry;
+
+        Entry = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)
+            ((PBYTE)ProcessorInformationEx + Offset);
+        if (Entry->Size < sizeof(LOGICAL_PROCESSOR_RELATIONSHIP) + sizeof(DWORD) ||
+            Entry->Size > Length - Offset) {
+            fprintf(stderr,
+                    "[Failed] GetLogicalProcessorInformationEx entry size Offset = %lu Size = %lu Length = %lu\n",
+                    Offset,
+                    Entry->Size,
+                    Length );
+            HeapFree( GetProcessHeap(),
+                      0,
+                      ProcessorInformationEx );
+            return FALSE;
+        }
+
+        switch (Entry->Relationship) {
+        case RelationProcessorCore:
+            if (Entry->Processor.GroupCount == 0 ||
+                Entry->Processor.GroupMask[0].Mask == 0) {
+                fprintf(stderr,
+                        "[Failed] processor core relationship GroupCount = %hu Mask = %p\n",
+                        Entry->Processor.GroupCount,
+                        (PVOID)Entry->Processor.GroupMask[0].Mask );
+                HeapFree( GetProcessHeap(),
+                          0,
+                          ProcessorInformationEx );
+                return FALSE;
+            }
+            CoreCount++;
+            break;
+
+        case RelationNumaNode:
+        case RelationNumaNodeEx:
+            if (Entry->NumaNode.GroupCount == 0 ||
+                Entry->NumaNode.GroupMask.Mask == 0) {
+                fprintf(stderr,
+                        "[Failed] NUMA relationship GroupCount = %hu Mask = %p\n",
+                        Entry->NumaNode.GroupCount,
+                        (PVOID)Entry->NumaNode.GroupMask.Mask );
+                HeapFree( GetProcessHeap(),
+                          0,
+                          ProcessorInformationEx );
+                return FALSE;
+            }
+            NodeCount++;
+            break;
+
+        case RelationProcessorPackage:
+            if (Entry->Processor.GroupCount == 0 ||
+                Entry->Processor.GroupMask[0].Mask == 0) {
+                fprintf(stderr,
+                        "[Failed] package relationship GroupCount = %hu Mask = %p\n",
+                        Entry->Processor.GroupCount,
+                        (PVOID)Entry->Processor.GroupMask[0].Mask );
+                HeapFree( GetProcessHeap(),
+                          0,
+                          ProcessorInformationEx );
+                return FALSE;
+            }
+            PackageCount++;
+            break;
+
+        case RelationGroup:
+            if (Entry->Group.ActiveGroupCount == 0 ||
+                Entry->Group.GroupInfo[0].ActiveProcessorMask == 0) {
+                fprintf(stderr,
+                        "[Failed] group relationship ActiveGroupCount = %hu Mask = %p\n",
+                        Entry->Group.ActiveGroupCount,
+                        (PVOID)Entry->Group.GroupInfo[0].ActiveProcessorMask );
+                HeapFree( GetProcessHeap(),
+                          0,
+                          ProcessorInformationEx );
+                return FALSE;
+            }
+            GroupCount++;
+            break;
+
+        default:
+            break;
+        }
+
+        Offset += Entry->Size;
+    }
+
+    HeapFree( GetProcessHeap(),
+              0,
+              ProcessorInformationEx );
+
+    if (CoreCount == 0 ||
+        NodeCount == 0 ||
+        PackageCount == 0 ||
+        GroupCount == 0) {
+        fprintf(stderr,
+                "[Failed] GetLogicalProcessorInformationEx relationships Core = %lu Node = %lu Package = %lu Group = %lu Length = %lu\n",
+                CoreCount,
+                NodeCount,
+                PackageCount,
+                GroupCount,
+                Length );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpTestVirtualMemory (
+    VOID
+    )
+{
+    PVOID BaseAddress = NULL;
+    SIZE_T RegionSize = 0x1000;
+    MEMORY_BASIC_INFORMATION MemoryInformation;
+    SIZE_T QueryLength;
+
+    if (VirtualFree( NULL,
+                     0,
+                     MEM_RELEASE ) ||
+        GetLastError() != ERROR_INVALID_ADDRESS) {
+        fprintf(stderr,
+                "[Failed] VirtualFree accepted NULL address ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (VirtualFree( (PVOID)(ULONG_PTR)0x10000,
+                     1,
+                     MEM_RELEASE ) ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+        fprintf(stderr,
+                "[Failed] VirtualFree accepted MEM_RELEASE size ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (VirtualFree( (PVOID)(ULONG_PTR)0x10000,
+                     0,
+                     MEM_DECOMMIT | MEM_RELEASE ) ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+        fprintf(stderr,
+                "[Failed] VirtualFree accepted conflicting free flags ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+#if _KERNEL_MODE
+    {
+        NTSTATUS Status;
+
+        Status = ZwAllocateVirtualMemory( NtCurrentProcess(),
+                                          &BaseAddress,
+                                          0,
+                                          &RegionSize,
+                                          MEM_RESERVE | MEM_COMMIT,
+                                          PAGE_READWRITE );
+        if (! NT_SUCCESS(Status)) {
+            fprintf(stderr,
+                    "[Failed] ZwAllocateVirtualMemory Status = 0x%08lx Size = %Iu\n",
+                    Status,
+                    RegionSize );
+            return FALSE;
+        }
+    }
+#else
+    BaseAddress = VirtualAlloc( NULL,
+                                RegionSize,
+                                MEM_RESERVE | MEM_COMMIT,
+                                PAGE_READWRITE );
+    if (BaseAddress == NULL) {
+        fprintf(stderr,
+                "[Failed] VirtualAlloc ErrorCode = %lu Size = %Iu\n",
+                GetLastError(),
+                RegionSize );
+        return FALSE;
+    }
+#endif
+
+    QueryLength = VirtualQuery( BaseAddress,
+                                &MemoryInformation,
+                                sizeof(MemoryInformation) );
+    if (QueryLength == 0 ||
+        MemoryInformation.State != MEM_COMMIT) {
+        fprintf(stderr,
+                "[Failed] VirtualQuery allocated region QueryLength = %Iu State = 0x%08lx ErrorCode = %lu\n",
+                QueryLength,
+                MemoryInformation.State,
+                GetLastError() );
+        VirtualFree( BaseAddress,
+                     0,
+                     MEM_RELEASE );
+        return FALSE;
+    }
+
+    if (! VirtualFree( BaseAddress,
+                       0,
+                       MEM_RELEASE )) {
+        fprintf(stderr,
+                "[Failed] VirtualFree MEM_RELEASE ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpTestProcessorAffinity (
+    VOID
+    )
+{
+    DWORD_PTR ProcessMask;
+    DWORD_PTR SystemMask;
+    HANDLE ProcessHandle;
+    GROUP_AFFINITY GroupAffinity;
+    GROUP_AFFINITY PreviousGroupAffinity;
+
+    if (! GetProcessAffinityMask( GetCurrentProcess(),
+                                  &ProcessMask,
+                                  &SystemMask )) {
+        fprintf(stderr,
+                "[Failed] GetProcessAffinityMask ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (ProcessMask == 0 ||
+        SystemMask == 0 ||
+        (ProcessMask & ~SystemMask) != 0) {
+        fprintf(stderr,
+                "[Failed] process affinity ProcessMask = %p SystemMask = %p\n",
+                (PVOID)ProcessMask,
+                (PVOID)SystemMask );
+        return FALSE;
+    }
+
+    if (! SetProcessAffinityMask( GetCurrentProcess(),
+                                  ProcessMask )) {
+        fprintf(stderr,
+                "[Failed] SetProcessAffinityMask ErrorCode = %lu ProcessMask = %p\n",
+                GetLastError(),
+                (PVOID)ProcessMask );
+        return FALSE;
+    }
+
+    ProcessHandle = OpenProcess( PROCESS_SET_INFORMATION,
+                                 FALSE,
+                                 GetCurrentProcessId() );
+    if (ProcessHandle == NULL) {
+        fprintf(stderr,
+                "[Failed] OpenProcess(PROCESS_SET_INFORMATION) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! SetProcessAffinityMask( ProcessHandle,
+                                  ProcessMask )) {
+        fprintf(stderr,
+                "[Failed] SetProcessAffinityMask opened handle ErrorCode = %lu ProcessMask = %p\n",
+                GetLastError(),
+                (PVOID)ProcessMask );
+        CloseHandle( ProcessHandle );
+        return FALSE;
+    }
+
+    CloseHandle( ProcessHandle );
+
+    if (SetProcessAffinityMask( GetCurrentProcess(),
+                                0 )) {
+        fprintf(stderr,
+                "[Failed] SetProcessAffinityMask accepted zero mask\n" );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &GroupAffinity,
+                   sizeof(GroupAffinity) );
+    if (! GetThreadGroupAffinity( GetCurrentThread(),
+                                  &GroupAffinity )) {
+        fprintf(stderr,
+                "[Failed] GetThreadGroupAffinity ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (GroupAffinity.Mask == 0) {
+        fprintf(stderr,
+                "[Failed] GetThreadGroupAffinity empty mask Group = %hu\n",
+                GroupAffinity.Group );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &PreviousGroupAffinity,
+                   sizeof(PreviousGroupAffinity) );
+    if (! SetThreadGroupAffinity( GetCurrentThread(),
+                                  &GroupAffinity,
+                                  &PreviousGroupAffinity )) {
+        fprintf(stderr,
+                "[Failed] SetThreadGroupAffinity ErrorCode = %lu Group = %hu Mask = %p\n",
+                GetLastError(),
+                GroupAffinity.Group,
+                (PVOID)GroupAffinity.Mask );
+        return FALSE;
+    }
+
+    if (PreviousGroupAffinity.Mask != 0) {
+        SetThreadGroupAffinity( GetCurrentThread(),
+                                &PreviousGroupAffinity,
+                                NULL );
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+LdkpTestProcessorInformation (
+    VOID
+    )
+{
+    SYSTEM_INFO SystemInfo;
+    PROCESSOR_NUMBER ProcessorNumber;
+    WORD ActiveGroupCount;
+    WORD MaximumGroupCount;
+    DWORD ActiveProcessorCount;
+    DWORD MaximumProcessorCount;
+    DWORD ActiveGroupProcessorCount;
+    DWORD MaximumGroupProcessorCount;
+    DWORD CurrentProcessorNumber;
+
+    RtlZeroMemory( &SystemInfo,
+                   sizeof(SystemInfo) );
+    RtlZeroMemory( &ProcessorNumber,
+                   sizeof(ProcessorNumber) );
+
+    GetNativeSystemInfo( &SystemInfo );
+    if (SystemInfo.dwNumberOfProcessors == 0 ||
+        SystemInfo.dwPageSize == 0) {
+        fprintf(stderr,
+                "[Failed] GetNativeSystemInfo Processors = %lu PageSize = %lu\n",
+                SystemInfo.dwNumberOfProcessors,
+                SystemInfo.dwPageSize );
+        return FALSE;
+    }
+
+    GetCurrentProcessorNumberEx( &ProcessorNumber );
+    CurrentProcessorNumber = GetCurrentProcessorNumber();
+    ActiveGroupCount = GetActiveProcessorGroupCount();
+    MaximumGroupCount = GetMaximumProcessorGroupCount();
+    ActiveProcessorCount = GetActiveProcessorCount( ALL_PROCESSOR_GROUPS );
+    MaximumProcessorCount = GetMaximumProcessorCount( ALL_PROCESSOR_GROUPS );
+
+    if (ActiveGroupCount == 0 ||
+        MaximumGroupCount < ActiveGroupCount ||
+        ActiveProcessorCount == 0 ||
+        MaximumProcessorCount < ActiveProcessorCount) {
+        fprintf(stderr,
+                "[Failed] processor group summary ActiveGroups = %hu MaximumGroups = %hu ActiveProcessors = %lu MaximumProcessors = %lu\n",
+                ActiveGroupCount,
+                MaximumGroupCount,
+                ActiveProcessorCount,
+                MaximumProcessorCount );
+        return FALSE;
+    }
+
+    if (ProcessorNumber.Group >= ActiveGroupCount) {
+        fprintf(stderr,
+                "[Failed] current processor group Group = %hu ActiveGroups = %hu\n",
+                ProcessorNumber.Group,
+                ActiveGroupCount );
+        return FALSE;
+    }
+
+    ActiveGroupProcessorCount = GetActiveProcessorCount( ProcessorNumber.Group );
+    MaximumGroupProcessorCount = GetMaximumProcessorCount( ProcessorNumber.Group );
+    if (ActiveGroupProcessorCount == 0 ||
+        MaximumGroupProcessorCount < ActiveGroupProcessorCount ||
+        ProcessorNumber.Number >= ActiveGroupProcessorCount ||
+        CurrentProcessorNumber >= ActiveProcessorCount) {
+        fprintf(stderr,
+                "[Failed] current processor summary Group = %hu Number = %lu Current = %lu ActiveGroupProcessors = %lu MaximumGroupProcessors = %lu ActiveProcessors = %lu\n",
+                ProcessorNumber.Group,
+                (DWORD)ProcessorNumber.Number,
+                CurrentProcessorNumber,
+                ActiveGroupProcessorCount,
+                MaximumGroupProcessorCount,
+                ActiveProcessorCount );
+        return FALSE;
+    }
+
+    if (! LdkpTestLogicalProcessorInformation()) {
+        return FALSE;
+    }
+
+    if (! LdkpTestProcessorAffinity()) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 BOOLEAN
 UtilityApiTest (
     VOID
@@ -104,6 +663,14 @@ UtilityApiTest (
     if (! LdkpTestPointerCodec( "EncodeSystemPointer/DecodeSystemPointer",
                                 EncodeSystemPointer,
                                 DecodeSystemPointer )) {
+        return FALSE;
+    }
+
+    if (! LdkpTestProcessorInformation()) {
+        return FALSE;
+    }
+
+    if (! LdkpTestVirtualMemory()) {
         return FALSE;
     }
 

@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 set(LDK_WIN32_TEST_SOURCES
+    ../combase/compatibility.c
     ../kernel32/cond.c
     ../kernel32/curdir.c
     ../kernel32/environ.c
@@ -17,10 +18,12 @@ set(LDK_WIN32_TEST_SOURCES
     ../kernel32/nls.c
     ../kernel32/pipe.c
     ../kernel32/process.c
+    ../kernel32/registry.c
     ../kernel32/synchapi.c
     ../kernel32/threadpool.c
     ../kernel32/util.c
     ../ntdll/curdir.c
+    ../ntdll/ec.c
     ../ntdll/environ.c
     ../ntdll/keyedevent.c
     ../ntdll/ldr.c
@@ -83,6 +86,7 @@ target_compile_options(ThreadNotify PRIVATE /GS-)
 target_link_options(DelayOwner PRIVATE /DELAYLOAD:DelayDependency.dll)
 
 target_link_libraries(LdkWin32ApiTest PRIVATE
+    Advapi32
     Synchronization
 )
 

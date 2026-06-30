@@ -199,6 +199,27 @@ VOID
 (NTAPI *PAPCFUNC)(
     _In_ ULONG_PTR Parameter
     );
+
+#if !defined(NTDDI_WIN11_ZN) || (NTDDI_VERSION < NTDDI_WIN11_ZN)
+typedef struct _FILE_STAT_BASIC_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    DWORD FileAttributes;
+    DWORD ReparseTag;
+    DWORD NumberOfLinks;
+    DWORD DeviceType;
+    DWORD DeviceCharacteristics;
+    DWORD Reserved;
+    LARGE_INTEGER VolumeSerialNumber;
+    FILE_ID_128 FileId128;
+} FILE_STAT_BASIC_INFORMATION, *PFILE_STAT_BASIC_INFORMATION;
+#endif
+
 typedef LONG (NTAPI *PVECTORED_EXCEPTION_HANDLER)(
     struct _EXCEPTION_POINTERS *ExceptionInfo
     );
@@ -239,7 +260,11 @@ typedef enum _HEAP_INFORMATION_CLASS {
 #if !defined(_LDK_NTURTL_)
 #define WT_SET_MAX_THREADPOOL_THREADS(Flags, Limit)  ((Flags) |= (Limit)<<16)
 typedef VOID (NTAPI * WORKERCALLBACKFUNC) (PVOID );        
+typedef VOID (NTAPI * WAITORTIMERCALLBACKFUNC) (PVOID, BOOLEAN );
+typedef WAITORTIMERCALLBACKFUNC WAITORTIMERCALLBACK;
 #endif // !defined(_LDK_NTURTL_)
+#define WT_EXECUTEINLONGTHREAD  0x00000010
+#define WT_EXECUTEDELETEWAIT    0x00000008
 
 
 typedef DWORD TP_VERSION, *PTP_VERSION; 
@@ -1168,6 +1193,21 @@ typedef enum _JOBOBJECTINFOCLASS {
 
 
 
+#ifndef MEM_COMMIT
+#define MEM_COMMIT                  0x00001000
+#endif
+#ifndef MEM_RESERVE
+#define MEM_RESERVE                 0x00002000
+#endif
+#ifndef MEM_DECOMMIT
+#define MEM_DECOMMIT                0x00004000
+#endif
+#ifndef MEM_RELEASE
+#define MEM_RELEASE                 0x00008000
+#endif
+#ifndef MEM_FREE
+#define MEM_FREE                    0x00010000
+#endif
 #define MEM_PRIVATE                 0x00020000  
 #define MEM_MAPPED                  0x00040000  
 #define MEM_IMAGE                   0x01000000  

@@ -4,6 +4,7 @@
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, VirtualQuery)
 #pragma alloc_text(PAGE, VirtualProtect)
+#pragma alloc_text(PAGE, VirtualFree)
 #endif
 
 WINBASEAPI
@@ -72,6 +73,50 @@ VirtualProtect (
                                      &RegionSize,
                                      flNewProtect,
                                      lpflOldProtect );
+    if (! NT_SUCCESS(Status)) {
+        LdkSetLastNTError( Status );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+VirtualFree (
+    _Pre_notnull_ _When_(dwFreeType == MEM_DECOMMIT, _Post_invalid_) _When_(dwFreeType == MEM_RELEASE, _Post_ptr_invalid_) LPVOID lpAddress,
+    _In_ SIZE_T dwSize,
+    _In_ DWORD dwFreeType
+    )
+{
+    NTSTATUS Status;
+    PVOID BaseAddress = lpAddress;
+    SIZE_T RegionSize = dwSize;
+    DWORD Operation;
+
+    PAGED_CODE();
+
+    Operation = dwFreeType & (MEM_DECOMMIT | MEM_RELEASE);
+    if (lpAddress == NULL) {
+        SetLastError( ERROR_INVALID_ADDRESS );
+        return FALSE;
+    }
+
+    if ((dwFreeType & ~(MEM_DECOMMIT | MEM_RELEASE)) != 0 ||
+        Operation == 0 ||
+        Operation == (MEM_DECOMMIT | MEM_RELEASE) ||
+        (Operation == MEM_RELEASE && dwSize != 0)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
+    EXIT_WHEN_DPC_WITH_RETURN(FALSE);
+
+    Status = ZwFreeVirtualMemory( NtCurrentProcess(),
+                                  &BaseAddress,
+                                  &RegionSize,
+                                  dwFreeType );
     if (! NT_SUCCESS(Status)) {
         LdkSetLastNTError( Status );
         return FALSE;

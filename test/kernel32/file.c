@@ -16,9 +16,185 @@ FileTest (
 #define printf(...)         (fprintf(stdout, __VA_ARGS__))
 #else
 #include <windows.h>
+#include <winioctl.h>
 #include <stdio.h>
 #define PAGED_CODE()
 #endif
+
+typedef struct _FILE_TEST_COPYFILE2_CONTEXT {
+    LONG StreamStarted;
+    LONG StreamFinished;
+    LONG ChunkFinished;
+} FILE_TEST_COPYFILE2_CONTEXT, *PFILE_TEST_COPYFILE2_CONTEXT;
+
+typedef struct _FILE_TEST_STAT_BASIC_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    DWORD FileAttributes;
+    DWORD ReparseTag;
+    DWORD NumberOfLinks;
+    DWORD DeviceType;
+    DWORD DeviceCharacteristics;
+    DWORD Reserved;
+    LARGE_INTEGER VolumeSerialNumber;
+    BYTE FileId128[16];
+} FILE_TEST_STAT_BASIC_INFORMATION, *PFILE_TEST_STAT_BASIC_INFORMATION;
+
+typedef struct _FILE_TEST_STAT_LX_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    DWORD FileAttributes;
+    DWORD ReparseTag;
+    DWORD NumberOfLinks;
+    ACCESS_MASK EffectiveAccess;
+    DWORD LxFlags;
+    DWORD LxUid;
+    DWORD LxGid;
+    DWORD LxMode;
+    DWORD LxDeviceIdMajor;
+    DWORD LxDeviceIdMinor;
+} FILE_TEST_STAT_LX_INFORMATION, *PFILE_TEST_STAT_LX_INFORMATION;
+
+#pragma warning(push)
+#pragma warning(disable:4324)
+typedef struct _FILE_TEST_WORKSPACE {
+    CHAR PathBuffer[128];
+    CHAR Buffer[4];
+    DECLSPEC_ALIGN(8) UCHAR FileNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
+    DECLSPEC_ALIGN(8) UCHAR FileNormalizedNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
+    DECLSPEC_ALIGN(8) UCHAR FileStreamInfoBuffer[4096];
+    DECLSPEC_ALIGN(8) UCHAR DirectoryInfoBuffer[4096];
+    WCHAR FinalPath[MAX_PATH];
+    CHAR TempPathA[MAX_PATH];
+    WCHAR TempPathW[MAX_PATH];
+    WCHAR TempFileNameW[MAX_PATH];
+    CHAR TempFileNameA[MAX_PATH];
+    WCHAR RenameTargetPath[MAX_PATH];
+    DECLSPEC_ALIGN(8) UCHAR RenameInfoBuffer[FIELD_OFFSET(FILE_RENAME_INFO, FileName) + MAX_PATH * sizeof(WCHAR)];
+} FILE_TEST_WORKSPACE, *PFILE_TEST_WORKSPACE;
+#pragma warning(pop)
+
+typedef BOOL (WINAPI *GET_FILE_INFORMATION_BY_NAME_FN)(
+    _In_ PCWSTR FileName,
+    _In_ int FileInformationClass,
+    _Out_writes_bytes_(FileInfoBufferSize) PVOID FileInfoBuffer,
+    _In_ ULONG FileInfoBufferSize
+    );
+
+#ifndef FileIdExtdDirectoryRestartInfo
+#define FileIdExtdDirectoryRestartInfo ((FILE_INFO_BY_HANDLE_CLASS)20)
+#endif
+#ifndef FileCaseSensitiveInfo
+#define FileCaseSensitiveInfo ((FILE_INFO_BY_HANDLE_CLASS)23)
+#endif
+
+static
+COPYFILE2_MESSAGE_ACTION
+CALLBACK
+FileTestCopyFile2Progress (
+    _In_ const COPYFILE2_MESSAGE *Message,
+    _In_opt_ PVOID CallbackContext
+    )
+{
+    PFILE_TEST_COPYFILE2_CONTEXT Context = (PFILE_TEST_COPYFILE2_CONTEXT)CallbackContext;
+
+    if (Context == NULL || Message == NULL) {
+        return COPYFILE2_PROGRESS_CANCEL;
+    }
+
+    switch (Message->Type) {
+    case COPYFILE2_CALLBACK_STREAM_STARTED:
+        InterlockedIncrement( &Context->StreamStarted );
+        break;
+    case COPYFILE2_CALLBACK_STREAM_FINISHED:
+        InterlockedIncrement( &Context->StreamFinished );
+        break;
+    case COPYFILE2_CALLBACK_CHUNK_FINISHED:
+        InterlockedIncrement( &Context->ChunkFinished );
+        break;
+    default:
+        break;
+    }
+
+    return COPYFILE2_PROGRESS_CONTINUE;
+}
+
+static
+ULONG
+FileTestWideByteLength (
+    _In_z_ LPCWSTR Text
+    )
+{
+    ULONG Length = 0;
+
+    while (Text[Length] != UNICODE_NULL) {
+        Length++;
+    }
+
+    return Length * sizeof(WCHAR);
+}
+
+static
+BOOL
+FileTestDirectoryInfoContains (
+    _In_reads_bytes_(BufferSize) const UCHAR *Buffer,
+    _In_ ULONG BufferSize,
+    _In_ ULONG FileNameLengthOffset,
+    _In_ ULONG FileNameOffset,
+    _In_z_ LPCWSTR ExpectedName
+    )
+{
+    ULONG Offset = 0;
+    ULONG ExpectedNameLength = FileTestWideByteLength( ExpectedName );
+
+    for (;;) {
+        const UCHAR *Entry;
+        ULONG NextEntryOffset;
+        ULONG FileNameLength;
+
+        if (Offset > BufferSize - sizeof(ULONG)) {
+            return FALSE;
+        }
+
+        Entry = Buffer + Offset;
+        if (FileNameLengthOffset > BufferSize - Offset - sizeof(ULONG) ||
+            FileNameOffset > BufferSize - Offset) {
+            return FALSE;
+        }
+
+        NextEntryOffset = *(const ULONG *)Entry;
+        FileNameLength = *(const ULONG *)(Entry + FileNameLengthOffset);
+        if (FileNameLength <= BufferSize - Offset - FileNameOffset &&
+            FileNameLength == ExpectedNameLength &&
+            RtlCompareMemory( Entry + FileNameOffset,
+                              ExpectedName,
+                              ExpectedNameLength ) == ExpectedNameLength) {
+            return TRUE;
+        }
+
+        if (NextEntryOffset == 0) {
+            break;
+        }
+
+        if (NextEntryOffset > BufferSize - Offset) {
+            return FALSE;
+        }
+
+        Offset += NextEntryOffset;
+    }
+
+    return FALSE;
+}
 
 BOOLEAN
 FileTest (
@@ -26,8 +202,18 @@ FileTest (
     )
 {
     BOOL rv = TRUE;
+    PFILE_TEST_WORKSPACE Workspace;
 
     PAGED_CODE();
+
+    Workspace = HeapAlloc( GetProcessHeap(),
+                           HEAP_ZERO_MEMORY,
+                           sizeof(*Workspace) );
+    if (Workspace == NULL) {
+        fprintf(stderr, "[Failed] FileTest workspace allocation failed ErrorCode = %d\n",
+                GetLastError());
+        return FALSE;
+    }
 
     printf("File Test\n");
 
@@ -52,15 +238,15 @@ FileTest (
     if (hFile == INVALID_HANDLE_VALUE) {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         printf("[Failed] Test CreateFileA(Test.tmp, CREATE_NEW) \n\n");
-        return FALSE;
+        rv = FALSE;
+        goto DeleteTest;
     }
     printf("[Success] Test CreateFileA(Test.tmp, CREATE_NEW) \n\n");
 
 
     printf("Test GetFullPathNameA(Test.tmp) \n");
-    CHAR PathBuffer[128];
     PSTR FilePart;
-    if (GetFullPathNameA( "Test.tmp", sizeof(PathBuffer), PathBuffer, &FilePart ) == 0) {
+    if (GetFullPathNameA( "Test.tmp", sizeof(Workspace->PathBuffer), Workspace->PathBuffer, &FilePart ) == 0) {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
         rv = FALSE;
     }
@@ -99,15 +285,14 @@ FileTest (
 
 
     printf("Test ReadFile(Test.tmp) \n");
-    CHAR Buffer[4];
-    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    rv = ReadFile( hFile, Workspace->Buffer, 4, &length, NULL );
     CloseHandle( hFile );
     
     if (!rv) {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
     }
-    if ((length != 4) || (memcmp(Buffer, "1234", 4))) {
-        fprintf(stderr, "[Failed] Expect = 4, 1234, Actual = %d %s\n", length, Buffer);
+    if ((length != 4) || (memcmp(Workspace->Buffer, "1234", 4))) {
+        fprintf(stderr, "[Failed] Expect = 4, 1234, Actual = %d %s\n", length, Workspace->Buffer);
         rv = FALSE;
     }
     if (rv) {
@@ -133,17 +318,238 @@ FileTest (
         goto DeleteTest;
     }
 
-    RtlZeroMemory( Buffer, sizeof(Buffer) );
+    RtlZeroMemory( Workspace->Buffer, sizeof(Workspace->Buffer) );
     length = 0;
-    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    rv = ReadFile( hFile, Workspace->Buffer, 4, &length, NULL );
     CloseHandle( hFile );
-    if (!rv || length != 4 || memcmp(Buffer, "1234", 4)) {
+    if (!rv || length != 4 || memcmp(Workspace->Buffer, "1234", 4)) {
         fprintf(stderr, "[Failed] ErrorCode = %d, length = %d\n", GetLastError(), length);
         printf("[Failed] Test CopyFileW(Test.tmp, TestCopy.tmp)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
     printf("[Success] Test CopyFileW(Test.tmp, TestCopy.tmp)\n\n");
+
+    printf("Test CopyFileA / GetFileAttributesExA / SetFileAttributesA\n");
+    DeleteFileW( L"TestCopyA.tmp" );
+    rv = CopyFileA( "Test.tmp",
+                    "TestCopyA.tmp",
+                    TRUE );
+    if (!rv) {
+        fprintf(stderr, "[Failed] CopyFileA ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CopyFileA / GetFileAttributesExA / SetFileAttributesA\n\n");
+        goto DeleteTest;
+    }
+
+    WIN32_FILE_ATTRIBUTE_DATA AttributeDataA;
+    RtlZeroMemory( &AttributeDataA,
+                   sizeof(AttributeDataA) );
+    rv = GetFileAttributesExA( "TestCopyA.tmp",
+                               GetFileExInfoStandard,
+                               &AttributeDataA );
+    if (!rv ||
+        AttributeDataA.nFileSizeHigh != 0 ||
+        AttributeDataA.nFileSizeLow != 4 ||
+        FlagOn(AttributeDataA.dwFileAttributes, FILE_ATTRIBUTE_DIRECTORY)) {
+        fprintf(stderr,
+                "[Failed] GetFileAttributesExA ErrorCode = %d Size = %lu:%lu Attributes = 0x%08lx\n",
+                GetLastError(),
+                AttributeDataA.nFileSizeHigh,
+                AttributeDataA.nFileSizeLow,
+                AttributeDataA.dwFileAttributes);
+        printf("[Failed] Test CopyFileA / GetFileAttributesExA / SetFileAttributesA\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    rv = SetFileAttributesA( "TestCopyA.tmp",
+                             FILE_ATTRIBUTE_NORMAL );
+    if (!rv) {
+        fprintf(stderr, "[Failed] SetFileAttributesA ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CopyFileA / GetFileAttributesExA / SetFileAttributesA\n\n");
+        goto DeleteTest;
+    }
+    printf("[Success] Test CopyFileA / GetFileAttributesExA / SetFileAttributesA\n\n");
+
+    printf("Test CreateFile2(TestCreateFile2.tmp)\n");
+    DeleteFileW( L"TestCreateFile2.tmp" );
+    CREATEFILE2_EXTENDED_PARAMETERS CreateFile2Parameters;
+    RtlZeroMemory( &CreateFile2Parameters,
+                   sizeof(CreateFile2Parameters) );
+    CreateFile2Parameters.dwSize = sizeof(CreateFile2Parameters);
+    CreateFile2Parameters.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
+
+    hFile = CreateFile2( L"TestCreateFile2.tmp",
+                         GENERIC_WRITE,
+                         0,
+                         CREATE_NEW,
+                         &CreateFile2Parameters );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CreateFile2 ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateFile2(TestCreateFile2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    length = 0;
+    rv = WriteFile( hFile,
+                    "5678",
+                    4,
+                    &length,
+                    NULL );
+    CloseHandle( hFile );
+    if (!rv || length != 4) {
+        fprintf(stderr, "[Failed] CreateFile2 WriteFile ErrorCode = %d Length = %lu\n",
+                GetLastError(),
+                length);
+        printf("[Failed] Test CreateFile2(TestCreateFile2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CreateFile2(TestCreateFile2.tmp)\n\n");
+
+    printf("Test CopyFile2(Test.tmp, TestCopy2.tmp)\n");
+    DeleteFileW( L"TestCopy2.tmp" );
+    FILE_TEST_COPYFILE2_CONTEXT CopyFile2Context;
+    COPYFILE2_EXTENDED_PARAMETERS CopyFile2Parameters;
+    RtlZeroMemory( &CopyFile2Context,
+                   sizeof(CopyFile2Context) );
+    RtlZeroMemory( &CopyFile2Parameters,
+                   sizeof(CopyFile2Parameters) );
+    CopyFile2Parameters.dwSize = sizeof(CopyFile2Parameters);
+    CopyFile2Parameters.dwCopyFlags = COPY_FILE_FAIL_IF_EXISTS;
+    CopyFile2Parameters.pProgressRoutine = FileTestCopyFile2Progress;
+    CopyFile2Parameters.pvCallbackContext = &CopyFile2Context;
+
+    HRESULT CopyFile2Result = CopyFile2( L"Test.tmp",
+                                         L"TestCopy2.tmp",
+                                         &CopyFile2Parameters );
+    if (CopyFile2Result != 0) {
+        fprintf(stderr, "[Failed] CopyFile2 Result = 0x%08lx\n", CopyFile2Result);
+        printf("[Failed] Test CopyFile2(Test.tmp, TestCopy2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    if (CopyFile2Context.StreamStarted == 0 ||
+        CopyFile2Context.StreamFinished == 0 ||
+        CopyFile2Context.ChunkFinished == 0) {
+        fprintf(stderr,
+                "[Failed] CopyFile2 callback counts StreamStarted = %ld StreamFinished = %ld ChunkFinished = %ld\n",
+                CopyFile2Context.StreamStarted,
+                CopyFile2Context.StreamFinished,
+                CopyFile2Context.ChunkFinished);
+        printf("[Failed] Test CopyFile2(Test.tmp, TestCopy2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"TestCopy2.tmp", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CopyFile2 output open ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CopyFile2(Test.tmp, TestCopy2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Workspace->Buffer, sizeof(Workspace->Buffer) );
+    length = 0;
+    rv = ReadFile( hFile, Workspace->Buffer, 4, &length, NULL );
+    CloseHandle( hFile );
+    if (!rv || length != 4 || memcmp(Workspace->Buffer, "1234", 4)) {
+        fprintf(stderr, "[Failed] CopyFile2 readback ErrorCode = %d Length = %lu\n",
+                GetLastError(),
+                length);
+        printf("[Failed] Test CopyFile2(Test.tmp, TestCopy2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    BOOL CopyFile2Cancel = TRUE;
+    RtlZeroMemory( &CopyFile2Parameters,
+                   sizeof(CopyFile2Parameters) );
+    CopyFile2Parameters.dwSize = sizeof(CopyFile2Parameters);
+    CopyFile2Parameters.pfCancel = &CopyFile2Cancel;
+    CopyFile2Result = CopyFile2( L"Test.tmp",
+                                 L"TestCopy2Cancel.tmp",
+                                 &CopyFile2Parameters );
+    if (CopyFile2Result == 0) {
+        fprintf(stderr, "[Failed] CopyFile2 cancellation unexpectedly succeeded\n");
+        printf("[Failed] Test CopyFile2(Test.tmp, TestCopy2.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CopyFile2(Test.tmp, TestCopy2.tmp)\n\n");
+
+    printf("Test GetFileInformationByName(Test.tmp)\n");
+    HMODULE Kernel32 = GetModuleHandleW( L"kernel32.dll" );
+    GET_FILE_INFORMATION_BY_NAME_FN GetFileInformationByNameFn =
+        Kernel32 != NULL ?
+            (GET_FILE_INFORMATION_BY_NAME_FN)GetProcAddress( Kernel32,
+                                                             "GetFileInformationByName" ) :
+            NULL;
+    if (GetFileInformationByNameFn == NULL) {
+#if _KERNEL_MODE
+        fprintf(stderr, "[Failed] GetProcAddress(GetFileInformationByName) ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test GetFileInformationByName(Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+#else
+        printf("[Skipped] Test GetFileInformationByName(Test.tmp) export is unavailable\n\n");
+#endif
+    } else {
+        FILE_TEST_STAT_LX_INFORMATION StatLxInfo;
+        FILE_TEST_STAT_BASIC_INFORMATION StatBasicInfo;
+
+        RtlZeroMemory( &StatLxInfo,
+                       sizeof(StatLxInfo) );
+        rv = GetFileInformationByNameFn( L"Test.tmp",
+                                         1,
+                                         &StatLxInfo,
+                                         sizeof(StatLxInfo) );
+        if (!rv) {
+#if _KERNEL_MODE
+            fprintf(stderr, "[Failed] GetFileInformationByName(FileStatLxByNameInfo) ErrorCode = %d\n", GetLastError());
+            printf("[Failed] Test GetFileInformationByName(Test.tmp)\n\n");
+            goto DeleteTest;
+#else
+            printf("[Skipped] GetFileInformationByName(FileStatLxByNameInfo) ErrorCode = %d\n", GetLastError());
+#endif
+        } else if (StatLxInfo.EndOfFile.QuadPart != 4 ||
+                   FlagOn(StatLxInfo.FileAttributes, FILE_ATTRIBUTE_DIRECTORY)) {
+            fprintf(stderr,
+                    "[Failed] GetFileInformationByName FileStatLxByNameInfo Size = %I64d Attributes = 0x%08lx\n",
+                    StatLxInfo.EndOfFile.QuadPart,
+                    StatLxInfo.FileAttributes);
+            printf("[Failed] Test GetFileInformationByName(Test.tmp)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+
+        RtlZeroMemory( &StatBasicInfo,
+                       sizeof(StatBasicInfo) );
+        rv = GetFileInformationByNameFn( L"Test.tmp",
+                                         3,
+                                         &StatBasicInfo,
+                                         sizeof(StatBasicInfo) );
+        if (!rv) {
+            fprintf(stderr, "[Failed] GetFileInformationByName ErrorCode = %d\n", GetLastError());
+            printf("[Failed] Test GetFileInformationByName(Test.tmp)\n\n");
+            goto DeleteTest;
+        }
+
+        if (StatBasicInfo.EndOfFile.QuadPart != 4 ||
+            FlagOn(StatBasicInfo.FileAttributes, FILE_ATTRIBUTE_DIRECTORY)) {
+            fprintf(stderr,
+                    "[Failed] GetFileInformationByName size/attributes Size = %I64d Attributes = 0x%08lx\n",
+                    StatBasicInfo.EndOfFile.QuadPart,
+                    StatBasicInfo.FileAttributes);
+            printf("[Failed] Test GetFileInformationByName(Test.tmp)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+        printf("[Success] Test GetFileInformationByName(Test.tmp)\n\n");
+    }
 
     printf("Test MoveFileExW(TestCopy.tmp, TestMoved.tmp)\n");
     DeleteFileW( L"TestMoved.tmp" );
@@ -163,6 +569,91 @@ FileTest (
     }
     printf("[Success] Test MoveFileExW(TestCopy.tmp, TestMoved.tmp)\n\n");
 
+    printf("Test MoveFileA / MoveFileW / MoveFileExA\n");
+    DeleteFileW( L"TestMoveA.tmp" );
+    DeleteFileW( L"TestMoveATarget.tmp" );
+    DeleteFileW( L"TestMoveW.tmp" );
+    DeleteFileW( L"TestMoveWTarget.tmp" );
+    DeleteFileW( L"TestMoveExA.tmp" );
+    DeleteFileW( L"TestMoveExATarget.tmp" );
+
+    hFile = CreateFileW( L"TestMoveA.tmp",
+                         GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_NEW,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CreateFileW(TestMoveA.tmp) ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    CloseHandle( hFile );
+    hFile = INVALID_HANDLE_VALUE;
+    rv = MoveFileA( "TestMoveA.tmp",
+                    "TestMoveATarget.tmp" );
+    if (!rv ||
+        GetFileAttributesW( L"TestMoveA.tmp" ) != INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW( L"TestMoveATarget.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] MoveFileA ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test MoveFileA / MoveFileW / MoveFileExA\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"TestMoveW.tmp",
+                         GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_NEW,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CreateFileW(TestMoveW.tmp) ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    CloseHandle( hFile );
+    hFile = INVALID_HANDLE_VALUE;
+    rv = MoveFileW( L"TestMoveW.tmp",
+                    L"TestMoveWTarget.tmp" );
+    if (!rv ||
+        GetFileAttributesW( L"TestMoveW.tmp" ) != INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW( L"TestMoveWTarget.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] MoveFileW ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test MoveFileA / MoveFileW / MoveFileExA\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"TestMoveExA.tmp",
+                         GENERIC_WRITE,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         CREATE_NEW,
+                         FILE_ATTRIBUTE_NORMAL,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CreateFileW(TestMoveExA.tmp) ErrorCode = %d\n", GetLastError());
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    CloseHandle( hFile );
+    hFile = INVALID_HANDLE_VALUE;
+    rv = MoveFileExA( "TestMoveExA.tmp",
+                      "TestMoveExATarget.tmp",
+                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED );
+    if (!rv ||
+        GetFileAttributesW( L"TestMoveExA.tmp" ) != INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW( L"TestMoveExATarget.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] MoveFileExA ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test MoveFileA / MoveFileW / MoveFileExA\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test MoveFileA / MoveFileW / MoveFileExA\n\n");
+
     printf("Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n");
     DeleteFileW( L"TestHardLink.tmp" );
     rv = CreateHardLinkW( L"TestHardLink.tmp",
@@ -173,6 +664,20 @@ FileTest (
         printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
         goto DeleteTest;
     }
+
+    printf("Test CreateHardLinkA(TestHardLinkA.tmp, Test.tmp)\n");
+    DeleteFileW( L"TestHardLinkA.tmp" );
+    rv = CreateHardLinkA( "TestHardLinkA.tmp",
+                          "Test.tmp",
+                          NULL );
+    if (!rv ||
+        GetFileAttributesW( L"TestHardLinkA.tmp" ) == INVALID_FILE_ATTRIBUTES) {
+        fprintf(stderr, "[Failed] CreateHardLinkA ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateHardLinkA(TestHardLinkA.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CreateHardLinkA(TestHardLinkA.tmp, Test.tmp)\n\n");
 
     printf("Test CreateFileW(Test.tmp:LdkStream)\n");
     BOOL StreamCreated = FALSE;
@@ -225,16 +730,14 @@ FileTest (
     rv = GetFileInformationByHandle( hFile,
                                      &HandleInfo );
     printf("Test GetFileInformationByHandleEx(FileNameInfo / FileNormalizedNameInfo)\n");
-    UCHAR FileNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
-    PFILE_NAME_INFO NameInfo = (PFILE_NAME_INFO)FileNameInfoBuffer;
-    UCHAR FileNormalizedNameInfoBuffer[FIELD_OFFSET(FILE_NAME_INFO, FileName) + (MAX_PATH * sizeof(WCHAR))];
-    PFILE_NAME_INFO NormalizedNameInfo = (PFILE_NAME_INFO)FileNormalizedNameInfoBuffer;
-    RtlZeroMemory( FileNameInfoBuffer,
-                   sizeof(FileNameInfoBuffer) );
+    PFILE_NAME_INFO NameInfo = (PFILE_NAME_INFO)Workspace->FileNameInfoBuffer;
+    PFILE_NAME_INFO NormalizedNameInfo = (PFILE_NAME_INFO)Workspace->FileNormalizedNameInfoBuffer;
+    RtlZeroMemory( Workspace->FileNameInfoBuffer,
+                   sizeof(Workspace->FileNameInfoBuffer) );
     if (! GetFileInformationByHandleEx( hFile,
                                         FileNameInfo,
                                         NameInfo,
-                                        sizeof(FileNameInfoBuffer) )) {
+                                        sizeof(Workspace->FileNameInfoBuffer) )) {
         fprintf(stderr,
                 "[Failed] GetFileInformationByHandleEx(FileNameInfo) ErrorCode = %d\n",
                 GetLastError());
@@ -243,12 +746,12 @@ FileTest (
         rv = FALSE;
         goto DeleteTest;
     }
-    RtlZeroMemory( FileNormalizedNameInfoBuffer,
-                   sizeof(FileNormalizedNameInfoBuffer) );
+    RtlZeroMemory( Workspace->FileNormalizedNameInfoBuffer,
+                   sizeof(Workspace->FileNormalizedNameInfoBuffer) );
     if (! GetFileInformationByHandleEx( hFile,
                                         FileNormalizedNameInfo,
                                         NormalizedNameInfo,
-                                        sizeof(FileNormalizedNameInfoBuffer) )) {
+                                        sizeof(Workspace->FileNormalizedNameInfoBuffer) )) {
         fprintf(stderr,
                 "[Failed] GetFileInformationByHandleEx(FileNormalizedNameInfo) ErrorCode = %d\n",
                 GetLastError());
@@ -258,12 +761,11 @@ FileTest (
         goto DeleteTest;
     }
     printf("Test GetFileInformationByHandleEx(FileStreamInfo)\n");
-    UCHAR FileStreamInfoBuffer[4096];
-    ULONG FileStreamInfoBufferSize = (ULONG)sizeof(FileStreamInfoBuffer);
+    ULONG FileStreamInfoBufferSize = (ULONG)sizeof(Workspace->FileStreamInfoBuffer);
     ULONG FileStreamInfoHeaderSize = (ULONG)FIELD_OFFSET(FILE_STREAM_INFO, StreamName);
-    PFILE_STREAM_INFO StreamInfo = (PFILE_STREAM_INFO)FileStreamInfoBuffer;
-    RtlZeroMemory( FileStreamInfoBuffer,
-                   sizeof(FileStreamInfoBuffer) );
+    PFILE_STREAM_INFO StreamInfo = (PFILE_STREAM_INFO)Workspace->FileStreamInfoBuffer;
+    RtlZeroMemory( Workspace->FileStreamInfoBuffer,
+                   sizeof(Workspace->FileStreamInfoBuffer) );
     if (! GetFileInformationByHandleEx( hFile,
                                         FileStreamInfo,
                                         StreamInfo,
@@ -299,7 +801,7 @@ FileTest (
             goto DeleteTest;
         }
 
-        Entry = (PFILE_STREAM_INFO)(FileStreamInfoBuffer + StreamInfoOffset);
+        Entry = (PFILE_STREAM_INFO)(Workspace->FileStreamInfoBuffer + StreamInfoOffset);
         if (Entry->StreamNameLength == 0 ||
             (Entry->StreamNameLength % sizeof(WCHAR)) != 0) {
             fprintf(stderr,
@@ -509,6 +1011,177 @@ FileTest (
 
     printf("[Success] Test GetFileInformationByHandleEx(FileCompressionInfo / FileAlignmentInfo / FileStorageInfo / FileRemoteProtocolInfo)\n\n");
     CloseHandle( hFile );
+
+    printf("Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n");
+    HANDLE hOverlappedEvent = CreateEventW( NULL,
+                                            TRUE,
+                                            FALSE,
+                                            NULL );
+    if (hOverlappedEvent == NULL) {
+        fprintf(stderr, "[Failed] CreateEventW ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"Test.tmp",
+                         GENERIC_READ,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CreateFileW(FILE_FLAG_OVERLAPPED) ErrorCode = %d\n", GetLastError());
+        CloseHandle( hOverlappedEvent );
+        printf("[Failed] Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    OVERLAPPED Overlapped;
+    USHORT CompressionFormat = 0xffff;
+    DWORD IoBytesReturned = 0;
+    RtlZeroMemory( &Overlapped,
+                   sizeof(Overlapped) );
+    Overlapped.hEvent = hOverlappedEvent;
+
+    SetLastError( ERROR_SUCCESS );
+    rv = DeviceIoControl( hFile,
+                          FSCTL_GET_COMPRESSION,
+                          NULL,
+                          0,
+                          &CompressionFormat,
+                          sizeof(CompressionFormat),
+                          &IoBytesReturned,
+                          &Overlapped );
+    if (!rv && GetLastError() == ERROR_IO_PENDING) {
+        DWORD WaitResult = WaitForSingleObject( hOverlappedEvent,
+                                                5000 );
+        if (WaitResult != WAIT_OBJECT_0) {
+            fprintf(stderr,
+                    "[Failed] DeviceIoControl overlapped wait Wait = 0x%08lx ErrorCode = %d\n",
+                    WaitResult,
+                    GetLastError());
+            CloseHandle( hFile );
+            CloseHandle( hOverlappedEvent );
+            printf("[Failed] Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+
+        if (Overlapped.Internal != 0) {
+            fprintf(stderr,
+                    "[Failed] DeviceIoControl overlapped status = 0x%Ix\n",
+                    Overlapped.Internal);
+            CloseHandle( hFile );
+            CloseHandle( hOverlappedEvent );
+            printf("[Failed] Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+
+        IoBytesReturned = (DWORD)Overlapped.InternalHigh;
+        rv = TRUE;
+    }
+
+    CloseHandle( hFile );
+    CloseHandle( hOverlappedEvent );
+    if (!rv ||
+        IoBytesReturned != sizeof(CompressionFormat) ||
+        CompressionFormat == 0xffff) {
+        fprintf(stderr,
+                "[Failed] DeviceIoControl overlapped ErrorCode = %d Bytes = %lu Compression = 0x%04x\n",
+                GetLastError(),
+                IoBytesReturned,
+                CompressionFormat);
+        printf("[Failed] Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test DeviceIoControl(FSCTL_GET_COMPRESSION) overlapped\n\n");
+
+    printf("Test GetFileInformationByHandleEx directory enumeration classes\n");
+    HANDLE hDirectory = CreateFileW( L".",
+                                     GENERIC_READ,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                     NULL,
+                                     OPEN_EXISTING,
+                                     FILE_FLAG_BACKUP_SEMANTICS,
+                                     NULL );
+    if (hDirectory == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] CreateFileW(.) ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test GetFileInformationByHandleEx directory enumeration classes\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Workspace->DirectoryInfoBuffer,
+                   sizeof(Workspace->DirectoryInfoBuffer) );
+    rv = GetFileInformationByHandleEx( hDirectory,
+                                       FileFullDirectoryRestartInfo,
+                                       Workspace->DirectoryInfoBuffer,
+                                       sizeof(Workspace->DirectoryInfoBuffer) );
+    if (!rv ||
+        !FileTestDirectoryInfoContains( Workspace->DirectoryInfoBuffer,
+                                        sizeof(Workspace->DirectoryInfoBuffer),
+                                        FIELD_OFFSET(FILE_FULL_DIR_INFO, FileNameLength),
+                                        FIELD_OFFSET(FILE_FULL_DIR_INFO, FileName),
+                                        L"Test.tmp" )) {
+        fprintf(stderr,
+                "[Failed] FileFullDirectoryRestartInfo ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hDirectory );
+        printf("[Failed] Test GetFileInformationByHandleEx directory enumeration classes\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Workspace->DirectoryInfoBuffer,
+                   sizeof(Workspace->DirectoryInfoBuffer) );
+    rv = GetFileInformationByHandleEx( hDirectory,
+                                       FileIdBothDirectoryRestartInfo,
+                                       Workspace->DirectoryInfoBuffer,
+                                       sizeof(Workspace->DirectoryInfoBuffer) );
+    if (!rv ||
+        !FileTestDirectoryInfoContains( Workspace->DirectoryInfoBuffer,
+                                        sizeof(Workspace->DirectoryInfoBuffer),
+                                        FIELD_OFFSET(FILE_ID_BOTH_DIR_INFO, FileNameLength),
+                                        FIELD_OFFSET(FILE_ID_BOTH_DIR_INFO, FileName),
+                                        L"Test.tmp" )) {
+        fprintf(stderr,
+                "[Failed] FileIdBothDirectoryRestartInfo ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hDirectory );
+        printf("[Failed] Test GetFileInformationByHandleEx directory enumeration classes\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    RtlZeroMemory( Workspace->DirectoryInfoBuffer,
+                   sizeof(Workspace->DirectoryInfoBuffer) );
+    rv = GetFileInformationByHandleEx( hDirectory,
+                                       FileIdExtdDirectoryRestartInfo,
+                                       Workspace->DirectoryInfoBuffer,
+                                       sizeof(Workspace->DirectoryInfoBuffer) );
+    if (!rv ||
+        !FileTestDirectoryInfoContains( Workspace->DirectoryInfoBuffer,
+                                        sizeof(Workspace->DirectoryInfoBuffer),
+                                        FIELD_OFFSET(FILE_ID_EXTD_DIR_INFO, FileNameLength),
+                                        FIELD_OFFSET(FILE_ID_EXTD_DIR_INFO, FileName),
+                                        L"Test.tmp" )) {
+        fprintf(stderr,
+                "[Failed] FileIdExtdDirectoryRestartInfo ErrorCode = %d\n",
+                GetLastError());
+        CloseHandle( hDirectory );
+        printf("[Failed] Test GetFileInformationByHandleEx directory enumeration classes\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    CloseHandle( hDirectory );
+    printf("[Success] Test GetFileInformationByHandleEx directory enumeration classes\n\n");
+
     if (!rv || HandleInfo.nNumberOfLinks < 2) {
         fprintf(stderr,
                 "[Failed] nNumberOfLinks = %lu, ErrorCode = %d\n",
@@ -566,11 +1239,11 @@ FileTest (
         goto DeleteTest;
     }
 
-    RtlZeroMemory( Buffer, sizeof(Buffer) );
+    RtlZeroMemory( Workspace->Buffer, sizeof(Workspace->Buffer) );
     length = 0;
-    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    rv = ReadFile( hFile, Workspace->Buffer, 4, &length, NULL );
     CloseHandle( hFile );
-    if (!rv || length != 4 || memcmp(Buffer, "1234", 4)) {
+    if (!rv || length != 4 || memcmp(Workspace->Buffer, "1234", 4)) {
         fprintf(stderr, "[Failed] ErrorCode = %d, length = %d\n", GetLastError(), length);
         printf("[Failed] Test CreateHardLinkW(Test.tmp, TestHardLink.tmp)\n\n");
         rv = FALSE;
@@ -732,17 +1405,39 @@ FileTest (
         goto DeleteTest;
     }
 
-    RtlZeroMemory( Buffer, sizeof(Buffer) );
+    RtlZeroMemory( Workspace->Buffer, sizeof(Workspace->Buffer) );
     length = 0;
-    rv = ReadFile( hFile, Buffer, 4, &length, NULL );
+    rv = ReadFile( hFile, Workspace->Buffer, 4, &length, NULL );
     CloseHandle( hFile );
-    if (!rv || length != 4 || memcmp(Buffer, "1234", 4)) {
+    if (!rv || length != 4 || memcmp(Workspace->Buffer, "1234", 4)) {
         fprintf(stderr, "[Failed] ErrorCode = %d, length = %d\n", GetLastError(), length);
         printf("[Failed] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
         rv = FALSE;
         goto DeleteTest;
     }
     printf("[Success] Test CreateSymbolicLinkW(TestSymlink.tmp, Test.tmp)\n\n");
+
+    printf("Test CreateSymbolicLinkA(TestSymlinkA.tmp, Test.tmp)\n");
+    DeleteFileW( L"TestSymlinkA.tmp" );
+    rv = CreateSymbolicLinkA( "TestSymlinkA.tmp",
+                              "Test.tmp",
+                              0 );
+    if (!rv) {
+        fprintf(stderr, "[Failed] CreateSymbolicLinkA ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test CreateSymbolicLinkA(TestSymlinkA.tmp, Test.tmp)\n\n");
+        goto DeleteTest;
+    }
+    SymlinkAttributes = GetFileAttributesW( L"TestSymlinkA.tmp" );
+    if (SymlinkAttributes == INVALID_FILE_ATTRIBUTES ||
+        !(SymlinkAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+        fprintf(stderr, "[Failed] SymlinkA Attributes = 0x%08lx, ErrorCode = %d\n",
+                SymlinkAttributes,
+                GetLastError());
+        printf("[Failed] Test CreateSymbolicLinkA(TestSymlinkA.tmp, Test.tmp)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+    printf("[Success] Test CreateSymbolicLinkA(TestSymlinkA.tmp, Test.tmp)\n\n");
 
 #if !_KERNEL_MODE
 AfterSymlinkTest:
@@ -762,14 +1457,13 @@ AfterSymlinkTest:
         goto DeleteTest;
     }
 
-    WCHAR FinalPath[MAX_PATH];
     DWORD FinalPathLength = GetFinalPathNameByHandleW( hFile,
-                                                       FinalPath,
-                                                       RTL_NUMBER_OF(FinalPath),
+                                                       Workspace->FinalPath,
+                                                       RTL_NUMBER_OF(Workspace->FinalPath),
                                                        FILE_NAME_NORMALIZED | VOLUME_NAME_NT );
     if (FinalPathLength == 0 ||
-        FinalPathLength >= RTL_NUMBER_OF(FinalPath) ||
-        FinalPath[0] != L'\\') {
+        FinalPathLength >= RTL_NUMBER_OF(Workspace->FinalPath) ||
+        Workspace->FinalPath[0] != L'\\') {
         CloseHandle( hFile );
         fprintf(stderr, "[Failed] FinalPathLength = %lu, ErrorCode = %d\n",
                 FinalPathLength,
@@ -780,18 +1474,18 @@ AfterSymlinkTest:
     }
 
     FinalPathLength = GetFinalPathNameByHandleW( hFile,
-                                                 FinalPath,
-                                                 RTL_NUMBER_OF(FinalPath),
+                                                 Workspace->FinalPath,
+                                                 RTL_NUMBER_OF(Workspace->FinalPath),
                                                  FILE_NAME_NORMALIZED | VOLUME_NAME_DOS );
     CloseHandle( hFile );
     if (FinalPathLength == 0 ||
-        FinalPathLength >= RTL_NUMBER_OF(FinalPath) ||
-        FinalPath[0] != L'\\' ||
-        FinalPath[1] != L'\\' ||
-        FinalPath[2] != L'?' ||
-        FinalPath[3] != L'\\' ||
-        FinalPath[5] != L':' ||
-        FinalPath[6] != L'\\') {
+        FinalPathLength >= RTL_NUMBER_OF(Workspace->FinalPath) ||
+        Workspace->FinalPath[0] != L'\\' ||
+        Workspace->FinalPath[1] != L'\\' ||
+        Workspace->FinalPath[2] != L'?' ||
+        Workspace->FinalPath[3] != L'\\' ||
+        Workspace->FinalPath[5] != L':' ||
+        Workspace->FinalPath[6] != L'\\') {
         fprintf(stderr, "[Failed] FinalPathLength = %lu, ErrorCode = %d\n",
                 FinalPathLength,
                 GetLastError());
@@ -802,23 +1496,21 @@ AfterSymlinkTest:
     printf("[Success] Test GetFinalPathNameByHandleW(Test.tmp)\n\n");
 
     printf("Test GetTempPathA / GetTempPathW\n");
-    CHAR TempPathA[MAX_PATH];
-    WCHAR TempPathW[MAX_PATH];
-    DWORD TempPathLengthA = GetTempPathA( RTL_NUMBER_OF(TempPathA),
-                                          TempPathA );
-    DWORD TempPathLengthW = GetTempPathW( RTL_NUMBER_OF(TempPathW),
-                                          TempPathW );
+    DWORD TempPathLengthA = GetTempPathA( RTL_NUMBER_OF(Workspace->TempPathA),
+                                          Workspace->TempPathA );
+    DWORD TempPathLengthW = GetTempPathW( RTL_NUMBER_OF(Workspace->TempPathW),
+                                          Workspace->TempPathW );
     if (TempPathLengthA == 0 ||
-        TempPathLengthA >= RTL_NUMBER_OF(TempPathA) ||
-        TempPathA[TempPathLengthA - 1] != '\\') {
+        TempPathLengthA >= RTL_NUMBER_OF(Workspace->TempPathA) ||
+        Workspace->TempPathA[TempPathLengthA - 1] != '\\') {
         fprintf(stderr, "[Failed] GetTempPathA ErrorCode = %d\n", GetLastError());
         rv = FALSE;
         goto DeleteTest;
     }
     if (TempPathLengthW == 0 ||
-        TempPathLengthW >= RTL_NUMBER_OF(TempPathW) ||
-        TempPathW[TempPathLengthW - 1] != L'\\' ||
-        GetFileAttributesW( TempPathW ) == INVALID_FILE_ATTRIBUTES) {
+        TempPathLengthW >= RTL_NUMBER_OF(Workspace->TempPathW) ||
+        Workspace->TempPathW[TempPathLengthW - 1] != L'\\' ||
+        GetFileAttributesW( Workspace->TempPathW ) == INVALID_FILE_ATTRIBUTES) {
         fprintf(stderr, "[Failed] GetTempPathW ErrorCode = %d\n", GetLastError());
         rv = FALSE;
         goto DeleteTest;
@@ -826,46 +1518,44 @@ AfterSymlinkTest:
     printf("[Success] Test GetTempPathA / GetTempPathW\n\n");
 
     printf("Test GetTempFileNameA / GetTempFileNameW\n");
-    WCHAR TempFileNameW[MAX_PATH];
-    CHAR TempFileNameA[MAX_PATH];
-    UINT TempUniqueW = GetTempFileNameW( TempPathW,
+    UINT TempUniqueW = GetTempFileNameW( Workspace->TempPathW,
                                          L"ldw",
                                          0,
-                                         TempFileNameW );
+                                         Workspace->TempFileNameW );
     if (TempUniqueW == 0 ||
-        GetFileAttributesW( TempFileNameW ) == INVALID_FILE_ATTRIBUTES) {
+        GetFileAttributesW( Workspace->TempFileNameW ) == INVALID_FILE_ATTRIBUTES) {
         fprintf(stderr, "[Failed] GetTempFileNameW ErrorCode = %d\n", GetLastError());
         rv = FALSE;
         goto DeleteTest;
     }
-    if (! DeleteFileW( TempFileNameW )) {
+    if (! DeleteFileW( Workspace->TempFileNameW )) {
         fprintf(stderr, "[Failed] DeleteFileW(GetTempFileNameW result) ErrorCode = %d\n", GetLastError());
         rv = FALSE;
         goto DeleteTest;
     }
 
-    UINT TempUniqueA = GetTempFileNameA( TempPathA,
+    UINT TempUniqueA = GetTempFileNameA( Workspace->TempPathA,
                                          "lda",
                                          0,
-                                         TempFileNameA );
+                                         Workspace->TempFileNameA );
     if (TempUniqueA == 0 ||
-        GetFileAttributesA( TempFileNameA ) == INVALID_FILE_ATTRIBUTES) {
+        GetFileAttributesA( Workspace->TempFileNameA ) == INVALID_FILE_ATTRIBUTES) {
         fprintf(stderr, "[Failed] GetTempFileNameA ErrorCode = %d\n", GetLastError());
-        DeleteFileW( TempFileNameW );
+        DeleteFileW( Workspace->TempFileNameW );
         rv = FALSE;
         goto DeleteTest;
     }
-    if (! DeleteFileA( TempFileNameA )) {
+    if (! DeleteFileA( Workspace->TempFileNameA )) {
         fprintf(stderr, "[Failed] DeleteFileA(GetTempFileNameA result) ErrorCode = %d\n", GetLastError());
         rv = FALSE;
         goto DeleteTest;
     }
 
-    TempUniqueA = GetTempFileNameA( TempPathA,
+    TempUniqueA = GetTempFileNameA( Workspace->TempPathA,
                                     "ldn",
                                     0x4C44,
-                                    TempFileNameA );
-    if (TempUniqueA != 0x4C44 || TempFileNameA[0] == ANSI_NULL) {
+                                    Workspace->TempFileNameA );
+    if (TempUniqueA != 0x4C44 || Workspace->TempFileNameA[0] == ANSI_NULL) {
         fprintf(stderr,
                 "[Failed] GetTempFileNameA unique ErrorCode = %d Unique = 0x%04x\n",
                 GetLastError(),
@@ -874,6 +1564,62 @@ AfterSymlinkTest:
         goto DeleteTest;
     }
     printf("[Success] Test GetTempFileNameA / GetTempFileNameW\n\n");
+
+    printf("Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n");
+    RemoveDirectoryW( L"TestCaseSensitiveDir.tmp" );
+    rv = CreateDirectoryW( L"TestCaseSensitiveDir.tmp",
+                           NULL );
+    if (!rv) {
+        fprintf(stderr, "[Failed] CreateDirectoryW(TestCaseSensitiveDir.tmp) ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+        goto DeleteTest;
+    }
+
+    hFile = CreateFileW( L"TestCaseSensitiveDir.tmp",
+                         FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL,
+                         OPEN_EXISTING,
+                         FILE_FLAG_BACKUP_SEMANTICS,
+                         NULL );
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[Failed] Open TestCaseSensitiveDir.tmp ErrorCode = %d\n", GetLastError());
+        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+        rv = FALSE;
+        goto DeleteTest;
+    }
+
+    FILE_CASE_SENSITIVE_INFO CaseSensitiveInfo;
+    RtlZeroMemory( &CaseSensitiveInfo,
+                   sizeof(CaseSensitiveInfo) );
+    rv = SetFileInformationByHandle( hFile,
+                                     FileCaseSensitiveInfo,
+                                     &CaseSensitiveInfo,
+                                     sizeof(CaseSensitiveInfo) );
+    DWORD CaseSensitiveError = GetLastError();
+    CloseHandle( hFile );
+    if (!rv) {
+#if _KERNEL_MODE
+        fprintf(stderr, "[Failed] SetFileInformationByHandle(FileCaseSensitiveInfo) ErrorCode = %d\n",
+                CaseSensitiveError);
+        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+        goto DeleteTest;
+#else
+        if (CaseSensitiveError != ERROR_ACCESS_DENIED &&
+            CaseSensitiveError != ERROR_INVALID_PARAMETER &&
+            CaseSensitiveError != ERROR_NOT_SUPPORTED &&
+            CaseSensitiveError != ERROR_PRIVILEGE_NOT_HELD) {
+            fprintf(stderr, "[Failed] SetFileInformationByHandle(FileCaseSensitiveInfo) ErrorCode = %d\n",
+                    CaseSensitiveError);
+            printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+            goto DeleteTest;
+        }
+        printf("[Skipped] Test SetFileInformationByHandle(FileCaseSensitiveInfo) ErrorCode = %d\n\n",
+               CaseSensitiveError);
+#endif
+    } else {
+        printf("[Success] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
+    }
 
     printf("Test SetFileInformationByHandle(FileAllocationInfo)\n");
     DeleteFileW( L"TestAllocation.tmp" );
@@ -942,50 +1688,52 @@ AfterSymlinkTest:
     }
     printf("[Success] Test SetFileInformationByHandle(FileIoPriorityHintInfo)\n\n");
 
-    printf("Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n");
-    RemoveDirectoryW( L"TestCaseSensitiveDir" );
-    if (! CreateDirectoryW( L"TestCaseSensitiveDir", NULL )) {
-        fprintf(stderr, "[Failed] CreateDirectoryW(TestCaseSensitiveDir) ErrorCode = %d\n",
-                GetLastError());
-        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
-        rv = FALSE;
-        goto DeleteTest;
-    }
+    {
+        printf("Test SetFileInformationByHandle(FileCaseSensitiveInfo short buffer)\n");
+        RemoveDirectoryW( L"TestCaseSensitiveDir" );
+        if (! CreateDirectoryW( L"TestCaseSensitiveDir", NULL )) {
+            fprintf(stderr, "[Failed] CreateDirectoryW(TestCaseSensitiveDir) ErrorCode = %d\n",
+                    GetLastError());
+            printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo short buffer)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
 
-    HANDLE hDirectory = CreateFileW( L"TestCaseSensitiveDir",
-                                     FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
-                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                     NULL,
-                                     OPEN_EXISTING,
-                                     FILE_FLAG_BACKUP_SEMANTICS,
-                                     NULL );
-    if (hDirectory == INVALID_HANDLE_VALUE) {
-        fprintf(stderr, "[Failed] Open TestCaseSensitiveDir ErrorCode = %d\n",
-                GetLastError());
-        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
-        rv = FALSE;
-        goto DeleteTest;
-    }
+        HANDLE hCaseSensitiveDirectory = CreateFileW( L"TestCaseSensitiveDir",
+                                                      FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES,
+                                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                                      NULL,
+                                                      OPEN_EXISTING,
+                                                      FILE_FLAG_BACKUP_SEMANTICS,
+                                                      NULL );
+        if (hCaseSensitiveDirectory == INVALID_HANDLE_VALUE) {
+            fprintf(stderr, "[Failed] Open TestCaseSensitiveDir ErrorCode = %d\n",
+                    GetLastError());
+            printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo short buffer)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
 
-    FILE_CASE_SENSITIVE_INFO CaseSensitiveInfo;
-    CaseSensitiveInfo.Flags = 0;
-    rv = SetFileInformationByHandle( hDirectory,
-                                     FileCaseSensitiveInfo,
-                                     &CaseSensitiveInfo,
-                                     sizeof(CaseSensitiveInfo) - 1 );
-    DWORD CaseSensitiveError = GetLastError();
-    CloseHandle( hDirectory );
-    if (rv || CaseSensitiveError != ERROR_BAD_LENGTH) {
-        fprintf(stderr,
-                "[Failed] FileCaseSensitiveInfo short buffer rv = %d ErrorCode = %d\n",
-                rv,
-                CaseSensitiveError);
-        printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
-        rv = FALSE;
-        goto DeleteTest;
+        FILE_CASE_SENSITIVE_INFO ShortCaseSensitiveInfo;
+        ShortCaseSensitiveInfo.Flags = 0;
+        rv = SetFileInformationByHandle( hCaseSensitiveDirectory,
+                                         FileCaseSensitiveInfo,
+                                         &ShortCaseSensitiveInfo,
+                                         sizeof(ShortCaseSensitiveInfo) - 1 );
+        DWORD ShortCaseSensitiveError = GetLastError();
+        CloseHandle( hCaseSensitiveDirectory );
+        if (rv || ShortCaseSensitiveError != ERROR_BAD_LENGTH) {
+            fprintf(stderr,
+                    "[Failed] FileCaseSensitiveInfo short buffer rv = %d ErrorCode = %d\n",
+                    rv,
+                    ShortCaseSensitiveError);
+            printf("[Failed] Test SetFileInformationByHandle(FileCaseSensitiveInfo short buffer)\n\n");
+            rv = FALSE;
+            goto DeleteTest;
+        }
+        rv = TRUE;
+        printf("[Success] Test SetFileInformationByHandle(FileCaseSensitiveInfo short buffer)\n\n");
     }
-    rv = TRUE;
-    printf("[Success] Test SetFileInformationByHandle(FileCaseSensitiveInfo)\n\n");
 
     printf("Test SetFileInformationByHandle(FileRenameInfo)\n");
     DeleteFileW( L"TestRenameSource.tmp" );
@@ -1004,13 +1752,12 @@ AfterSymlinkTest:
         goto DeleteTest;
     }
 
-    WCHAR RenameTargetPath[MAX_PATH];
     DWORD RenameTargetPathLength = GetFullPathNameW( L"TestRenameTarget.tmp",
-                                                     RTL_NUMBER_OF(RenameTargetPath),
-                                                     RenameTargetPath,
+                                                     RTL_NUMBER_OF(Workspace->RenameTargetPath),
+                                                     Workspace->RenameTargetPath,
                                                      NULL );
     if (RenameTargetPathLength == 0 ||
-        RenameTargetPathLength >= RTL_NUMBER_OF(RenameTargetPath)) {
+        RenameTargetPathLength >= RTL_NUMBER_OF(Workspace->RenameTargetPath)) {
         fprintf(stderr, "[Failed] GetFullPathNameW(TestRenameTarget.tmp) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
@@ -1019,15 +1766,14 @@ AfterSymlinkTest:
         goto DeleteTest;
     }
 
-    UCHAR RenameInfoBuffer[FIELD_OFFSET(FILE_RENAME_INFO, FileName) + MAX_PATH * sizeof(WCHAR)];
-    PFILE_RENAME_INFO RenameInfo = (PFILE_RENAME_INFO)RenameInfoBuffer;
-    RtlZeroMemory( RenameInfoBuffer,
-                   sizeof(RenameInfoBuffer) );
+    PFILE_RENAME_INFO RenameInfo = (PFILE_RENAME_INFO)Workspace->RenameInfoBuffer;
+    RtlZeroMemory( Workspace->RenameInfoBuffer,
+                   sizeof(Workspace->RenameInfoBuffer) );
     RenameInfo->ReplaceIfExists = FALSE;
     RenameInfo->RootDirectory = NULL;
     RenameInfo->FileNameLength = RenameTargetPathLength * sizeof(WCHAR);
     RtlCopyMemory( RenameInfo->FileName,
-                   RenameTargetPath,
+                   Workspace->RenameTargetPath,
                    RenameInfo->FileNameLength );
     rv = SetFileInformationByHandle( hFile,
                                      FileRenameInfo,
@@ -1079,11 +1825,11 @@ AfterSymlinkTest:
     CloseHandle( hRenameTarget );
 
     RenameTargetPathLength = GetFullPathNameW( L"TestRenameExTarget.tmp",
-                                               RTL_NUMBER_OF(RenameTargetPath),
-                                               RenameTargetPath,
+                                               RTL_NUMBER_OF(Workspace->RenameTargetPath),
+                                               Workspace->RenameTargetPath,
                                                NULL );
     if (RenameTargetPathLength == 0 ||
-        RenameTargetPathLength >= RTL_NUMBER_OF(RenameTargetPath)) {
+        RenameTargetPathLength >= RTL_NUMBER_OF(Workspace->RenameTargetPath)) {
         fprintf(stderr, "[Failed] GetFullPathNameW(TestRenameExTarget.tmp) ErrorCode = %d\n",
                 GetLastError());
         CloseHandle( hFile );
@@ -1092,13 +1838,13 @@ AfterSymlinkTest:
         goto DeleteTest;
     }
 
-    RtlZeroMemory( RenameInfoBuffer,
-                   sizeof(RenameInfoBuffer) );
+    RtlZeroMemory( Workspace->RenameInfoBuffer,
+                   sizeof(Workspace->RenameInfoBuffer) );
     RenameInfo->Flags = FILE_RENAME_FLAG_REPLACE_IF_EXISTS;
     RenameInfo->RootDirectory = NULL;
     RenameInfo->FileNameLength = RenameTargetPathLength * sizeof(WCHAR);
     RtlCopyMemory( RenameInfo->FileName,
-                   RenameTargetPath,
+                   Workspace->RenameTargetPath,
                    RenameInfo->FileNameLength );
     rv = SetFileInformationByHandle( hFile,
                                      FileRenameInfoEx,
@@ -1164,6 +1910,7 @@ AfterSymlinkTest:
     printf("[Success] Test GetErrorMode / SetErrorMode\n\n");
 
 DeleteTest:
+    RemoveDirectoryW( L"TestCaseSensitiveDir.tmp" );
     DeleteFileW( L"TestAllocation.tmp" );
     DeleteFileW( L"TestIoPriority.tmp" );
     DeleteFileW( L"TestRenameSource.tmp" );
@@ -1172,10 +1919,22 @@ DeleteTest:
     DeleteFileW( L"TestRenameExTarget.tmp" );
     DeleteFileW( L"TestDisposition.tmp" );
     RemoveDirectoryW( L"TestCaseSensitiveDir" );
+    DeleteFileW( L"TestCreateFile2.tmp" );
+    DeleteFileW( L"TestCopyA.tmp" );
+    DeleteFileW( L"TestCopy2.tmp" );
+    DeleteFileW( L"TestCopy2Cancel.tmp" );
     DeleteFileW( L"TestMoved.tmp" );
+    DeleteFileW( L"TestMoveA.tmp" );
+    DeleteFileW( L"TestMoveATarget.tmp" );
+    DeleteFileW( L"TestMoveW.tmp" );
+    DeleteFileW( L"TestMoveWTarget.tmp" );
+    DeleteFileW( L"TestMoveExA.tmp" );
+    DeleteFileW( L"TestMoveExATarget.tmp" );
     DeleteFileW( L"TestCopy.tmp" );
     DeleteFileW( L"TestHardLink.tmp" );
+    DeleteFileW( L"TestHardLinkA.tmp" );
     DeleteFileW( L"TestSymlink.tmp" );
+    DeleteFileW( L"TestSymlinkA.tmp" );
     printf("Test DeleteFileA(Test.tmp)\n");
     BOOL DeleteResult = DeleteFileA( "Test.tmp" );
     if (DeleteResult) {
@@ -1189,5 +1948,8 @@ DeleteTest:
             rv = FALSE;
         }
     }
+    HeapFree( GetProcessHeap(),
+              0,
+              Workspace );
     return rv == TRUE;
 }

@@ -307,6 +307,181 @@ CopyWideAsciiForTest (
     return TRUE;
 }
 
+static
+BOOL
+IsOptionalNativeKernel32Export (
+    _In_ LPCSTR ExportName
+    )
+{
+#if _KERNEL_MODE
+    UNREFERENCED_PARAMETER( ExportName );
+    return FALSE;
+#else
+    return lstrcmpA( ExportName,
+                     "GetFileInformationByName" ) == 0 ||
+           lstrcmpA( ExportName,
+                     "FlsGetValue2" ) == 0;
+#endif
+}
+
+static
+BOOL
+VerifyKernel32ExportVisibility (
+    VOID
+    )
+{
+    static const LPCSTR Exports[] = {
+        "CreateDirectoryA",
+        "CreateDirectoryW",
+        "CreateFile2",
+        "CopyFileA",
+        "CopyFile2",
+        "SetEndOfFile",
+        "SetFilePointer",
+        "SetFilePointerEx",
+        "LocalFileTimeToFileTime",
+        "LockFile",
+        "LockFileEx",
+        "UnlockFile",
+        "UnlockFileEx",
+        "DeleteFileA",
+        "DeleteFileW",
+        "GetFileAttributesA",
+        "GetFileAttributesW",
+        "GetFileAttributesExA",
+        "GetFileSize",
+        "GetFileSizeEx",
+        "GetFileInformationByName",
+        "GetFileType",
+        "SetFileAttributesA",
+        "SetFileTime",
+        "GetFullPathNameA",
+        "GetFullPathNameW",
+        "MoveFileA",
+        "MoveFileW",
+        "MoveFileExA",
+        "MoveFileExW",
+        "CreateHardLinkA",
+        "CreateSymbolicLinkA",
+        "AreFileApisANSI",
+        "SetFileApisToOEM",
+        "SetFileApisToANSI",
+        "SetEnvironmentVariableA",
+        "SetEnvironmentVariableW",
+        "CreateEventA",
+        "CreateEventW",
+        "CreateEventExW",
+        "OpenEventA",
+        "OpenEventW",
+        "SetEvent",
+        "ResetEvent",
+        "PulseEvent",
+        "CreateSemaphoreExW",
+        "ReleaseSemaphore",
+        "InitializeSRWLock",
+        "ReleaseSRWLockExclusive",
+        "ReleaseSRWLockShared",
+        "AcquireSRWLockExclusive",
+        "AcquireSRWLockShared",
+        "TryAcquireSRWLockExclusive",
+        "TryAcquireSRWLockShared",
+        "InitializeCriticalSectionEx",
+        "TryEnterCriticalSection",
+        "InitOnceInitialize",
+        "InitOnceBeginInitialize",
+        "InitOnceComplete",
+        "SignalObjectAndWait",
+        "SleepEx",
+        "CreateThreadpool",
+        "SetThreadpoolThreadMaximum",
+        "SetThreadpoolThreadMinimum",
+        "QueryThreadpoolStackInformation",
+        "SetThreadpoolStackInformation",
+        "CloseThreadpool",
+        "FlsGetValue2",
+        "TlsAlloc",
+        "TlsFree",
+        "TlsGetValue",
+        "TlsSetValue",
+        "SetThreadDescription",
+        "GetThreadDescription",
+        "GetProcessId",
+        "GetThreadId",
+        "GetProcessTimes",
+        "QueryFullProcessImageNameA",
+        "QueryFullProcessImageNameW",
+        "GetProcessAffinityMask",
+        "SetProcessAffinityMask",
+        "GetThreadGroupAffinity",
+        "SetThreadGroupAffinity",
+        "FreeLibraryAndExitThread",
+        "GetSystemTimePreciseAsFileTime",
+        "GetNativeSystemInfo",
+        "GetLogicalProcessorInformation",
+        "GetLogicalProcessorInformationEx",
+        "GetNumaHighestNodeNumber",
+        "GetCurrentProcessorNumber",
+        "GetCurrentProcessorNumberEx",
+        "GetActiveProcessorGroupCount",
+        "GetMaximumProcessorGroupCount",
+        "GetActiveProcessorCount",
+        "GetMaximumProcessorCount",
+        "GetVersionExW",
+        "CompareStringA",
+        "CompareStringEx",
+        "CompareStringOrdinal",
+        "CompareStringW",
+        "LCMapStringA",
+        "LCMapStringEx",
+        "LCMapStringW",
+        "GetLocaleInfoA",
+        "GetLocaleInfoW",
+        "GetLocaleInfoEx",
+        "GetDateFormatEx",
+        "GetTimeFormatEx",
+        "GetStringTypeA",
+        "GetStringTypeExA",
+        "GetStringTypeExW",
+        "GetStringTypeW",
+        "IsValidLocaleName",
+        "MultiByteToWideChar",
+        "WideCharToMultiByte",
+        "RegOpenKeyExW",
+        "RegQueryValueExW",
+        "RegCloseKey",
+        "VirtualFree",
+    };
+
+    HMODULE Kernel32 = GetModuleHandleW( L"kernel32.dll" );
+    if (!Kernel32) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleW(kernel32.dll) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    for (DWORD Index = 0; Index < RTL_NUMBER_OF(Exports); Index++) {
+        if (!GetProcAddress( Kernel32,
+                             Exports[Index] )) {
+           if (IsOptionalNativeKernel32Export( Exports[Index] ) &&
+               GetLastError() == ERROR_PROC_NOT_FOUND) {
+               printf("[Skipped] GetProcAddress(kernel32.dll, %s) export is unavailable\n",
+                      Exports[Index]);
+               continue;
+           }
+
+           fprintf(stderr,
+                   "[Failed] GetProcAddress(kernel32.dll, %s) ErrorCode = %lu\n",
+                   Exports[Index],
+                   GetLastError());
+           return FALSE;
+        }
+    }
+
+    printf("[Success] kernel32 export visibility\n");
+    return TRUE;
+}
+
 BOOLEAN
 LibraryTest (
     VOID
@@ -322,6 +497,10 @@ LibraryTest (
     HMODULE hFailAttach;
 
     printf("Library Test\n");
+
+    if (!VerifyKernel32ExportVisibility()) {
+       return FALSE;
+    }
 
     if (!BuildTestDllDirectory( DllDirectory,
                                 RTL_NUMBER_OF(DllDirectory) )) {

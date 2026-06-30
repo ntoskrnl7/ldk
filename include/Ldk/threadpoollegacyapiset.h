@@ -24,6 +24,55 @@ QueueUserWorkItem(
     _In_ ULONG Flags
     );
 
+WINBASEAPI
+BOOL
+WINAPI
+RegisterWaitForSingleObject(
+    _Outptr_ PHANDLE phNewWaitObject,
+    _In_ HANDLE hObject,
+    _In_ WAITORTIMERCALLBACK Callback,
+    _In_opt_ PVOID Context,
+    _In_ ULONG dwMilliseconds,
+    _In_ ULONG dwFlags
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+UnregisterWait(
+    _In_ HANDLE WaitHandle
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+UnregisterWaitEx(
+    _In_ HANDLE WaitHandle,
+    _In_opt_ HANDLE CompletionEvent
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+CreateTimerQueueTimer(
+    _Outptr_ PHANDLE phNewTimer,
+    _In_opt_ HANDLE TimerQueue,
+    _In_ WAITORTIMERCALLBACK Callback,
+    _In_opt_ PVOID Parameter,
+    _In_ DWORD DueTime,
+    _In_ DWORD Period,
+    _In_ ULONG Flags
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+DeleteTimerQueueTimer(
+    _In_opt_ HANDLE TimerQueue,
+    _In_ HANDLE Timer,
+    _In_opt_ HANDLE CompletionEvent
+    );
+
 EXTERN_C_END
 
 #endif // _THREADPOOLLEGACYAPISET_H_

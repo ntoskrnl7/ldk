@@ -30,6 +30,54 @@ GetCurrentProcessId(
     );
 
 WINBASEAPI
+DWORD
+WINAPI
+GetProcessId(
+    _In_ HANDLE Process
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+GetProcessAffinityMask(
+    _In_ HANDLE hProcess,
+    _Out_ PDWORD_PTR lpProcessAffinityMask,
+    _Out_ PDWORD_PTR lpSystemAffinityMask
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetProcessAffinityMask(
+    _In_ HANDLE hProcess,
+    _In_ DWORD_PTR dwProcessAffinityMask
+    );
+
+#ifndef PROCESS_NAME_NATIVE
+#define PROCESS_NAME_NATIVE 0x00000001
+#endif
+
+WINBASEAPI
+BOOL
+WINAPI
+QueryFullProcessImageNameA(
+    _In_ HANDLE hProcess,
+    _In_ DWORD dwFlags,
+    _Out_writes_to_(*lpdwSize, *lpdwSize) LPSTR lpExeName,
+    _Inout_ PDWORD lpdwSize
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+QueryFullProcessImageNameW(
+    _In_ HANDLE hProcess,
+    _In_ DWORD dwFlags,
+    _Out_writes_to_(*lpdwSize, *lpdwSize) LPWSTR lpExeName,
+    _Inout_ PDWORD lpdwSize
+    );
+
+WINBASEAPI
 HANDLE
 WINAPI
 OpenProcess(
@@ -96,6 +144,60 @@ DWORD
 WINAPI
 GetCurrentThreadId(
     VOID
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetThreadId(
+    _In_ HANDLE Thread
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+GetThreadGroupAffinity(
+    _In_ HANDLE hThread,
+    _Out_ PGROUP_AFFINITY GroupAffinity
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+SetThreadGroupAffinity(
+    _In_ HANDLE hThread,
+    _In_ CONST GROUP_AFFINITY *GroupAffinity,
+    _Out_opt_ PGROUP_AFFINITY PreviousGroupAffinity
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetCurrentProcessorNumber(
+    VOID
+    );
+
+WINBASEAPI
+VOID
+WINAPI
+GetCurrentProcessorNumberEx(
+    _Out_ PPROCESSOR_NUMBER ProcNumber
+    );
+
+WINBASEAPI
+HRESULT
+WINAPI
+SetThreadDescription(
+    _In_ HANDLE hThread,
+    _In_ PCWSTR lpThreadDescription
+    );
+
+WINBASEAPI
+HRESULT
+WINAPI
+GetThreadDescription(
+    _In_ HANDLE hThread,
+    _Outptr_result_z_ PWSTR *ppszThreadDescription
     );
 
 WINBASEAPI
@@ -183,11 +285,56 @@ GetThreadTimes(
     );
 
 WINBASEAPI
+BOOL
+WINAPI
+GetProcessTimes(
+    _In_ HANDLE hProcess,
+    _Out_ LPFILETIME lpCreationTime,
+    _Out_ LPFILETIME lpExitTime,
+    _Out_ LPFILETIME lpKernelTime,
+    _Out_ LPFILETIME lpUserTime
+    );
+
+WINBASEAPI
 VOID
 WINAPI
 GetCurrentThreadStackLimits(
     _Out_ PULONG_PTR LowLimit,
     _Out_ PULONG_PTR HighLimit
+    );
+
+
+#ifndef TLS_OUT_OF_INDEXES
+#define TLS_OUT_OF_INDEXES ((DWORD)0xFFFFFFFF)
+#endif
+
+WINBASEAPI
+DWORD
+WINAPI
+TlsAlloc(
+    VOID
+    );
+
+WINBASEAPI
+LPVOID
+WINAPI
+TlsGetValue(
+    _In_ DWORD dwTlsIndex
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+TlsSetValue(
+    _In_ DWORD dwTlsIndex,
+    _In_opt_ LPVOID lpTlsValue
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+TlsFree(
+    _In_ DWORD dwTlsIndex
     );
 
 

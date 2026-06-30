@@ -36,6 +36,11 @@ typedef struct _LDK_TEB {
 
 	ULONG HardErrorMode;
 
+	LONG CombaseApartmentInitCount;
+	LONG CombaseApartmentType;
+	LONG CombaseMtaUsageCount;
+	UINT64 CombaseApartmentIdentifier;
+
 	PVOID TlsSlots[LDK_TLS_SLOTS_SIZE];
 	PVOID FlsSlots[LDK_FLS_SLOTS_SIZE];
 

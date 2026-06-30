@@ -217,6 +217,18 @@ ProcessApiTest (
     HANDLE DuplicatedHandle;
     HANDLE WaitHandles[2];
     DWORD WaitResult;
+    HRESULT ThreadDescriptionResult;
+    PWSTR ThreadDescription;
+    FILETIME CreationTime;
+    FILETIME ExitTime;
+    FILETIME KernelTime;
+    FILETIME UserTime;
+    CHAR ProcessImageNameA[MAX_PATH];
+    WCHAR ProcessImageNameW[MAX_PATH];
+    WCHAR OpenedProcessImageNameW[MAX_PATH];
+    WCHAR NativeProcessImageNameW[MAX_PATH];
+    DWORD ProcessImageNameSize;
+    DWORD SmallProcessImageNameSize;
 
     PAGED_CODE();
 
@@ -238,6 +250,92 @@ ProcessApiTest (
     }
 #endif
 
+    if (GetProcessId( GetCurrentProcess() ) != CurrentProcessId) {
+        fprintf(stderr,
+                "[Failed] GetProcessId(current) ProcessId = %lu Expected = %lu ErrorCode = %lu\n",
+                GetProcessId( GetCurrentProcess() ),
+                CurrentProcessId,
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (GetThreadId( GetCurrentThread() ) != GetCurrentThreadId()) {
+        fprintf(stderr,
+                "[Failed] GetThreadId(current) ThreadId = %lu Expected = %lu ErrorCode = %lu\n",
+                GetThreadId( GetCurrentThread() ),
+                GetCurrentThreadId(),
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! GetProcessTimes( GetCurrentProcess(),
+                           &CreationTime,
+                           &ExitTime,
+                           &KernelTime,
+                           &UserTime )) {
+        fprintf(stderr,
+                "[Failed] GetProcessTimes(current) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    ProcessImageNameSize = RTL_NUMBER_OF(ProcessImageNameW);
+    if (! QueryFullProcessImageNameW( GetCurrentProcess(),
+                                      0,
+                                      ProcessImageNameW,
+                                      &ProcessImageNameSize ) ||
+        ProcessImageNameSize == 0 ||
+        ProcessImageNameW[ProcessImageNameSize] != L'\0') {
+        fprintf(stderr,
+                "[Failed] QueryFullProcessImageNameW(current) Size = %lu ErrorCode = %lu\n",
+                ProcessImageNameSize,
+                GetLastError() );
+        return FALSE;
+    }
+
+    ProcessImageNameSize = RTL_NUMBER_OF(ProcessImageNameA);
+    if (! QueryFullProcessImageNameA( GetCurrentProcess(),
+                                      0,
+                                      ProcessImageNameA,
+                                      &ProcessImageNameSize ) ||
+        ProcessImageNameSize == 0 ||
+        ProcessImageNameA[ProcessImageNameSize] != '\0') {
+        fprintf(stderr,
+                "[Failed] QueryFullProcessImageNameA(current) Size = %lu ErrorCode = %lu\n",
+                ProcessImageNameSize,
+                GetLastError() );
+        return FALSE;
+    }
+
+    ProcessImageNameSize = RTL_NUMBER_OF(NativeProcessImageNameW);
+    if (! QueryFullProcessImageNameW( GetCurrentProcess(),
+                                      PROCESS_NAME_NATIVE,
+                                      NativeProcessImageNameW,
+                                      &ProcessImageNameSize ) ||
+        ProcessImageNameSize == 0 ||
+        NativeProcessImageNameW[0] != L'\\') {
+        fprintf(stderr,
+                "[Failed] QueryFullProcessImageNameW(native current) Size = %lu Name = %S ErrorCode = %lu\n",
+                ProcessImageNameSize,
+                NativeProcessImageNameW,
+                GetLastError() );
+        return FALSE;
+    }
+
+    SmallProcessImageNameSize = 1;
+    SetLastError( ERROR_SUCCESS );
+    if (QueryFullProcessImageNameW( GetCurrentProcess(),
+                                    0,
+                                    OpenedProcessImageNameW,
+                                    &SmallProcessImageNameSize ) ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        fprintf(stderr,
+                "[Failed] QueryFullProcessImageNameW small buffer Size = %lu ErrorCode = %lu\n",
+                SmallProcessImageNameSize,
+                GetLastError() );
+        return FALSE;
+    }
+
     if (! GetExitCodeProcess( GetCurrentProcess(),
                               &ExitCode ) ||
         ExitCode != STILL_ACTIVE) {
@@ -248,6 +346,32 @@ ProcessApiTest (
                 GetLastError() );
         return FALSE;
     }
+
+    ThreadDescriptionResult = SetThreadDescription( GetCurrentThread(),
+                                                    L"LDK process API thread" );
+    if ((LONG)ThreadDescriptionResult < 0) {
+        fprintf(stderr,
+                "[Failed] SetThreadDescription Result = 0x%08lx\n",
+                (DWORD)ThreadDescriptionResult );
+        return FALSE;
+    }
+
+    ThreadDescription = NULL;
+    ThreadDescriptionResult = GetThreadDescription( GetCurrentThread(),
+                                                    &ThreadDescription );
+    if ((LONG)ThreadDescriptionResult < 0 ||
+        ThreadDescription == NULL ||
+        wcscmp( ThreadDescription, L"LDK process API thread" ) != 0) {
+        fprintf(stderr,
+                "[Failed] GetThreadDescription Result = 0x%08lx Description = %S\n",
+                (DWORD)ThreadDescriptionResult,
+                (ThreadDescription != NULL) ? ThreadDescription : L"(null)" );
+        if (ThreadDescription != NULL) {
+            LocalFree( ThreadDescription );
+        }
+        return FALSE;
+    }
+    LocalFree( ThreadDescription );
 
     WaitResult = WaitForSingleObject( GetCurrentProcess(),
                                       1 );
@@ -270,6 +394,44 @@ ProcessApiTest (
         return FALSE;
     }
 
+    if (GetProcessId( ProcessHandle ) != CurrentProcessId) {
+        fprintf(stderr,
+                "[Failed] GetProcessId(opened) ProcessId = %lu Expected = %lu ErrorCode = %lu\n",
+                GetProcessId( ProcessHandle ),
+                CurrentProcessId,
+                GetLastError() );
+        Result = FALSE;
+        goto CloseProcessHandle;
+    }
+
+    if (! GetProcessTimes( ProcessHandle,
+                           &CreationTime,
+                           &ExitTime,
+                           &KernelTime,
+                           &UserTime )) {
+        fprintf(stderr,
+                "[Failed] GetProcessTimes(opened) ErrorCode = %lu\n",
+                GetLastError() );
+        Result = FALSE;
+        goto CloseProcessHandle;
+    }
+
+    ProcessImageNameSize = RTL_NUMBER_OF(OpenedProcessImageNameW);
+    if (! QueryFullProcessImageNameW( ProcessHandle,
+                                      0,
+                                      OpenedProcessImageNameW,
+                                      &ProcessImageNameSize ) ||
+        wcscmp( OpenedProcessImageNameW,
+                ProcessImageNameW ) != 0) {
+        fprintf(stderr,
+                "[Failed] QueryFullProcessImageNameW(opened) Name = %S Expected = %S ErrorCode = %lu\n",
+                OpenedProcessImageNameW,
+                ProcessImageNameW,
+                GetLastError() );
+        Result = FALSE;
+        goto CloseProcessHandle;
+    }
+
     DuplicatedHandle = NULL;
     if (! DuplicateHandle( GetCurrentProcess(),
                            ProcessHandle,
@@ -283,6 +445,16 @@ ProcessApiTest (
                 GetLastError() );
         Result = FALSE;
         goto CloseProcessHandle;
+    }
+
+    if (GetProcessId( DuplicatedHandle ) != CurrentProcessId) {
+        fprintf(stderr,
+                "[Failed] GetProcessId(duplicated) ProcessId = %lu Expected = %lu ErrorCode = %lu\n",
+                GetProcessId( DuplicatedHandle ),
+                CurrentProcessId,
+                GetLastError() );
+        Result = FALSE;
+        goto CloseDuplicatedHandle;
     }
 
     if (! GetExitCodeProcess( DuplicatedHandle,

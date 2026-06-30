@@ -188,6 +188,10 @@ typedef struct _FILE_NAME_INFO {
     WCHAR FileName[1];
 } FILE_NAME_INFO, *PFILE_NAME_INFO;
 
+typedef struct _FILE_CASE_SENSITIVE_INFO {
+    ULONG Flags;
+} FILE_CASE_SENSITIVE_INFO, *PFILE_CASE_SENSITIVE_INFO;
+
 typedef struct _FILE_DISPOSITION_INFO {
     BOOLEAN DeleteFile;
 } FILE_DISPOSITION_INFO, *PFILE_DISPOSITION_INFO;
@@ -236,10 +240,6 @@ typedef struct _FILE_IO_PRIORITY_HINT_INFO {
 #define FILE_CS_FLAG_CASE_SENSITIVE_DIR 0x00000001
 #endif
 
-typedef struct _FILE_CASE_SENSITIVE_INFO {
-    ULONG Flags;
-} FILE_CASE_SENSITIVE_INFO, *PFILE_CASE_SENSITIVE_INFO;
-
 typedef struct _FILE_STREAM_INFO {
     DWORD NextEntryOffset;
     DWORD StreamNameLength;
@@ -270,6 +270,56 @@ typedef struct _FILE_ID_INFO {
     ULONGLONG VolumeSerialNumber;
     FILE_ID_128 FileId;
 } FILE_ID_INFO, *PFILE_ID_INFO;
+
+typedef struct _FILE_ID_BOTH_DIR_INFO {
+    DWORD NextEntryOffset;
+    DWORD FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    DWORD FileAttributes;
+    DWORD FileNameLength;
+    DWORD EaSize;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    LARGE_INTEGER FileId;
+    WCHAR FileName[1];
+} FILE_ID_BOTH_DIR_INFO, *PFILE_ID_BOTH_DIR_INFO;
+
+typedef struct _FILE_FULL_DIR_INFO {
+    DWORD NextEntryOffset;
+    DWORD FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    DWORD FileAttributes;
+    DWORD FileNameLength;
+    DWORD EaSize;
+    WCHAR FileName[1];
+} FILE_FULL_DIR_INFO, *PFILE_FULL_DIR_INFO;
+
+typedef struct _FILE_ID_EXTD_DIR_INFO {
+    DWORD NextEntryOffset;
+    DWORD FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    DWORD FileAttributes;
+    DWORD FileNameLength;
+    DWORD EaSize;
+    DWORD ReparsePointTag;
+    FILE_ID_128 FileId;
+    WCHAR FileName[1];
+} FILE_ID_EXTD_DIR_INFO, *PFILE_ID_EXTD_DIR_INFO;
 
 typedef struct _FILE_ALIGNMENT_INFO {
     ULONG AlignmentRequirement;
@@ -487,10 +537,166 @@ FormatMessageW(
 WINBASEAPI
 BOOL
 WINAPI
+CopyFileA(
+    _In_ LPCSTR lpExistingFileName,
+    _In_ LPCSTR lpNewFileName,
+    _In_ BOOL bFailIfExists
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
 CopyFileW(
     _In_ LPCWSTR lpExistingFileName,
     _In_ LPCWSTR lpNewFileName,
     _In_ BOOL bFailIfExists
+    );
+
+#ifdef UNICODE
+#define CopyFile  CopyFileW
+#else
+#define CopyFile  CopyFileA
+#endif // !UNICODE
+
+#ifndef COPY_FILE_FAIL_IF_EXISTS
+#define COPY_FILE_FAIL_IF_EXISTS              0x00000001
+#define COPY_FILE_RESTARTABLE                 0x00000002
+#define COPY_FILE_OPEN_SOURCE_FOR_WRITE       0x00000004
+#define COPY_FILE_ALLOW_DECRYPTED_DESTINATION 0x00000008
+#endif
+
+#ifndef COPY_FILE_COPY_SYMLINK
+#define COPY_FILE_COPY_SYMLINK                0x00000800
+#define COPY_FILE_NO_BUFFERING                0x00001000
+#endif
+
+#ifndef COPY_FILE_REQUEST_SECURITY_PRIVILEGES
+#define COPY_FILE_REQUEST_SECURITY_PRIVILEGES 0x00002000
+#define COPY_FILE_RESUME_FROM_PAUSE           0x00004000
+#define COPY_FILE_NO_OFFLOAD                  0x00040000
+#endif
+
+#ifndef COPY_FILE_IGNORE_EDP_BLOCK
+#define COPY_FILE_IGNORE_EDP_BLOCK            0x00400000
+#define COPY_FILE_IGNORE_SOURCE_ENCRYPTION    0x00800000
+#define COPY_FILE_DONT_REQUEST_DEST_WRITE_DAC 0x02000000
+#endif
+
+typedef enum _COPYFILE2_MESSAGE_TYPE {
+    COPYFILE2_CALLBACK_NONE = 0,
+    COPYFILE2_CALLBACK_CHUNK_STARTED,
+    COPYFILE2_CALLBACK_CHUNK_FINISHED,
+    COPYFILE2_CALLBACK_STREAM_STARTED,
+    COPYFILE2_CALLBACK_STREAM_FINISHED,
+    COPYFILE2_CALLBACK_POLL_CONTINUE,
+    COPYFILE2_CALLBACK_ERROR,
+    COPYFILE2_CALLBACK_MAX,
+} COPYFILE2_MESSAGE_TYPE;
+
+typedef enum _COPYFILE2_MESSAGE_ACTION {
+    COPYFILE2_PROGRESS_CONTINUE = 0,
+    COPYFILE2_PROGRESS_CANCEL,
+    COPYFILE2_PROGRESS_STOP,
+    COPYFILE2_PROGRESS_QUIET,
+    COPYFILE2_PROGRESS_PAUSE,
+} COPYFILE2_MESSAGE_ACTION;
+
+typedef enum _COPYFILE2_COPY_PHASE {
+    COPYFILE2_PHASE_NONE = 0,
+    COPYFILE2_PHASE_PREPARE_SOURCE,
+    COPYFILE2_PHASE_PREPARE_DEST,
+    COPYFILE2_PHASE_READ_SOURCE,
+    COPYFILE2_PHASE_WRITE_DESTINATION,
+    COPYFILE2_PHASE_SERVER_COPY,
+    COPYFILE2_PHASE_NAMEGRAFT_COPY,
+    COPYFILE2_PHASE_MAX,
+} COPYFILE2_COPY_PHASE;
+
+#define COPYFILE2_MESSAGE_COPY_OFFLOAD 0x00000001L
+
+typedef struct COPYFILE2_MESSAGE {
+    COPYFILE2_MESSAGE_TYPE Type;
+    DWORD dwPadding;
+    union {
+        struct {
+            DWORD dwStreamNumber;
+            DWORD dwReserved;
+            HANDLE hSourceFile;
+            HANDLE hDestinationFile;
+            ULARGE_INTEGER uliChunkNumber;
+            ULARGE_INTEGER uliChunkSize;
+            ULARGE_INTEGER uliStreamSize;
+            ULARGE_INTEGER uliTotalFileSize;
+        } ChunkStarted;
+        struct {
+            DWORD dwStreamNumber;
+            DWORD dwFlags;
+            HANDLE hSourceFile;
+            HANDLE hDestinationFile;
+            ULARGE_INTEGER uliChunkNumber;
+            ULARGE_INTEGER uliChunkSize;
+            ULARGE_INTEGER uliStreamSize;
+            ULARGE_INTEGER uliStreamBytesTransferred;
+            ULARGE_INTEGER uliTotalFileSize;
+            ULARGE_INTEGER uliTotalBytesTransferred;
+        } ChunkFinished;
+        struct {
+            DWORD dwStreamNumber;
+            DWORD dwReserved;
+            HANDLE hSourceFile;
+            HANDLE hDestinationFile;
+            ULARGE_INTEGER uliStreamSize;
+            ULARGE_INTEGER uliTotalFileSize;
+        } StreamStarted;
+        struct {
+            DWORD dwStreamNumber;
+            DWORD dwReserved;
+            HANDLE hSourceFile;
+            HANDLE hDestinationFile;
+            ULARGE_INTEGER uliStreamSize;
+            ULARGE_INTEGER uliStreamBytesTransferred;
+            ULARGE_INTEGER uliTotalFileSize;
+            ULARGE_INTEGER uliTotalBytesTransferred;
+        } StreamFinished;
+        struct {
+            DWORD dwReserved;
+        } PollContinue;
+        struct {
+            COPYFILE2_COPY_PHASE CopyPhase;
+            DWORD dwStreamNumber;
+            HRESULT hrFailure;
+            DWORD dwReserved;
+            ULARGE_INTEGER uliChunkNumber;
+            ULARGE_INTEGER uliStreamSize;
+            ULARGE_INTEGER uliStreamBytesTransferred;
+            ULARGE_INTEGER uliTotalFileSize;
+            ULARGE_INTEGER uliTotalBytesTransferred;
+        } Error;
+    } Info;
+} COPYFILE2_MESSAGE;
+
+typedef
+COPYFILE2_MESSAGE_ACTION
+(CALLBACK *PCOPYFILE2_PROGRESS_ROUTINE)(
+    _In_ const COPYFILE2_MESSAGE *pMessage,
+    _In_opt_ PVOID pvCallbackContext
+    );
+
+typedef struct COPYFILE2_EXTENDED_PARAMETERS {
+    DWORD dwSize;
+    DWORD dwCopyFlags;
+    BOOL *pfCancel;
+    PCOPYFILE2_PROGRESS_ROUTINE pProgressRoutine;
+    PVOID pvCallbackContext;
+} COPYFILE2_EXTENDED_PARAMETERS;
+
+WINBASEAPI
+HRESULT
+WINAPI
+CopyFile2(
+    _In_ PCWSTR pwszExistingFileName,
+    _In_ PCWSTR pwszNewFileName,
+    _In_opt_ COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters
     );
 
 WINBASEAPI
@@ -505,10 +711,50 @@ CreateDirectoryExW(
 WINBASEAPI
 BOOL
 WINAPI
+CreateHardLinkA(
+    _In_ LPCSTR lpFileName,
+    _In_ LPCSTR lpExistingFileName,
+    _Reserved_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
 CreateHardLinkW(
     _In_ LPCWSTR lpFileName,
     _In_ LPCWSTR lpExistingFileName,
     _Reserved_ LPSECURITY_ATTRIBUTES lpSecurityAttributes
+    );
+
+#ifdef UNICODE
+#define CreateHardLink  CreateHardLinkW
+#else
+#define CreateHardLink  CreateHardLinkA
+#endif // !UNICODE
+
+WINBASEAPI
+BOOL
+WINAPI
+MoveFileA(
+    _In_ LPCSTR lpExistingFileName,
+    _In_ LPCSTR lpNewFileName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+MoveFileW(
+    _In_ LPCWSTR lpExistingFileName,
+    _In_ LPCWSTR lpNewFileName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+MoveFileExA(
+    _In_ LPCSTR lpExistingFileName,
+    _In_opt_ LPCSTR lpNewFileName,
+    _In_ DWORD dwFlags
     );
 
 WINBASEAPI
@@ -523,11 +769,26 @@ MoveFileExW(
 WINBASEAPI
 BOOLEAN
 WINAPI
+CreateSymbolicLinkA(
+    _In_ LPCSTR lpSymlinkFileName,
+    _In_ LPCSTR lpTargetFileName,
+    _In_ DWORD dwFlags
+    );
+
+WINBASEAPI
+BOOLEAN
+WINAPI
 CreateSymbolicLinkW(
     _In_ LPCWSTR lpSymlinkFileName,
     _In_ LPCWSTR lpTargetFileName,
     _In_ DWORD dwFlags
     );
+
+#ifdef UNICODE
+#define CreateSymbolicLink  CreateSymbolicLinkW
+#else
+#define CreateSymbolicLink  CreateSymbolicLinkA
+#endif // !UNICODE
 
 
 
@@ -590,6 +851,34 @@ HLOCAL
 WINAPI
 LocalFree(
     _Frees_ptr_opt_ HLOCAL hMem
+    );
+
+WINBASEAPI
+WORD
+WINAPI
+GetActiveProcessorGroupCount(
+    VOID
+    );
+
+WINBASEAPI
+WORD
+WINAPI
+GetMaximumProcessorGroupCount(
+    VOID
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetActiveProcessorCount(
+    _In_ WORD GroupNumber
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+GetMaximumProcessorCount(
+    _In_ WORD GroupNumber
     );
 
 

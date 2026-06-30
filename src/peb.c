@@ -573,6 +573,10 @@ LdkpInitializePeb (
 	InitializeListHead(&LdkpIcuModule.DependencyList);
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpIcuModule.ActiveLinks);
 
+	extern LDK_MODULE LdkpCombaseModule;
+	InitializeListHead(&LdkpCombaseModule.DependencyList);
+	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpCombaseModule.ActiveLinks);
+
 	Status = ExInitializeResourceLite( &LdkpPeb.ModuleListResource );
 	if (! NT_SUCCESS(Status)) {
 		LdkpUninitializeProcessParameters();
