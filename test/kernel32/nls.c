@@ -80,7 +80,9 @@ NlsCheckLocale (
 {
     WCHAR LocaleNameBuffer[LOCALE_NAME_MAX_LENGTH];
     WCHAR DateBuffer[128];
+    WCHAR DateBufferEx[128];
     WCHAR TimeBuffer[64];
+    WCHAR TimeBufferEx[64];
     SYSTEMTIME Sample = { 0 };
     LCID Lcid;
     int Chars;
@@ -168,6 +170,26 @@ NlsCheckLocale (
         return FALSE;
     }
 
+    Chars = GetDateFormatEx( LocaleName,
+                             DATE_LONGDATE,
+                             &Sample,
+                             NULL,
+                             DateBufferEx,
+                             RTL_NUMBER_OF(DateBufferEx),
+                             NULL );
+    if (Chars == 0 ||
+        wcscmp( DateBufferEx,
+                DateBuffer ) != 0) {
+        fprintf(stderr,
+                "[Failed] GetDateFormatEx(%ws) Chars = %d ErrorCode = %lu Date = %ws Expected = %ws\n",
+                LocaleName,
+                Chars,
+                GetLastError(),
+                DateBufferEx,
+                DateBuffer );
+        return FALSE;
+    }
+
     Chars = GetTimeFormatW( ExpectedLcid,
                             0,
                             &Sample,
@@ -181,6 +203,25 @@ NlsCheckLocale (
                 LocaleName,
                 Chars,
                 GetLastError() );
+        return FALSE;
+    }
+
+    Chars = GetTimeFormatEx( LocaleName,
+                             0,
+                             &Sample,
+                             NULL,
+                             TimeBufferEx,
+                             RTL_NUMBER_OF(TimeBufferEx) );
+    if (Chars == 0 ||
+        wcscmp( TimeBufferEx,
+                TimeBuffer ) != 0) {
+        fprintf(stderr,
+                "[Failed] GetTimeFormatEx(%ws) Chars = %d ErrorCode = %lu Time = %ws Expected = %ws\n",
+                LocaleName,
+                Chars,
+                GetLastError(),
+                TimeBufferEx,
+                TimeBuffer );
         return FALSE;
     }
 
@@ -334,6 +375,190 @@ NlsCheckCharacterTypes (
     return TRUE;
 }
 
+static
+BOOLEAN
+NlsCheckStringApis (
+    VOID
+    )
+{
+    WCHAR WideBuffer[32];
+    CHAR AnsiBuffer[32];
+    BYTE SortKey[32];
+    WORD Types[4];
+    int Chars;
+
+    if (CompareStringEx( L"en-US",
+                         NORM_IGNORECASE,
+                         L"Runtime",
+                         -1,
+                         L"runtime",
+                         -1,
+                         NULL,
+                         NULL,
+                         0 ) != CSTR_EQUAL) {
+        fprintf(stderr,
+                "[Failed] CompareStringEx(NORM_IGNORECASE) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (CompareStringW( 0x0409,
+                        0,
+                        L"abc",
+                        3,
+                        L"abd",
+                        3 ) != CSTR_LESS_THAN) {
+        fprintf(stderr,
+                "[Failed] CompareStringW ordinal order ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (CompareStringA( 0x0409,
+                        NORM_IGNORECASE,
+                        "Kernel",
+                        -1,
+                        "kernel",
+                        -1 ) != CSTR_EQUAL) {
+        fprintf(stderr,
+                "[Failed] CompareStringA(NORM_IGNORECASE) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (CompareStringOrdinal( L"Loader",
+                              -1,
+                              L"loader",
+                              -1,
+                              TRUE ) != CSTR_EQUAL) {
+        fprintf(stderr,
+                "[Failed] CompareStringOrdinal(ignore case) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    Chars = LCMapStringEx( L"en-US",
+                           LCMAP_UPPERCASE,
+                           L"crt",
+                           -1,
+                           WideBuffer,
+                           RTL_NUMBER_OF(WideBuffer),
+                           NULL,
+                           NULL,
+                           0 );
+    if (Chars != 4 ||
+        wcscmp( WideBuffer,
+                L"CRT" ) != 0) {
+        fprintf(stderr,
+                "[Failed] LCMapStringEx(UPPERCASE) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    Chars = LCMapStringW( 0x0409,
+                          LCMAP_LOWERCASE,
+                          L"STL",
+                          3,
+                          WideBuffer,
+                          3 );
+    if (Chars != 3 ||
+        wcsncmp( WideBuffer,
+                 L"stl",
+                 3 ) != 0) {
+        fprintf(stderr,
+                "[Failed] LCMapStringW(LOWERCASE) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    Chars = LCMapStringA( 0x0409,
+                          LCMAP_UPPERCASE,
+                          "api",
+                          -1,
+                          AnsiBuffer,
+                          RTL_NUMBER_OF(AnsiBuffer) );
+    if (Chars != 4 ||
+        strcmp( AnsiBuffer,
+                "API" ) != 0) {
+        fprintf(stderr,
+                "[Failed] LCMapStringA(UPPERCASE) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    Chars = LCMapStringEx( L"en-US",
+                           LCMAP_SORTKEY | NORM_IGNORECASE,
+                           L"AbC",
+                           -1,
+                           (LPWSTR)SortKey,
+                           RTL_NUMBER_OF(SortKey),
+                           NULL,
+                           NULL,
+                           0 );
+    if (Chars <= 1 ||
+        SortKey[Chars - 1] != 0) {
+        fprintf(stderr,
+                "[Failed] LCMapStringEx(SORTKEY) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    Chars = GetLocaleInfoA( 0x0412,
+                            LOCALE_SISO639LANGNAME,
+                            AnsiBuffer,
+                            RTL_NUMBER_OF(AnsiBuffer) );
+    if (Chars != 3 ||
+        strcmp( AnsiBuffer,
+                "ko" ) != 0) {
+        fprintf(stderr,
+                "[Failed] GetLocaleInfoA(ko-KR) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! IsValidLocaleName( L"ko-KR" )) {
+        fprintf(stderr,
+                "[Failed] IsValidLocaleName ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! GetStringTypeA( 0x0409,
+                          CT_CTYPE1,
+                          "Az0",
+                          3,
+                          Types ) ||
+        ! FlagOn(Types[0], C1_ALPHA) ||
+        ! FlagOn(Types[0], C1_UPPER) ||
+        ! FlagOn(Types[1], C1_ALPHA) ||
+        ! FlagOn(Types[1], C1_LOWER) ||
+        ! FlagOn(Types[2], C1_DIGIT)) {
+        fprintf(stderr,
+                "[Failed] GetStringTypeA(CT_CTYPE1) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! GetStringTypeExW( 0x0412,
+                            CT_CTYPE3,
+                            L"\xd55c",
+                            1,
+                            Types ) ||
+        ! FlagOn(Types[0], C3_ALPHA)) {
+        fprintf(stderr,
+                "[Failed] GetStringTypeExW(CT_CTYPE3) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 BOOLEAN
 NlsTest (
     VOID
@@ -394,7 +619,8 @@ NlsTest (
                              L"\x043f\x043e\x043d\x0435\x0434\x0435\x043b\x044c\x043d\x0438\x043a",
                              L"\x20bd" ) &&
              NlsCheckLocaleEnumeration() &&
-             NlsCheckCharacterTypes();
+             NlsCheckCharacterTypes() &&
+             NlsCheckStringApis();
 
     if (Result) {
         printf("[Success] NLS locale and script test\n\n");

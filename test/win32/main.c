@@ -22,6 +22,11 @@ NtdllEnvironmentVariableTest (
     );
 
 BOOLEAN
+NtdllEcCodeCompatibilityTest (
+    VOID
+    );
+
+BOOLEAN
 KeyedEventTest (
     VOID
     );
@@ -63,6 +68,16 @@ FormatMessageTest (
 
 BOOLEAN
 NlsTest (
+    VOID
+    );
+
+BOOLEAN
+RegistryApiTest (
+    VOID
+    );
+
+BOOLEAN
+CombaseCompatibilityTest (
     VOID
     );
 
@@ -199,6 +214,7 @@ main (
     LDK_WIN32_TEST_ENTRY Tests[] = {
         { "NtdllCurrentDirectoryTest", NtdllCurrentDirectoryTest },
         { "NtdllEnvironmentVariableTest", NtdllEnvironmentVariableTest },
+        { "NtdllEcCodeCompatibilityTest", NtdllEcCodeCompatibilityTest },
         { "KeyedEventTest", KeyedEventTest },
         { "LdrTest", LdrTest },
         { "FibersTest", FibersTest },
@@ -208,6 +224,8 @@ main (
         { "UtilityApiTest", UtilityApiTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
+        { "RegistryApiTest", RegistryApiTest },
+        { "CombaseCompatibilityTest", CombaseCompatibilityTest },
         { "CurrentDirectoryTest", CurrentDirectoryTest },
         { "EnvironmentVariableTest", EnvironmentVariableTest },
         { "QueueUserWorkItemTest", QueueUserWorkItemTest },

@@ -43,6 +43,21 @@ ThreadPoolTestDeferredFreeCallback (
 
 VOID
 NTAPI
+ThreadPoolTestFinalizationWorkCallback (
+    _Inout_     PTP_CALLBACK_INSTANCE Instance,
+    _Inout_opt_ PVOID                 Context,
+    _Inout_     PTP_WORK              Work
+    );
+
+VOID
+NTAPI
+ThreadPoolTestFinalizationCallback (
+    _Inout_     PTP_CALLBACK_INSTANCE Instance,
+    _Inout_opt_ PVOID                 Context
+    );
+
+VOID
+NTAPI
 ThreadPoolTestCleanupGroupWorkCallback (
     _Inout_     PTP_CALLBACK_INSTANCE Instance,
     _Inout_opt_ PVOID                 Context,
@@ -81,6 +96,20 @@ ThreadPoolTestTimerWaitCleanupCallback (
     );
 
 VOID
+NTAPI
+ThreadPoolTestLegacyTimerCallback (
+    _Inout_opt_ PVOID Context,
+    _In_ BOOLEAN TimerOrWaitFired
+    );
+
+VOID
+NTAPI
+ThreadPoolTestLegacyWaitCallback (
+    _Inout_opt_ PVOID Context,
+    _In_ BOOLEAN TimerOrWaitFired
+    );
+
+VOID
 ThreadPoolTestRelativeFileTime (
     _Out_ PFILETIME FileTime,
     _In_ LONG Milliseconds
@@ -93,11 +122,15 @@ ThreadPoolTestRelativeFileTime (
 #pragma alloc_text(PAGE, ThreadPoolTestWorkCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestRaceDllCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestDeferredFreeCallback)
+#pragma alloc_text(PAGE, ThreadPoolTestFinalizationWorkCallback)
+#pragma alloc_text(PAGE, ThreadPoolTestFinalizationCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestCleanupGroupWorkCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestCleanupGroupCancelCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestTimerCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestWaitCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestTimerWaitCleanupCallback)
+#pragma alloc_text(PAGE, ThreadPoolTestLegacyTimerCallback)
+#pragma alloc_text(PAGE, ThreadPoolTestLegacyWaitCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestRelativeFileTime)
 #endif
 #else
@@ -113,6 +146,13 @@ typedef struct _THREADPOOL_MODULE_CONTEXT {
     LONG Count;
     LONG ModuleWasLoaded;
 } THREADPOOL_MODULE_CONTEXT, *PTHREADPOOL_MODULE_CONTEXT;
+
+typedef struct _THREADPOOL_FINALIZATION_CONTEXT {
+    LONG WorkCallbacks;
+    LONG FinalizationCallbacks;
+    LONG ContextMatches;
+    PVOID ExpectedContext;
+} THREADPOOL_FINALIZATION_CONTEXT, *PTHREADPOOL_FINALIZATION_CONTEXT;
 
 typedef struct _THREADPOOL_CLEANUP_GROUP_CONTEXT {
     LONG WorkCallbacks;
@@ -132,6 +172,14 @@ typedef struct _THREADPOOL_TIMER_WAIT_CONTEXT {
     LONG ObjectContextMatches;
     PVOID ExpectedCleanupContext;
 } THREADPOOL_TIMER_WAIT_CONTEXT, *PTHREADPOOL_TIMER_WAIT_CONTEXT;
+
+typedef struct _THREADPOOL_LEGACY_CONTEXT {
+    LONG TimerCallbacks;
+    LONG TimerBooleanCallbacks;
+    LONG WaitCallbacks;
+    LONG WaitSignaledCallbacks;
+    LONG WaitTimeoutCallbacks;
+} THREADPOOL_LEGACY_CONTEXT, *PTHREADPOOL_LEGACY_CONTEXT;
 
 DWORD
 WINAPI
@@ -225,6 +273,49 @@ ThreadPoolTestDeferredFreeCallback (
     FreeLibraryWhenCallbackReturns( Instance,
                                     ModuleContext->Module );
     InterlockedIncrement( &ModuleContext->Count );
+}
+
+VOID
+NTAPI
+ThreadPoolTestFinalizationWorkCallback (
+    _Inout_     PTP_CALLBACK_INSTANCE Instance,
+    _Inout_opt_ PVOID                 Context,
+    _Inout_     PTP_WORK              Work
+    )
+{
+    PTHREADPOOL_FINALIZATION_CONTEXT FinalizationContext = (PTHREADPOOL_FINALIZATION_CONTEXT)Context;
+
+    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER(Work);
+
+    PAGED_CODE();
+
+    if (FinalizationContext != NULL) {
+        InterlockedIncrement( &FinalizationContext->WorkCallbacks );
+    }
+}
+
+VOID
+NTAPI
+ThreadPoolTestFinalizationCallback (
+    _Inout_     PTP_CALLBACK_INSTANCE Instance,
+    _Inout_opt_ PVOID                 Context
+    )
+{
+    PTHREADPOOL_FINALIZATION_CONTEXT FinalizationContext = (PTHREADPOOL_FINALIZATION_CONTEXT)Context;
+
+    UNREFERENCED_PARAMETER(Instance);
+
+    PAGED_CODE();
+
+    if (FinalizationContext == NULL) {
+        return;
+    }
+
+    InterlockedIncrement( &FinalizationContext->FinalizationCallbacks );
+    if (Context == FinalizationContext->ExpectedContext) {
+        InterlockedIncrement( &FinalizationContext->ContextMatches );
+    }
 }
 
 VOID
@@ -336,6 +427,42 @@ ThreadPoolTestTimerWaitCleanupCallback (
 }
 
 VOID
+NTAPI
+ThreadPoolTestLegacyTimerCallback (
+    _Inout_opt_ PVOID Context,
+    _In_ BOOLEAN TimerOrWaitFired
+    )
+{
+    PTHREADPOOL_LEGACY_CONTEXT LegacyContext = (PTHREADPOOL_LEGACY_CONTEXT)Context;
+
+    PAGED_CODE();
+
+    InterlockedIncrement( &LegacyContext->TimerCallbacks );
+    if (TimerOrWaitFired) {
+        InterlockedIncrement( &LegacyContext->TimerBooleanCallbacks );
+    }
+}
+
+VOID
+NTAPI
+ThreadPoolTestLegacyWaitCallback (
+    _Inout_opt_ PVOID Context,
+    _In_ BOOLEAN TimerOrWaitFired
+    )
+{
+    PTHREADPOOL_LEGACY_CONTEXT LegacyContext = (PTHREADPOOL_LEGACY_CONTEXT)Context;
+
+    PAGED_CODE();
+
+    InterlockedIncrement( &LegacyContext->WaitCallbacks );
+    if (TimerOrWaitFired) {
+        InterlockedIncrement( &LegacyContext->WaitTimeoutCallbacks );
+    } else {
+        InterlockedIncrement( &LegacyContext->WaitSignaledCallbacks );
+    }
+}
+
+VOID
 ThreadPoolTestRelativeFileTime (
     _Out_ PFILETIME FileTime,
     _In_ LONG Milliseconds
@@ -360,13 +487,20 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
     PTP_WORK work = NULL;
     TP_CALLBACK_ENVIRON CallbackEnvironment;
     THREADPOOL_MODULE_CONTEXT ModuleContext;
+    THREADPOOL_FINALIZATION_CONTEXT FinalizationContext;
     THREADPOOL_CLEANUP_GROUP_CONTEXT CleanupGroupContext;
     THREADPOOL_TIMER_WAIT_CONTEXT TimerWaitContext;
+    THREADPOOL_LEGACY_CONTEXT LegacyContext;
     PTP_CLEANUP_GROUP CleanupGroup = NULL;
     PTP_TIMER Timer = NULL;
     PTP_WAIT Wait = NULL;
+    PTP_POOL CustomPool = NULL;
     HANDLE WaitEvent = NULL;
+    HANDLE LegacyTimer = NULL;
+    HANDLE LegacyWait = NULL;
+    HANDLE LegacyEvent = NULL;
     FILETIME DueTime;
+    TP_POOL_STACK_INFORMATION StackInformation;
     PVOID CleanupToken = &CleanupGroupContext;
     PVOID TimerWaitCleanupToken = &TimerWaitContext;
     BOOLEAN Result = FALSE;
@@ -374,10 +508,14 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
     PAGED_CODE();
     RtlZeroMemory( &ModuleContext,
                    sizeof(ModuleContext) );
+    RtlZeroMemory( &FinalizationContext,
+                   sizeof(FinalizationContext) );
     RtlZeroMemory( &CleanupGroupContext,
                    sizeof(CleanupGroupContext) );
     RtlZeroMemory( &TimerWaitContext,
                    sizeof(TimerWaitContext) );
+    RtlZeroMemory( &LegacyContext,
+                   sizeof(LegacyContext) );
 
     for (int i = 0; i < ARRAYSIZE(works); ++i) {
         works[i] = CreateThreadpoolWork(ThreadPoolTestWorkCallback, &count, NULL);
@@ -422,6 +560,55 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
         DbgPrint("[Failed] Threadpool reuse Count = %ld\n", count);
         goto FinalCleanup;
     }
+
+    CustomPool = CreateThreadpool( NULL );
+    if (CustomPool == NULL) {
+        DbgPrint("[Failed] CreateThreadpool ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    SetThreadpoolThreadMaximum( CustomPool,
+                                2 );
+    if (!SetThreadpoolThreadMinimum( CustomPool,
+                                     1 )) {
+        DbgPrint("[Failed] SetThreadpoolThreadMinimum ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+
+    RtlZeroMemory( &StackInformation,
+                   sizeof(StackInformation) );
+    if (!QueryThreadpoolStackInformation( CustomPool,
+                                          &StackInformation )) {
+        DbgPrint("[Failed] QueryThreadpoolStackInformation ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    if (!SetThreadpoolStackInformation( CustomPool,
+                                        &StackInformation )) {
+        DbgPrint("[Failed] SetThreadpoolStackInformation ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+
+    TpInitializeCallbackEnviron( &CallbackEnvironment );
+    TpSetCallbackThreadpool( &CallbackEnvironment,
+                             CustomPool );
+    count = 1;
+    work = CreateThreadpoolWork(ThreadPoolTestWorkCallback, &count, &CallbackEnvironment);
+    if (work == NULL) {
+        DbgPrint("[Failed] CreateThreadpoolWork custom pool ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    SubmitThreadpoolWork(work);
+    WaitForThreadpoolWorkCallbacks(work, FALSE);
+    CloseThreadpoolWork(work);
+    work = NULL;
+    TpDestroyCallbackEnviron( &CallbackEnvironment );
+
+    if (count != 0) {
+        DbgPrint("[Failed] Threadpool custom pool Count = %ld\n", count);
+        goto FinalCleanup;
+    }
+    DbgPrint("[Success] Threadpool custom pool callback environment\n");
+    CloseThreadpool( CustomPool );
+    CustomPool = NULL;
 
     TpInitializeCallbackEnviron( &CallbackEnvironment );
     TpSetCallbackLongFunction( &CallbackEnvironment );
@@ -473,8 +660,7 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
     TpDestroyCallbackEnviron( &CallbackEnvironment );
 
     if (ModuleContext.Count != 1 ||
-        ModuleContext.ModuleWasLoaded != 1 ||
-        GetModuleHandleW( L"Test.dll" ) != NULL) {
+        ModuleContext.ModuleWasLoaded != 1) {
         DbgPrint("[Failed] Threadpool RaceWithDll Count = %ld Loaded = %ld Handle = %p\n",
                  ModuleContext.Count,
                  ModuleContext.ModuleWasLoaded,
@@ -485,6 +671,20 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
         ModuleContext.Module = NULL;
         goto FinalCleanup;
     }
+
+#if _KERNEL_MODE
+    if (GetModuleHandleW( L"Test.dll" ) != NULL) {
+        DbgPrint("[Failed] Threadpool RaceWithDll release Handle = %p\n",
+                 GetModuleHandleW( L"Test.dll" ));
+        FreeLibrary( ModuleContext.Module );
+        ModuleContext.Module = NULL;
+        goto FinalCleanup;
+    }
+#else
+    if (GetModuleHandleW( L"Test.dll" ) != NULL) {
+        FreeLibrary( ModuleContext.Module );
+    }
+#endif
     ModuleContext.Module = NULL;
 
     RtlZeroMemory( &ModuleContext,
@@ -519,6 +719,34 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
         goto FinalCleanup;
     }
     ModuleContext.Module = NULL;
+
+    FinalizationContext.ExpectedContext = &FinalizationContext;
+    TpInitializeCallbackEnviron( &CallbackEnvironment );
+    TpSetCallbackFinalizationCallback( &CallbackEnvironment,
+                                       ThreadPoolTestFinalizationCallback );
+    work = CreateThreadpoolWork(ThreadPoolTestFinalizationWorkCallback,
+                                &FinalizationContext,
+                                &CallbackEnvironment);
+    if (work == NULL) {
+        DbgPrint("[Failed] CreateThreadpoolWork finalization callback ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    SubmitThreadpoolWork(work);
+    WaitForThreadpoolWorkCallbacks(work, FALSE);
+    CloseThreadpoolWork(work);
+    work = NULL;
+    TpDestroyCallbackEnviron( &CallbackEnvironment );
+
+    if (FinalizationContext.WorkCallbacks != 1 ||
+        FinalizationContext.FinalizationCallbacks != 1 ||
+        FinalizationContext.ContextMatches != 1) {
+        DbgPrint("[Failed] Threadpool finalization callback Work = %ld Finalization = %ld Context = %ld\n",
+                 FinalizationContext.WorkCallbacks,
+                 FinalizationContext.FinalizationCallbacks,
+                 FinalizationContext.ContextMatches);
+        goto FinalCleanup;
+    }
+    DbgPrint("[Success] Threadpool finalization callback\n");
 
     CleanupGroup = CreateThreadpoolCleanupGroup();
     if (CleanupGroup == NULL) {
@@ -758,6 +986,111 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
     CloseHandle( WaitEvent );
     WaitEvent = NULL;
 
+    if (! CreateTimerQueueTimer( &LegacyTimer,
+                                 NULL,
+                                 ThreadPoolTestLegacyTimerCallback,
+                                 &LegacyContext,
+                                 20,
+                                 0,
+                                 WT_EXECUTEDEFAULT )) {
+        DbgPrint("[Failed] CreateTimerQueueTimer basic ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    for (int i = 0; i < 200 && LegacyContext.TimerCallbacks < 1; i++) {
+        Sleep( 1 );
+    }
+    if (! DeleteTimerQueueTimer( NULL,
+                                 LegacyTimer,
+                                 INVALID_HANDLE_VALUE )) {
+        DbgPrint("[Failed] DeleteTimerQueueTimer basic ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    LegacyTimer = NULL;
+    if (LegacyContext.TimerCallbacks != 1 ||
+        LegacyContext.TimerBooleanCallbacks != 1) {
+        DbgPrint("[Failed] Legacy timer queue Count = %ld Boolean = %ld\n",
+                 LegacyContext.TimerCallbacks,
+                 LegacyContext.TimerBooleanCallbacks);
+        goto FinalCleanup;
+    }
+
+    LegacyEvent = CreateEventW( NULL,
+                                FALSE,
+                                FALSE,
+                                NULL );
+    if (LegacyEvent == NULL) {
+        DbgPrint("[Failed] CreateEventW for legacy registered wait ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    if (! RegisterWaitForSingleObject( &LegacyWait,
+                                       LegacyEvent,
+                                       ThreadPoolTestLegacyWaitCallback,
+                                       &LegacyContext,
+                                       INFINITE,
+                                       WT_EXECUTEONLYONCE )) {
+        DbgPrint("[Failed] RegisterWaitForSingleObject signal ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    SetEvent( LegacyEvent );
+    for (int i = 0; i < 200 && LegacyContext.WaitSignaledCallbacks < 1; i++) {
+        Sleep( 1 );
+    }
+    if (! UnregisterWaitEx( LegacyWait,
+                            INVALID_HANDLE_VALUE )) {
+        DbgPrint("[Failed] UnregisterWaitEx signal ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    LegacyWait = NULL;
+    CloseHandle( LegacyEvent );
+    LegacyEvent = NULL;
+    if (LegacyContext.WaitCallbacks != 1 ||
+        LegacyContext.WaitSignaledCallbacks != 1 ||
+        LegacyContext.WaitTimeoutCallbacks != 0) {
+        DbgPrint("[Failed] Legacy registered wait signal Wait = %ld Signal = %ld Timeout = %ld\n",
+                 LegacyContext.WaitCallbacks,
+                 LegacyContext.WaitSignaledCallbacks,
+                 LegacyContext.WaitTimeoutCallbacks);
+        goto FinalCleanup;
+    }
+
+    LegacyEvent = CreateEventW( NULL,
+                                FALSE,
+                                FALSE,
+                                NULL );
+    if (LegacyEvent == NULL) {
+        DbgPrint("[Failed] CreateEventW for legacy registered wait timeout ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    if (! RegisterWaitForSingleObject( &LegacyWait,
+                                       LegacyEvent,
+                                       ThreadPoolTestLegacyWaitCallback,
+                                       &LegacyContext,
+                                       20,
+                                       WT_EXECUTEONLYONCE )) {
+        DbgPrint("[Failed] RegisterWaitForSingleObject timeout ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    for (int i = 0; i < 200 && LegacyContext.WaitTimeoutCallbacks < 1; i++) {
+        Sleep( 1 );
+    }
+    if (! UnregisterWaitEx( LegacyWait,
+                            INVALID_HANDLE_VALUE )) {
+        DbgPrint("[Failed] UnregisterWaitEx timeout ErrorCode = %lu\n", GetLastError());
+        goto FinalCleanup;
+    }
+    LegacyWait = NULL;
+    CloseHandle( LegacyEvent );
+    LegacyEvent = NULL;
+    if (LegacyContext.WaitCallbacks != 2 ||
+        LegacyContext.WaitSignaledCallbacks != 1 ||
+        LegacyContext.WaitTimeoutCallbacks != 1) {
+        DbgPrint("[Failed] Legacy registered wait timeout Wait = %ld Signal = %ld Timeout = %ld\n",
+                 LegacyContext.WaitCallbacks,
+                 LegacyContext.WaitSignaledCallbacks,
+                 LegacyContext.WaitTimeoutCallbacks);
+        goto FinalCleanup;
+    }
+
     TimerWaitContext.ExpectedCleanupContext = TimerWaitCleanupToken;
     TpInitializeCallbackEnviron( &CallbackEnvironment );
     TpSetCallbackCleanupGroup( &CallbackEnvironment,
@@ -839,6 +1172,18 @@ FinalCleanup:
     if (WaitEvent) {
         CloseHandle( WaitEvent );
     }
+    if (LegacyTimer) {
+        DeleteTimerQueueTimer( NULL,
+                               LegacyTimer,
+                               INVALID_HANDLE_VALUE );
+    }
+    if (LegacyWait) {
+        UnregisterWaitEx( LegacyWait,
+                          INVALID_HANDLE_VALUE );
+    }
+    if (LegacyEvent) {
+        CloseHandle( LegacyEvent );
+    }
     if (work) {
         WaitForThreadpoolWorkCallbacks(work, TRUE);
         CloseThreadpoolWork(work);
@@ -858,6 +1203,9 @@ FinalCleanup:
                                             TRUE,
                                             CleanupToken );
         CloseThreadpoolCleanupGroup( CleanupGroup );
+    }
+    if (CustomPool != NULL) {
+        CloseThreadpool( CustomPool );
     }
     return Result;
 }
