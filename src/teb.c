@@ -175,7 +175,15 @@ LdkCurrentTeb (
 	IoGetStackLimits( &LowLimit,
 					  &HighLimit );
 	
-	PLDK_TEB Teb = *(PLDK_TEB *)LowLimit;
+	PLDK_TEB *StackTebSlot = NULL;
+	PLDK_TEB Teb = NULL;
+	if (LowLimit &&
+		LowLimit < HighLimit &&
+		MmIsAddressValid( (PVOID)LowLimit )
+		) {
+		StackTebSlot = (PLDK_TEB *)LowLimit;
+		Teb = *StackTebSlot;
+	}
 
 	if (Teb &&
 		MmIsAddressValid( Teb ) &&
@@ -191,7 +199,9 @@ LdkCurrentTeb (
 	//
 	Teb = LdkLookTebByThread( PsGetCurrentThread() );
 	if (Teb) {
-		*(PLDK_TEB *)LowLimit = Teb;
+		if (StackTebSlot) {
+			*StackTebSlot = Teb;
+		}
 		return Teb;
 	}
 
@@ -204,7 +214,9 @@ LdkCurrentTeb (
 
 		InterlockedPushEntrySList( &LdkpTemporaryTebListHead,
 								   &Teb->TempLinks );
-		*(PLDK_TEB *)LowLimit = Teb;
+		if (StackTebSlot) {
+			*StackTebSlot = Teb;
+		}
 		return Teb;
 	}
 
@@ -213,7 +225,9 @@ LdkCurrentTeb (
 	//
 	Teb = LdkCreateTeb( PsGetCurrentThread() );
 	NT_ASSERT(Teb);
-	*(PLDK_TEB *)LowLimit = Teb;
+	if (StackTebSlot) {
+		*StackTebSlot = Teb;
+	}
 	return Teb;
 }
 
