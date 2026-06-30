@@ -1,4 +1,4 @@
-#include <wdm.h>
+#include <ntddk.h>
 
 #include <ldk/ldk.h>
 
@@ -125,10 +125,84 @@ WaitOnAddressTest (
     VOID
     );
 
+BOOLEAN
+TebExpandedStackTest (
+    VOID
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, DriverEntry)
 #pragma alloc_text(PAGE, DriverUnload)
+#pragma alloc_text(PAGE, TebExpandedStackTest)
 #endif
+
+typedef struct _TEB_EXPANDED_STACK_TEST_CONTEXT {
+    PLDK_TEB ExpectedTeb;
+    PLDK_TEB ActualTeb;
+    NTSTATUS Status;
+} TEB_EXPANDED_STACK_TEST_CONTEXT, *PTEB_EXPANDED_STACK_TEST_CONTEXT;
+
+VOID
+TebExpandedStackTestCallout (
+    _In_ PVOID Parameter
+    )
+{
+    PTEB_EXPANDED_STACK_TEST_CONTEXT Context = Parameter;
+
+    Context->ActualTeb = LdkCurrentTeb();
+    if (Context->ActualTeb == NULL) {
+        Context->Status = STATUS_UNSUCCESSFUL;
+        return;
+    }
+
+    if (Context->ActualTeb != Context->ExpectedTeb) {
+        Context->Status = STATUS_OBJECT_TYPE_MISMATCH;
+        return;
+    }
+
+    Context->Status = STATUS_SUCCESS;
+}
+
+BOOLEAN
+TebExpandedStackTest (
+    VOID
+    )
+{
+    TEB_EXPANDED_STACK_TEST_CONTEXT Context;
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    Context.ExpectedTeb = LdkCurrentTeb();
+    Context.ActualTeb = NULL;
+    Context.Status = STATUS_UNSUCCESSFUL;
+
+    Status = KeExpandKernelStackAndCalloutEx(
+                 TebExpandedStackTestCallout,
+                 &Context,
+                 0x4000,
+                 TRUE,
+                 NULL );
+    if (! NT_SUCCESS(Status)) {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[Failed] TebExpandedStackTest KeExpandKernelStackAndCalloutEx Status = 0x%08X\n",
+                    Status );
+        return FALSE;
+    }
+
+    if (! NT_SUCCESS(Context.Status)) {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[Failed] TebExpandedStackTest Context.Status = 0x%08X ExpectedTeb = %p ActualTeb = %p\n",
+                    Context.Status,
+                    Context.ExpectedTeb,
+                    Context.ActualTeb );
+        return FALSE;
+    }
+
+    return TRUE;
+}
 
 typedef
 _IRQL_requires_max_(PASSIVE_LEVEL)
@@ -158,6 +232,7 @@ DriverEntry (
         { "NtdllEcCodeCompatibilityTest", NtdllEcCodeCompatibilityTest },
         { "KeyedEventTest", KeyedEventTest },
         { "LdrTest", LdrTest },
+        { "TebExpandedStackTest", TebExpandedStackTest },
         { "FibersTest", FibersTest },
         { "FileTest", FileTest },
         { "PipeTest", PipeTest },
