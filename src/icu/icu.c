@@ -83,16 +83,18 @@ static const UChar LdkpIcuMoscowDisplayName[] = L"Russian Standard Time";
 static const UChar LdkpIcuMoscowShortName[] = L"MSK";
 static const CHAR LdkpIcuTzDataVersion[] = "ldk-minimal-iana-subset";
 
+/* MSVC STL builds std::chrono::tzdb vectors from this enumeration and then
+ * uses lower_bound() for lookup, so the exported IDs must stay sorted. */
 static const LDK_ICU_TIME_ZONE LdkpIcuTimeZones[] = {
-    { LdkpIcuUtcZone, LdkpIcuUtcZone, LdkpIcuUtcDisplayName, LdkpIcuUtcDisplayName, 0 },
-    { LdkpIcuUtcAlias, LdkpIcuUtcZone, LdkpIcuUtcDisplayName, LdkpIcuUtcDisplayName, 0 },
-    { LdkpIcuGmtAlias, LdkpIcuUtcZone, LdkpIcuUtcDisplayName, LdkpIcuUtcDisplayName, 0 },
-    { LdkpIcuSeoulZone, LdkpIcuSeoulZone, LdkpIcuSeoulDisplayName, LdkpIcuSeoulShortName, 9 * 60 * 60 * 1000 },
-    { LdkpIcuTokyoZone, LdkpIcuTokyoZone, LdkpIcuTokyoDisplayName, LdkpIcuTokyoShortName, 9 * 60 * 60 * 1000 },
-    { LdkpIcuShanghaiZone, LdkpIcuShanghaiZone, LdkpIcuShanghaiDisplayName, LdkpIcuShanghaiShortName, 8 * 60 * 60 * 1000 },
     { LdkpIcuNewYorkZone, LdkpIcuNewYorkZone, LdkpIcuNewYorkDisplayName, LdkpIcuNewYorkShortName, -5 * 60 * 60 * 1000 },
+    { LdkpIcuSeoulZone, LdkpIcuSeoulZone, LdkpIcuSeoulDisplayName, LdkpIcuSeoulShortName, 9 * 60 * 60 * 1000 },
+    { LdkpIcuShanghaiZone, LdkpIcuShanghaiZone, LdkpIcuShanghaiDisplayName, LdkpIcuShanghaiShortName, 8 * 60 * 60 * 1000 },
+    { LdkpIcuTokyoZone, LdkpIcuTokyoZone, LdkpIcuTokyoDisplayName, LdkpIcuTokyoShortName, 9 * 60 * 60 * 1000 },
+    { LdkpIcuUtcZone, LdkpIcuUtcZone, LdkpIcuUtcDisplayName, LdkpIcuUtcDisplayName, 0 },
     { LdkpIcuBerlinZone, LdkpIcuBerlinZone, LdkpIcuBerlinDisplayName, LdkpIcuBerlinShortName, 60 * 60 * 1000 },
     { LdkpIcuMoscowZone, LdkpIcuMoscowZone, LdkpIcuMoscowDisplayName, LdkpIcuMoscowShortName, 3 * 60 * 60 * 1000 },
+    { LdkpIcuGmtAlias, LdkpIcuUtcZone, LdkpIcuUtcDisplayName, LdkpIcuUtcDisplayName, 0 },
+    { LdkpIcuUtcAlias, LdkpIcuUtcZone, LdkpIcuUtcDisplayName, LdkpIcuUtcDisplayName, 0 },
 };
 
 static
