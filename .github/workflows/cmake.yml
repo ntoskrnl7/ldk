@@ -53,3 +53,85 @@ jobs:
         with:
           name: ldk-${{ matrix.arch }}
           path: dist/ldk-${{ matrix.arch }}.zip
+
+  build-vs2026:
+    name: VS2026 ${{ matrix.arch }} Debug
+    runs-on: windows-2025-vs2026
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, ARM64]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show VS2026 toolchain
+        shell: pwsh
+        run: |
+          cmake --version
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installationPath = & $vswhere -latest -products * -property installationPath
+          Write-Host "Visual Studio installation: $installationPath"
+
+          Get-ChildItem (Join-Path $installationPath 'VC\Tools\MSVC') -Directory |
+            Select-Object -ExpandProperty Name
+
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Select-Object -ExpandProperty Name
+
+      - name: Build library
+        shell: pwsh
+        run: |
+          $sdkVersion = '10.0.26100.0'
+          $arch = '${{ matrix.arch }}'
+          $buildDir = "build_vs2026_$arch"
+
+          cmake `
+            -S . `
+            -B $buildDir `
+            -G "Visual Studio 18 2026" `
+            -A $arch `
+            -T host=x64 `
+            "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$sdkVersion" `
+            "-DCMAKE_C_FLAGS=/MP" `
+            "-DCMAKE_CXX_FLAGS=/MP"
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configure failed with exit code $LASTEXITCODE."
+          }
+
+          cmake --build $buildDir --config Debug --target Ldk --parallel
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake build failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Build test driver
+        shell: pwsh
+        working-directory: test
+        run: |
+          $sdkVersion = '10.0.26100.0'
+          $arch = '${{ matrix.arch }}'
+          $buildDir = "build_vs2026_$arch"
+
+          cmake `
+            -S . `
+            -B $buildDir `
+            -G "Visual Studio 18 2026" `
+            -A $arch `
+            -T host=x64 `
+            "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$sdkVersion" `
+            "-DCMAKE_C_FLAGS=/MP" `
+            "-DCMAKE_CXX_FLAGS=/MP"
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configure failed with exit code $LASTEXITCODE."
+          }
+
+          cmake --build $buildDir --config Debug --parallel
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake build failed with exit code $LASTEXITCODE."
+          }
