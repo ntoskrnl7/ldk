@@ -1,6 +1,11 @@
 param(
   [string] $Version,
-  [string] $OutputDirectory
+  [string] $OutputDirectory,
+
+  [string[]] $Toolset = @('v143'),
+
+  [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
+  [string[]] $Architecture = @('x86', 'x64', 'ARM', 'ARM64')
 )
 
 Set-StrictMode -Version Latest
@@ -57,27 +62,115 @@ $checksumPath = Join-Path $OutputDirectory "ldk-$Version-SHA256SUMS.txt"
 $packagePath = Join-Path $nugetDirectory "ldk.$Version.nupkg"
 $releasePackagePath = Join-Path $OutputDirectory "ldk.$Version.nupkg"
 
+$Toolset = @(
+  $Toolset |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+if ($Toolset.Count -eq 0) {
+  throw "At least one LDK prebuilt MSVC toolset must be specified."
+}
+foreach ($selectedToolset in $Toolset) {
+  if ($selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
+    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v143 and v145."
+  }
+}
+
 if (-not (Test-Path $packagePath)) {
   throw "NuGet package was not found: $packagePath. Run scripts\nuget\Pack-LdkNuGet.ps1 first."
 }
 
-foreach ($arch in @('x86', 'x64', 'ARM', 'ARM64')) {
-  foreach ($config in @('Debug', 'Release')) {
-    $requiredPath = Join-Path $stagingDirectory "lib\native\$arch\$config\Ldk.lib"
-    if (-not (Test-Path $requiredPath)) {
-      throw "Required prebuilt release asset file is missing: $requiredPath."
+function Test-LdkToolsetArchitecture {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $MsvcToolset,
+
+    [Parameter(Mandatory = $true)]
+    [string] $Architecture
+  )
+
+  return -not ($MsvcToolset -eq 'v145' -and $Architecture -eq 'ARM')
+}
+
+function Remove-UnselectedStagedLibraries {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $NativeDirectory,
+
+    [Parameter(Mandatory = $true)]
+    [string[]] $SelectedToolsets,
+
+    [Parameter(Mandatory = $true)]
+    [string[]] $SelectedArchitectures
+  )
+
+  if (-not (Test-Path $NativeDirectory)) {
+    return
+  }
+
+  foreach ($toolsetDirectory in Get-ChildItem -Path $NativeDirectory -Directory) {
+    if ($SelectedToolsets -notcontains $toolsetDirectory.Name) {
+      Remove-Item -LiteralPath $toolsetDirectory.FullName -Recurse -Force
+      continue
+    }
+
+    foreach ($architectureDirectory in Get-ChildItem -Path $toolsetDirectory.FullName -Directory) {
+      if ($SelectedArchitectures -notcontains $architectureDirectory.Name -or
+          -not (Test-LdkToolsetArchitecture -MsvcToolset $toolsetDirectory.Name -Architecture $architectureDirectory.Name)) {
+        Remove-Item -LiteralPath $architectureDirectory.FullName -Recurse -Force
+        continue
+      }
+
+      foreach ($configurationDirectory in Get-ChildItem -Path $architectureDirectory.FullName -Directory) {
+        if ($configurationDirectory.Name -ne 'Debug' -and $configurationDirectory.Name -ne 'Release') {
+          Remove-Item -LiteralPath $configurationDirectory.FullName -Recurse -Force
+        }
+      }
     }
   }
 }
 
+foreach ($selectedToolset in $Toolset) {
+  foreach ($arch in $Architecture) {
+    if (-not (Test-LdkToolsetArchitecture -MsvcToolset $selectedToolset -Architecture $arch)) {
+      $message = "Visual Studio 18 2026 / v145 does not support the 32-bit ARM target platform."
+      if ($Toolset.Count -eq 1 -and $Architecture.Count -eq 1) {
+        throw $message
+      }
+
+      Write-Warning "$message Skipping release asset validation for $selectedToolset $arch."
+      continue
+    }
+
+    foreach ($config in @('Debug', 'Release')) {
+      $requiredPath = Join-Path $stagingDirectory "lib\native\$selectedToolset\$arch\$config\Ldk.lib"
+      if (-not (Test-Path $requiredPath)) {
+        throw "Required prebuilt release asset file is missing: $requiredPath."
+      }
+    }
+  }
+}
+
+Remove-UnselectedStagedLibraries `
+  -NativeDirectory (Join-Path $stagingDirectory 'lib\native') `
+  -SelectedToolsets $Toolset `
+  -SelectedArchitectures $Architecture
+
 Remove-Item -Recurse -Force -Path $workDirectory -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+foreach ($stalePattern in @('ldk.*.nupkg', 'ldk-*-prebuilt.zip', 'ldk-*-SHA256SUMS.txt')) {
+  Get-ChildItem -Path $OutputDirectory -Filter $stalePattern -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force
+}
+
 New-Item -ItemType Directory -Force -Path $bundleRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $bundleCMakePackageDirectory | Out-Null
 
 Copy-Item -Path (Join-Path $repoRoot 'README.md') -Destination $bundleRoot -Force
 Copy-Item -Path (Join-Path $repoRoot 'LICENSE') -Destination $bundleRoot -Force
 Copy-Item -Path (Join-Path $repoRoot 'docs') -Destination (Join-Path $bundleRoot 'docs') -Recurse -Force
+Remove-Item -Path (Join-Path $bundleRoot 'docs\analysis') -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item -Path (Join-Path $repoRoot 'include') -Destination (Join-Path $bundleRoot 'include') -Recurse -Force
 Copy-Item -Path (Join-Path $repoRoot 'cmake') -Destination (Join-Path $bundleRoot 'cmake') -Recurse -Force
 Copy-Item -Path (Join-Path $repoRoot 'cmake\*') -Destination $bundleCMakePackageDirectory -Recurse -Force
@@ -125,13 +218,14 @@ Contents:
 - cmake/: CMake helpers
 - share/ldk/cmake/: CMake package config for find_package(ldk CONFIG)
 - build/native/: native MSBuild props and targets from the NuGet package
-- lib/native/: prebuilt Ldk.lib for x86, x64, ARM, and ARM64, Debug and Release
+- lib/native/<toolset>/: prebuilt Ldk.lib for x86, x64, ARM, and ARM64, Debug and Release
 - docs/: repository documentation
 
-The prebuilt driver libraries target Visual Studio 2022 and Windows SDK/WDK
-10.0.22621.0. Validate the final driver with the Windows, WDK, SDK, Visual
-Studio, architecture, Driver Verifier, and code integrity settings that you
-ship.
+The prebuilt driver libraries are grouped by MSVC platform toolset. v143
+contains x86, x64, ARM, and ARM64 libraries. v145 contains x86, x64, and
+ARM64 libraries because Visual Studio 2026 removed the 32-bit ARM target.
+Validate the final driver with the Windows, WDK, SDK, Visual Studio,
+architecture, Driver Verifier, and code integrity settings that you ship.
 "@
 Set-Content -LiteralPath (Join-Path $bundleRoot 'README.release.md') -Value $bundleReadme -Encoding UTF8
 
@@ -147,6 +241,8 @@ Get-FileHash -Algorithm SHA256 -Path $prebuiltZipPath, $releasePackagePath |
   Set-Content -LiteralPath $checksumPath -Encoding ASCII
 
 Write-Host "Created release assets:"
-Get-ChildItem -Path $OutputDirectory -File | Sort-Object FullName | ForEach-Object {
-  Write-Host "  $($_.FullName)"
+foreach ($releaseAssetPath in @($releasePackagePath, $prebuiltZipPath, $checksumPath)) {
+  if (Test-Path $releaseAssetPath) {
+    Write-Host "  $releaseAssetPath"
+  }
 }

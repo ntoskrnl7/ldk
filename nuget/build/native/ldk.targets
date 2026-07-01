@@ -10,7 +10,19 @@
     <LdkLibPlatform Condition="'$(LdkLibPlatform)' == ''">$(Platform)</LdkLibPlatform>
     <LdkLibraryConfiguration Condition="'$(LdkLibraryConfiguration)' == '' and ('$(Configuration)' == 'Debug' or '$(Configuration)' == 'Release')">$(Configuration)</LdkLibraryConfiguration>
     <LdkLibraryConfiguration Condition="'$(LdkLibraryConfiguration)' == ''">Release</LdkLibraryConfiguration>
-    <LdkLibDir Condition="'$(LdkLibDir)' == ''">$(LdkRoot)lib\native\$(LdkLibPlatform)\$(LdkLibraryConfiguration)\</LdkLibDir>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and $([System.String]::Copy('$(VCToolsVersion)').StartsWith('14.5'))">v145</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and $([System.String]::Copy('$(VCToolsVersion)').StartsWith('14.4'))">v143</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolsetVersion)' == '145'">v145</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolsetVersion)' == '143'">v143</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolset)' == 'v145'">v145</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == ''">v143</LdkLibToolset>
+    <LdkAllowToolsetFallback Condition="'$(LdkAllowToolsetFallback)' == ''">false</LdkAllowToolsetFallback>
+    <LdkExactLibDir>$(LdkRoot)lib\native\$(LdkLibToolset)\$(LdkLibPlatform)\$(LdkLibraryConfiguration)\</LdkExactLibDir>
+    <LdkFallbackLibDir>$(LdkRoot)lib\native\v143\$(LdkLibPlatform)\$(LdkLibraryConfiguration)\</LdkFallbackLibDir>
+    <LdkLegacyLibDir>$(LdkRoot)lib\native\$(LdkLibPlatform)\$(LdkLibraryConfiguration)\</LdkLegacyLibDir>
+    <LdkLibDir Condition="'$(LdkLibDir)' == ''">$(LdkExactLibDir)</LdkLibDir>
+    <LdkLibDir Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkAllowToolsetFallback)' == 'true' and '$(LdkLibToolset)' != 'v143' and !Exists('$(LdkLibDir)Ldk.lib')">$(LdkFallbackLibDir)</LdkLibDir>
+    <LdkLibDir Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkRoot)lib\native\v143\') and !Exists('$(LdkRoot)lib\native\v145\') and Exists('$(LdkLegacyLibDir)Ldk.lib')">$(LdkLegacyLibDir)</LdkLibDir>
     <LdkUseDriverEntry Condition="'$(LdkUseDriverEntry)' == ''">true</LdkUseDriverEntry>
     <LdkDriverPreprocessorDefinitions Condition="'$(LdkDriverPreprocessorDefinitions)' == ''">_KERNEL32_</LdkDriverPreprocessorDefinitions>
   </PropertyGroup>
@@ -20,12 +32,19 @@
       Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkLibPlatform)' != 'x86' and '$(LdkLibPlatform)' != 'x64' and '$(LdkLibPlatform)' != 'ARM' and '$(LdkLibPlatform)' != 'ARM64'"
       Text="LDK NuGet package contains prebuilt driver libraries for x86, x64, ARM, and ARM64 only. Current platform is '$(Platform)'." />
     <Error
+      Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkExpectedLibToolset)' != '' and '$(LdkLibToolset)' != '$(LdkExpectedLibToolset)'"
+      Text="LDK selected MSVC toolset '$(LdkLibToolset)', but the consumer expected '$(LdkExpectedLibToolset)'." />
+    <Error
       Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkLibDir)Ldk.lib')"
-      Text="Ldk.lib was not found under '$(LdkLibDir)'." />
+      Text="Ldk.lib was not found under '$(LdkLibDir)' for MSVC toolset '$(LdkLibToolset)'. Install a package that contains lib\native\$(LdkLibToolset)\$(LdkLibPlatform)\$(LdkLibraryConfiguration), or set LdkLibToolset explicitly." />
     <Message
       Importance="high"
       Condition="'$(LdkUseDriverSupport)' != 'true'"
       Text="LDK NuGet package is not applying driver link settings because LdkUseDriverSupport is '$(LdkUseDriverSupport)'." />
+    <Message
+      Importance="high"
+      Condition="'$(LdkUseDriverSupport)' == 'true'"
+      Text="LDK NuGet package selected $(LdkLibDir) for MSVC toolset $(LdkLibToolset)." />
   </Target>
 
   <ItemDefinitionGroup>

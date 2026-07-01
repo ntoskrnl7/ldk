@@ -9,3 +9,4 @@ build*/
 !nuget/build/native/*.targets
 lib/
 artifacts/
+docs/analysis/
