@@ -100,8 +100,17 @@ find_package(ldk CONFIG REQUIRED PATHS "path/to/ldk-0.7.5" NO_DEFAULT_PATH)
 ldk_add_driver(MyDriver main.c)
 ```
 
-The prebuilt package contains `Ldk.lib` for x86, x64, ARM, and ARM64 Debug and
-Release builds, plus headers, docs, native MSBuild imports, and CMake helpers.
+The prebuilt package contains toolset-specific `Ldk.lib` builds under
+`lib/native/<toolset>/<arch>/<config>`, plus headers, docs, native MSBuild
+imports, and CMake helpers.
+
+Current prebuilt toolset coverage is:
+
+- `v143`: `x86`, `x64`, `ARM`, and `ARM64`
+- `v145`: `x86`, `x64`, and `ARM64`
+
+Visual Studio 2026 / v145 no longer targets 32-bit ARM, so `lib/native/v145/ARM`
+is intentionally not published.
 
 ### CMake / CPM
 
@@ -253,9 +262,11 @@ Additional implementation and test notes live under [`docs/`](docs/).
 
 ## NuGet and Releases
 
-The `Package` GitHub Actions workflow builds prebuilt x86/x64/ARM/ARM64
-Debug/Release libraries, packs the `ldk` NuGet package, validates the package
-with a minimal WDK consumer driver, and prepares GitHub Release assets.
+The `Package` GitHub Actions workflow builds prebuilt Debug/Release libraries
+under a toolset-specific package layout, packs the `ldk` NuGet package,
+validates the package with minimal WDK consumer drivers, and prepares GitHub
+Release assets. v143 packages cover x86/x64/ARM/ARM64; v145 packages cover
+x86/x64/ARM64 because Visual Studio 2026 no longer targets 32-bit ARM.
 
 The `Release` workflow is the publishing entry point. It updates
 `include/Ldk/internal/version.h`, creates a `v<version>` tag, then dispatches

@@ -2,6 +2,8 @@ param(
   [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
   [string[]] $Architecture = @('x86', 'x64', 'ARM', 'ARM64'),
 
+  [string[]] $Toolset = @('v143'),
+
   [ValidateSet('Debug', 'Release')]
   [string[]] $Configuration = @('Debug', 'Release'),
 
@@ -18,6 +20,21 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
   $OutputDirectory = Join-Path $repoRoot 'artifacts\nuget-staging'
 }
 
+$Toolset = @(
+  $Toolset |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+)
+if ($Toolset.Count -eq 0) {
+  throw "At least one LDK prebuilt MSVC toolset must be specified."
+}
+foreach ($selectedToolset in $Toolset) {
+  if ($selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
+    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v143 and v145."
+  }
+}
+
 $platformByArchitecture = @{
   x86 = 'Win32'
   x64 = 'x64'
@@ -25,8 +42,36 @@ $platformByArchitecture = @{
   ARM64 = 'ARM64'
 }
 
-foreach ($arch in $Architecture) {
-  foreach ($config in $Configuration) {
+$generatorByToolset = @{
+  v143 = 'Visual Studio 17 2022'
+  v145 = 'Visual Studio 18 2026'
+}
+
+function Test-LdkToolsetArchitecture {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $MsvcToolset,
+
+    [Parameter(Mandatory = $true)]
+    [string] $Architecture
+  )
+
+  return -not ($MsvcToolset -eq 'v145' -and $Architecture -eq 'ARM')
+}
+
+foreach ($selectedToolset in $Toolset) {
+  foreach ($arch in $Architecture) {
+    if (-not (Test-LdkToolsetArchitecture -MsvcToolset $selectedToolset -Architecture $arch)) {
+      $message = "Visual Studio 18 2026 / v145 does not support the 32-bit ARM target platform. Build ARM with v143, or omit ARM when staging v145 libraries."
+      if ($Toolset.Count -eq 1 -and $Architecture.Count -eq 1) {
+        throw $message
+      }
+
+      Write-Warning "$message Skipping $selectedToolset $arch."
+      continue
+    }
+
+    foreach ($config in $Configuration) {
     $platform = $platformByArchitecture[$arch]
     if ($arch -eq 'ARM') {
       # Windows SDK 10.0.26100.0 no longer supports 32-bit ARM. Pin the
@@ -35,8 +80,8 @@ foreach ($arch in $Architecture) {
       $platform = "$platform,version=$WindowsSdkVersion"
     }
 
-    $buildDir = Join-Path $repoRoot "artifacts\build\ldk_${arch}_$config"
-    $libOutputDir = Join-Path $OutputDirectory "lib\native\$arch\$config"
+    $buildDir = Join-Path $repoRoot "artifacts\build\ldk_${selectedToolset}_${arch}_$config"
+    $libOutputDir = Join-Path $OutputDirectory "lib\native\$selectedToolset\$arch\$config"
 
     New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
     New-Item -ItemType Directory -Force -Path $libOutputDir | Out-Null
@@ -44,9 +89,10 @@ foreach ($arch in $Architecture) {
     $configureArgs = @(
       '-S', $repoRoot,
       '-B', $buildDir,
-      '-G', 'Visual Studio 17 2022',
+      '-G', $generatorByToolset[$selectedToolset],
       '-A', $platform,
       '-T', 'host=x64',
+      "-DLDK_WDK_VERSION=$WindowsSdkVersion",
       "-DCMAKE_SYSTEM_VERSION=$WindowsSdkVersion",
       "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$WindowsSdkVersion",
       "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$WindowsSdkVersion",
@@ -54,13 +100,13 @@ foreach ($arch in $Architecture) {
       '-DCMAKE_CXX_FLAGS=/MP'
     )
 
-    Write-Host "Configuring LDK $arch $config with Windows SDK $WindowsSdkVersion"
+    Write-Host "Configuring LDK $selectedToolset $arch $config with Windows SDK $WindowsSdkVersion"
     & cmake @configureArgs
     if ($LASTEXITCODE -ne 0) {
       throw "CMake configure failed with exit code $LASTEXITCODE."
     }
 
-    Write-Host "Building LDK $arch $config"
+    Write-Host "Building LDK $selectedToolset $arch $config"
     & cmake --build $buildDir --config $config --target Ldk --parallel
     if ($LASTEXITCODE -ne 0) {
       throw "CMake build failed with exit code $LASTEXITCODE."
@@ -95,5 +141,6 @@ foreach ($arch in $Architecture) {
     }
 
     Write-Host "Staged LDK library in $libOutputDir"
+    }
   }
 }

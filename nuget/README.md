@@ -64,14 +64,20 @@ driver test environment.
 
 - `include/`: public LDK headers
 - `docs/`: implementation notes
-- `lib/native/<arch>/<config>/Ldk.lib`: prebuilt static libraries
+- `lib/native/<toolset>/<arch>/<config>/Ldk.lib`: prebuilt static libraries
 - `build/native/ldk.props` and `ldk.targets`: MSBuild integration
+
+Prebuilt libraries are grouped by MSVC platform toolset, for example
+`lib/native/v143/x64/Release/Ldk.lib`.
 
 Prebuilt libraries currently target:
 
-- `x86`, `x64`, `ARM`, and `ARM64`
+- `v143`: `x86`, `x64`, `ARM`, and `ARM64`
+- `v145`: `x86`, `x64`, and `ARM64`
 - `Debug` and `Release`
-- Visual Studio 2022 with Windows SDK/WDK `10.0.22621.0`
+
+Visual Studio 2026 / v145 no longer targets 32-bit ARM, so
+`lib/native/v145/ARM` is intentionally not published.
 
 ## MSBuild usage
 

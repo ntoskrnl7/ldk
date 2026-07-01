@@ -33,6 +33,24 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
+set(_LDK_REQUESTED_WDK_VERSION)
+foreach(_version IN ITEMS
+        "${LDK_WDK_VERSION}"
+        "${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}"
+        "${CMAKE_SYSTEM_VERSION}")
+    if("${_LDK_REQUESTED_WDK_VERSION}" STREQUAL "" AND NOT "${_version}" STREQUAL "")
+        set(_LDK_REQUESTED_WDK_VERSION "${_version}")
+    endif()
+endforeach()
+
+if(NOT "${_LDK_REQUESTED_WDK_VERSION}" STREQUAL "" AND
+        EXISTS "${WDK_ROOT}/Include/${_LDK_REQUESTED_WDK_VERSION}/km/ntddk.h")
+    if(NOT "${WDK_VERSION}" STREQUAL "${_LDK_REQUESTED_WDK_VERSION}")
+        message(STATUS "Using WDK ${_LDK_REQUESTED_WDK_VERSION} headers for LDK")
+        set(WDK_VERSION "${_LDK_REQUESTED_WDK_VERSION}")
+    endif()
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 

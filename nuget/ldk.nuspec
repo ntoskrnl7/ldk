@@ -20,7 +20,7 @@
     <file src="README.md" target="README.md" />
     <file src="..\LICENSE" target="LICENSE" />
     <file src="..\cmake\**\*" target="cmake" />
-    <file src="..\docs\**\*" target="docs" />
+    <file src="..\docs\**\*" target="docs" exclude="..\docs\analysis\**\*" />
     <file src="..\include\**\*" target="include" />
     <file src="..\artifacts\nuget-staging\lib\native\**\*" target="lib\native" />
 

@@ -7,6 +7,9 @@ param(
   [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
   [string] $Architecture = 'x64',
 
+  [ValidateSet('v143', 'v145')]
+  [string] $Toolset = 'v143',
+
   [ValidateSet('Debug', 'Release')]
   [string] $Configuration = 'Release',
 
@@ -29,7 +32,7 @@ if ([string]::IsNullOrWhiteSpace($PackageDirectory)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($WorkDirectory)) {
-  $WorkDirectory = Join-Path $repoRoot "artifacts\nuget-consumer-test\$Architecture\$Configuration"
+  $WorkDirectory = Join-Path $repoRoot "artifacts\nuget-consumer-test\$Toolset\$Architecture\$Configuration"
 }
 
 $WorkDirectory = [System.IO.Path]::GetFullPath($WorkDirectory)
@@ -61,6 +64,16 @@ $platformByArchitecture = @{
   ARM = 'ARM'
   ARM64 = 'ARM64'
 }
+
+$generatorByToolset = @{
+  v143 = 'Visual Studio 17 2022'
+  v145 = 'Visual Studio 18 2026'
+}
+
+if ($Toolset -eq 'v145' -and $Architecture -eq 'ARM') {
+  throw "Visual Studio 18 2026 does not provide the 32-bit ARM generator platform in the tested Build Tools layout. Test ARM with v143, or omit ARM when testing v145 libraries."
+}
+
 $platform = $platformByArchitecture[$Architecture]
 if ($Architecture -eq 'ARM') {
   # Windows SDK 10.0.26100.0 no longer supports 32-bit ARM. Pin the Visual
@@ -106,7 +119,7 @@ $requiredPackagePaths = @(
   'build\native\ldk.targets',
   'cmake\Ldk.cmake',
   'include\Ldk\Windows.h',
-  "lib\native\$Architecture\$Configuration\Ldk.lib"
+  "lib\native\$Toolset\$Architecture\$Configuration\Ldk.lib"
 )
 
 foreach ($requiredPath in $requiredPackagePaths) {
@@ -140,6 +153,7 @@ endif()
 project(ldk_nuget_package_smoke LANGUAGES C)
 
 set(LDK_ROOT "$cmakePackageRoot")
+set(LDK_PREBUILT_TOOLSET "$Toolset")
 include("$cmakePackageRoot/cmake/Ldk.cmake")
 
 ldk_add_driver(ldk_nuget_package_smoke main.c)
@@ -178,11 +192,11 @@ DriverEntry(
 '@
 Set-Content -LiteralPath (Join-Path $consumerDirectory 'main.c') -Value $mainC -Encoding UTF8
 
-$buildDirectory = Join-Path $WorkDirectory "build_$Architecture"
+$buildDirectory = Join-Path $WorkDirectory "build_${Toolset}_$Architecture"
 $configureArgs = @(
   '-S', $consumerDirectory,
   '-B', $buildDirectory,
-  '-G', 'Visual Studio 17 2022',
+  '-G', $generatorByToolset[$Toolset],
   '-A', $platform,
   '-T', 'host=x64',
   "-DLDK_WDK_VERSION=$WindowsSdkVersion",
@@ -191,13 +205,13 @@ $configureArgs = @(
   "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$WindowsSdkVersion"
 )
 
-Write-Host "Configuring NuGet package consumer for $Architecture $Configuration"
+Write-Host "Configuring NuGet package consumer for $Toolset $Architecture $Configuration"
 & cmake @configureArgs
 if ($LASTEXITCODE -ne 0) {
   throw "CMake configure failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "Building NuGet package consumer for $Architecture $Configuration"
+Write-Host "Building NuGet package consumer for $Toolset $Architecture $Configuration"
 & cmake --build $buildDirectory --config $Configuration --target ldk_nuget_package_smoke --parallel
 if ($LASTEXITCODE -ne 0) {
   throw "CMake build failed with exit code $LASTEXITCODE."

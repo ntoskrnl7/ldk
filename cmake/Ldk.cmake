@@ -149,8 +149,27 @@ function(ldk_get_prebuilt_arch _out_arch)
     set(${_out_arch} "${_arch}" PARENT_SCOPE)
 endfunction()
 
+function(ldk_get_prebuilt_toolset _out_toolset)
+    if(DEFINED LDK_PREBUILT_TOOLSET AND NOT "${LDK_PREBUILT_TOOLSET}" STREQUAL "")
+        set(_toolset "${LDK_PREBUILT_TOOLSET}")
+    elseif(DEFINED MSVC_TOOLSET_VERSION AND NOT "${MSVC_TOOLSET_VERSION}" STREQUAL "")
+        set(_toolset "v${MSVC_TOOLSET_VERSION}")
+    elseif(DEFINED CMAKE_VS_PLATFORM_TOOLSET AND CMAKE_VS_PLATFORM_TOOLSET MATCHES "^v[0-9]+$")
+        set(_toolset "${CMAKE_VS_PLATFORM_TOOLSET}")
+    else()
+        message(FATAL_ERROR "Unable to determine the LDK prebuilt MSVC toolset. Set LDK_PREBUILT_TOOLSET to v143 or v145.")
+    endif()
+
+    if(NOT "${_toolset}" STREQUAL "v143" AND NOT "${_toolset}" STREQUAL "v145")
+        message(FATAL_ERROR "Unsupported LDK prebuilt MSVC toolset: ${_toolset}. Supported toolsets are v143 and v145.")
+    endif()
+
+    set(${_out_toolset} "${_toolset}" PARENT_SCOPE)
+endfunction()
+
 function(ldk_get_prebuilt_library _out_path _configuration)
     ldk_get_prebuilt_arch(_arch)
+    ldk_get_prebuilt_toolset(_toolset)
 
     if("${_configuration}" STREQUAL "Debug")
         set(_config_dir Debug)
@@ -158,14 +177,40 @@ function(ldk_get_prebuilt_library _out_path _configuration)
         set(_config_dir Release)
     endif()
 
-    set(_path "${_LDK_ROOT}/lib/native/${_arch}/${_config_dir}/Ldk.lib")
-    file(TO_CMAKE_PATH "${_path}" _path)
-    if(NOT EXISTS "${_path}")
-        set(${_out_path} "" PARENT_SCOPE)
-        return()
+    set(_has_toolset_layout OFF)
+    foreach(_known_toolset IN ITEMS v143 v145)
+        if(EXISTS "${_LDK_ROOT}/lib/native/${_known_toolset}")
+            set(_has_toolset_layout ON)
+        endif()
+    endforeach()
+
+    set(_candidate_paths
+        "${_LDK_ROOT}/lib/native/${_toolset}/${_arch}/${_config_dir}/Ldk.lib"
+    )
+
+    if(DEFINED LDK_ALLOW_PREBUILT_TOOLSET_FALLBACK AND LDK_ALLOW_PREBUILT_TOOLSET_FALLBACK)
+        if(NOT "${_toolset}" STREQUAL "v143")
+            list(APPEND _candidate_paths
+                "${_LDK_ROOT}/lib/native/v143/${_arch}/${_config_dir}/Ldk.lib"
+            )
+        endif()
     endif()
 
-    set(${_out_path} "${_path}" PARENT_SCOPE)
+    if(NOT _has_toolset_layout)
+        list(APPEND _candidate_paths
+            "${_LDK_ROOT}/lib/native/${_arch}/${_config_dir}/Ldk.lib"
+        )
+    endif()
+
+    foreach(_candidate_path IN LISTS _candidate_paths)
+        file(TO_CMAKE_PATH "${_candidate_path}" _candidate_path)
+        if(EXISTS "${_candidate_path}")
+            set(${_out_path} "${_candidate_path}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+
+    set(${_out_path} "" PARENT_SCOPE)
 endfunction()
 
 function(ldk_link_prebuilt_libraries _target)
@@ -183,7 +228,9 @@ function(ldk_link_prebuilt_libraries _target)
     elseif(_ldk_release)
         target_link_libraries(${_target} "${_ldk_release}")
     else()
-        message(FATAL_ERROR "No LDK prebuilt libraries were found under ${_LDK_ROOT}/lib/native for ${CMAKE_VS_PLATFORM_NAME}.")
+        ldk_get_prebuilt_arch(_arch)
+        ldk_get_prebuilt_toolset(_toolset)
+        message(FATAL_ERROR "No LDK prebuilt libraries were found under ${_LDK_ROOT}/lib/native for ${_toolset}/${_arch}.")
     endif()
 
     target_include_directories(${_target} PUBLIC "${_LDK_ROOT}/include")
