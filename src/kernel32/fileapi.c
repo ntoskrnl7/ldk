@@ -3639,10 +3639,28 @@ LdkpFillFileStatLxInformation (
     StatLxInfo->NumberOfLinks = StandardInfo->NumberOfLinks;
 }
 
+typedef struct _LDK_FILE_STAT_BASIC_INFORMATION {
+    LARGE_INTEGER FileId;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER AllocationSize;
+    LARGE_INTEGER EndOfFile;
+    DWORD FileAttributes;
+    DWORD ReparseTag;
+    DWORD NumberOfLinks;
+    DWORD DeviceType;
+    DWORD DeviceCharacteristics;
+    DWORD Reserved;
+    LARGE_INTEGER VolumeSerialNumber;
+    FILE_ID_128 FileId128;
+} LDK_FILE_STAT_BASIC_INFORMATION, *PLDK_FILE_STAT_BASIC_INFORMATION;
+
 static
 VOID
 LdkpFillFileStatBasicInformation (
-    _Out_ PFILE_STAT_BASIC_INFORMATION StatBasicInfo,
+    _Out_ PLDK_FILE_STAT_BASIC_INFORMATION StatBasicInfo,
     _In_ HANDLE FileHandle,
     _In_ const BY_HANDLE_FILE_INFORMATION *HandleInfo,
     _In_ const FILE_BASIC_INFO *BasicInfo,
@@ -3798,12 +3816,12 @@ GetFileInformationByName (
         break;
 
     case FileStatBasicByNameInfo:
-        if (FileInfoBufferSize < sizeof(FILE_STAT_BASIC_INFORMATION)) {
+        if (FileInfoBufferSize < sizeof(LDK_FILE_STAT_BASIC_INFORMATION)) {
             SetLastError( ERROR_INSUFFICIENT_BUFFER );
             goto Exit;
         }
 
-        LdkpFillFileStatBasicInformation( (PFILE_STAT_BASIC_INFORMATION)FileInfoBuffer,
+        LdkpFillFileStatBasicInformation( (PLDK_FILE_STAT_BASIC_INFORMATION)FileInfoBuffer,
                                           FileHandle,
                                           &HandleInfo,
                                           &BasicInfo,
