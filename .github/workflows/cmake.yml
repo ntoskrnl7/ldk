@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: ${{ matrix.arch }} ${{ matrix.config }}
+  build-vs2022:
+    name: VS2022/v143 ${{ matrix.arch }} ${{ matrix.config }}
     runs-on: windows-2022
     strategy:
       fail-fast: false
@@ -24,12 +24,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Ensure WDK for x86/ARM32 driver build
+        if: ${{ matrix.arch == 'x86' || matrix.arch == 'ARM' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms '${{ matrix.arch }}'
+
       - name: Build library
         shell: cmd
         run: build.bat . ${{ matrix.arch }} ${{ matrix.config }}
 
       - name: Build test driver
-        if: ${{ matrix.arch == 'x64' || matrix.arch == 'ARM64' }}
         shell: cmd
         working-directory: test
         run: ..\build.bat . ${{ matrix.arch }} ${{ matrix.config }}
@@ -54,13 +58,126 @@ jobs:
           name: ldk-${{ matrix.arch }}
           path: dist/ldk-${{ matrix.arch }}.zip
 
+  build-vs2019:
+    name: VS2019/v142 ${{ matrix.arch }} ${{ matrix.config }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86, x64, ARM, ARM64]
+        config: [Debug, Release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show v142 toolchain
+        shell: pwsh
+        run: |
+          cmake --version
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installationPath = & $vswhere -latest -products * -property installationPath
+          Write-Host "Visual Studio installation: $installationPath"
+
+          Get-ChildItem (Join-Path $installationPath 'VC\Tools\MSVC') -Directory |
+            Select-Object -ExpandProperty Name
+
+          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
+            Select-Object -ExpandProperty Name
+
+      - name: Ensure WDK for x86/ARM32 driver build
+        if: ${{ matrix.arch == 'x86' || matrix.arch == 'ARM' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms '${{ matrix.arch }}'
+
+      - name: Build library
+        shell: pwsh
+        run: |
+          $sdkVersion = '10.0.22621.0'
+          $arch = '${{ matrix.arch }}'
+          $config = '${{ matrix.config }}'
+          $buildDir = "build_vs2019_${arch}_$config"
+          $platformByArch = @{
+            x86 = 'Win32'
+            x64 = 'x64'
+            ARM = 'ARM'
+            ARM64 = 'ARM64'
+          }
+          $platform = $platformByArch[$arch]
+          if ($arch -eq 'ARM') {
+            $platform = "$platform,version=$sdkVersion"
+          }
+
+          cmake `
+            -S . `
+            -B $buildDir `
+            -G "Visual Studio 17 2022" `
+            -A $platform `
+            -T "v142,host=x64" `
+            "-DLDK_WDK_VERSION=$sdkVersion" `
+            "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$sdkVersion" `
+            "-DCMAKE_C_FLAGS=/MP" `
+            "-DCMAKE_CXX_FLAGS=/MP"
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configure failed with exit code $LASTEXITCODE."
+          }
+
+          cmake --build $buildDir --config $config --target Ldk --parallel
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake build failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Build test driver
+        shell: pwsh
+        working-directory: test
+        run: |
+          $sdkVersion = '10.0.22621.0'
+          $arch = '${{ matrix.arch }}'
+          $config = '${{ matrix.config }}'
+          $buildDir = "build_vs2019_${arch}_$config"
+          $platformByArch = @{
+            x86 = 'Win32'
+            x64 = 'x64'
+            ARM = 'ARM'
+            ARM64 = 'ARM64'
+          }
+          $platform = $platformByArch[$arch]
+          if ($arch -eq 'ARM') {
+            $platform = "$platform,version=$sdkVersion"
+          }
+
+          cmake `
+            -S . `
+            -B $buildDir `
+            -G "Visual Studio 17 2022" `
+            -A $platform `
+            -T "v142,host=x64" `
+            "-DLDK_WDK_VERSION=$sdkVersion" `
+            "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
+            "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$sdkVersion" `
+            "-DCMAKE_C_FLAGS=/MP" `
+            "-DCMAKE_CXX_FLAGS=/MP"
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake configure failed with exit code $LASTEXITCODE."
+          }
+
+          cmake --build $buildDir --config $config --parallel
+          if ($LASTEXITCODE -ne 0) {
+            throw "CMake build failed with exit code $LASTEXITCODE."
+          }
+
   build-vs2026:
-    name: VS2026 ${{ matrix.arch }} Debug
+    name: VS2026/v145 ${{ matrix.arch }} ${{ matrix.config }}
     runs-on: windows-2025-vs2026
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, ARM64]
+        arch: [x86, x64, ARM64]
+        config: [Debug, Release]
 
     steps:
       - name: Checkout
@@ -81,65 +198,34 @@ jobs:
           Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
             Select-Object -ExpandProperty Name
 
-      - name: Install WDK for VS2026 image
+      - name: Ensure WDK for VS2026 image
         shell: pwsh
-        run: |
-          function Find-NtDdk {
-            $roots = @(
-              "${env:ProgramFiles(x86)}\Windows Kits\10\Include",
-              "${env:ProgramFiles}\Windows Kits\10\Include"
-            )
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.26100.0'
 
-            foreach ($root in $roots) {
-              if (Test-Path $root) {
-                $match = Get-ChildItem -Path $root -Filter ntddk.h -Recurse -File -ErrorAction SilentlyContinue |
-                  Sort-Object FullName |
-                  Select-Object -Last 1
-                if ($match) {
-                  return $match
-                }
-              }
-            }
-
-            return $null
-          }
-
-          $ntddk = Find-NtDdk
-          if (-not $ntddk) {
-            Write-Host "WDK ntddk.h was not found on the VS2026 image. Installing WDK 10.0.26100 with WinGet."
-            winget install `
-              --exact `
-              --id Microsoft.WindowsWDK.10.0.26100 `
-              --source winget `
-              --silent `
-              --accept-package-agreements `
-              --accept-source-agreements `
-              --disable-interactivity
-
-            if ($LASTEXITCODE -ne 0) {
-              throw "WDK installation failed with exit code $LASTEXITCODE."
-            }
-          }
-
-          $ntddk = Find-NtDdk
-          if (-not $ntddk) {
-            throw "WDK ntddk.h was not found after WDK installation."
-          }
-
-          Write-Host "Found WDK ntddk.h: $($ntddk.FullName)"
+      - name: Ensure WDK for VS2026 x86 driver build
+        if: ${{ matrix.arch == 'x86' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms x86
 
       - name: Build library
         shell: pwsh
         run: |
           $sdkVersion = '10.0.26100.0'
           $arch = '${{ matrix.arch }}'
-          $buildDir = "build_vs2026_$arch"
+          $config = '${{ matrix.config }}'
+          $buildDir = "build_vs2026_${arch}_$config"
+          $platformByArch = @{
+            x86 = 'Win32'
+            x64 = 'x64'
+            ARM64 = 'ARM64'
+          }
+          $platform = $platformByArch[$arch]
 
           cmake `
             -S . `
             -B $buildDir `
             -G "Visual Studio 18 2026" `
-            -A $arch `
+            -A $platform `
             -T host=x64 `
             "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
             "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
@@ -150,7 +236,7 @@ jobs:
             throw "CMake configure failed with exit code $LASTEXITCODE."
           }
 
-          cmake --build $buildDir --config Debug --target Ldk --parallel
+          cmake --build $buildDir --config $config --target Ldk --parallel
           if ($LASTEXITCODE -ne 0) {
             throw "CMake build failed with exit code $LASTEXITCODE."
           }
@@ -161,13 +247,20 @@ jobs:
         run: |
           $sdkVersion = '10.0.26100.0'
           $arch = '${{ matrix.arch }}'
-          $buildDir = "build_vs2026_$arch"
+          $config = '${{ matrix.config }}'
+          $buildDir = "build_vs2026_${arch}_$config"
+          $platformByArch = @{
+            x86 = 'Win32'
+            x64 = 'x64'
+            ARM64 = 'ARM64'
+          }
+          $platform = $platformByArch[$arch]
 
           cmake `
             -S . `
             -B $buildDir `
             -G "Visual Studio 18 2026" `
-            -A $arch `
+            -A $platform `
             -T host=x64 `
             "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
             "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
@@ -178,7 +271,7 @@ jobs:
             throw "CMake configure failed with exit code $LASTEXITCODE."
           }
 
-          cmake --build $buildDir --config Debug --parallel
+          cmake --build $buildDir --config $config --parallel
           if ($LASTEXITCODE -ne 0) {
             throw "CMake build failed with exit code $LASTEXITCODE."
           }

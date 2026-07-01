@@ -72,8 +72,8 @@ if ($Toolset.Count -eq 0) {
   throw "At least one LDK prebuilt MSVC toolset must be specified."
 }
 foreach ($selectedToolset in $Toolset) {
-  if ($selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
-    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v143 and v145."
+  if ($selectedToolset -ne 'v142' -and $selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
+    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v142, v143, and v145."
   }
 }
 
@@ -218,12 +218,12 @@ Contents:
 - cmake/: CMake helpers
 - share/ldk/cmake/: CMake package config for find_package(ldk CONFIG)
 - build/native/: native MSBuild props and targets from the NuGet package
-- lib/native/<toolset>/: prebuilt Ldk.lib for x86, x64, ARM, and ARM64, Debug and Release
+- lib/native/<toolset>/: prebuilt Ldk.lib for supported architectures, Debug and Release
 - docs/: repository documentation
 
-The prebuilt driver libraries are grouped by MSVC platform toolset. v143
-contains x86, x64, ARM, and ARM64 libraries. v145 contains x86, x64, and
-ARM64 libraries because Visual Studio 2026 removed the 32-bit ARM target.
+The prebuilt driver libraries are grouped by MSVC platform toolset. v142 and
+v143 contain x86, x64, ARM, and ARM64 libraries. v145 contains x86, x64, and
+ARM64 libraries.
 Validate the final driver with the Windows, WDK, SDK, Visual Studio,
 architecture, Driver Verifier, and code integrity settings that you ship.
 "@

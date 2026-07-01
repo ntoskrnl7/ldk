@@ -11,16 +11,7 @@ include(../cmake/CPM.cmake)
 set(LDK_USE_RAISE_EXCEPTION ON)
 set(LDK_USE_RTL_RAISE_EXCEPTION ON)
 CPMAddPackage(NAME Ldk SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/..)
-
-CPMAddPackage("gh:ntoskrnl7/FindWDK#master")
-if(CMAKE_VS_PLATFORM_NAME AND CMAKE_GENERATOR_PLATFORM MATCHES ",")
-    # FindWDK derives library names from CMAKE_GENERATOR_PLATFORM and does not
-    # understand Visual Studio's ",version=..." platform option.
-    set(CMAKE_GENERATOR_PLATFORM "${CMAKE_VS_PLATFORM_NAME}")
-endif()
-
-list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
-find_package(WDK REQUIRED)
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/Ldk.cmake")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
@@ -28,9 +19,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 file(GLOB SOURCE_FILES CONFIGURE_DEPENDS ./driver.c ./*/*.c)
 list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/win32/.*")
 
-wdk_add_driver(LdkTest CUSTOM_ENTRY_POINT "LdkDriverEntry" ${SOURCE_FILES})
-
-target_link_libraries(LdkTest Ldk)
+ldk_add_driver(LdkTest ${SOURCE_FILES})
 
 foreach(flag
         CMAKE_C_FLAGS_RELEASE

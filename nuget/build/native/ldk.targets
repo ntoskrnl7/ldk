@@ -12,9 +12,12 @@
     <LdkLibraryConfiguration Condition="'$(LdkLibraryConfiguration)' == ''">Release</LdkLibraryConfiguration>
     <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and $([System.String]::Copy('$(VCToolsVersion)').StartsWith('14.5'))">v145</LdkLibToolset>
     <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and $([System.String]::Copy('$(VCToolsVersion)').StartsWith('14.4'))">v143</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and $([System.String]::Copy('$(VCToolsVersion)').StartsWith('14.2'))">v142</LdkLibToolset>
     <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolsetVersion)' == '145'">v145</LdkLibToolset>
     <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolsetVersion)' == '143'">v143</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolsetVersion)' == '142'">v142</LdkLibToolset>
     <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolset)' == 'v145'">v145</LdkLibToolset>
+    <LdkLibToolset Condition="'$(LdkLibToolset)' == '' and '$(PlatformToolset)' == 'v142'">v142</LdkLibToolset>
     <LdkLibToolset Condition="'$(LdkLibToolset)' == ''">v143</LdkLibToolset>
     <LdkAllowToolsetFallback Condition="'$(LdkAllowToolsetFallback)' == ''">false</LdkAllowToolsetFallback>
     <LdkExactLibDir>$(LdkRoot)lib\native\$(LdkLibToolset)\$(LdkLibPlatform)\$(LdkLibraryConfiguration)\</LdkExactLibDir>
@@ -22,7 +25,7 @@
     <LdkLegacyLibDir>$(LdkRoot)lib\native\$(LdkLibPlatform)\$(LdkLibraryConfiguration)\</LdkLegacyLibDir>
     <LdkLibDir Condition="'$(LdkLibDir)' == ''">$(LdkExactLibDir)</LdkLibDir>
     <LdkLibDir Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkAllowToolsetFallback)' == 'true' and '$(LdkLibToolset)' != 'v143' and !Exists('$(LdkLibDir)Ldk.lib')">$(LdkFallbackLibDir)</LdkLibDir>
-    <LdkLibDir Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkRoot)lib\native\v143\') and !Exists('$(LdkRoot)lib\native\v145\') and Exists('$(LdkLegacyLibDir)Ldk.lib')">$(LdkLegacyLibDir)</LdkLibDir>
+    <LdkLibDir Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkRoot)lib\native\v142\') and !Exists('$(LdkRoot)lib\native\v143\') and !Exists('$(LdkRoot)lib\native\v145\') and Exists('$(LdkLegacyLibDir)Ldk.lib')">$(LdkLegacyLibDir)</LdkLibDir>
     <LdkUseDriverEntry Condition="'$(LdkUseDriverEntry)' == ''">true</LdkUseDriverEntry>
     <LdkDriverPreprocessorDefinitions Condition="'$(LdkDriverPreprocessorDefinitions)' == ''">_KERNEL32_</LdkDriverPreprocessorDefinitions>
   </PropertyGroup>
@@ -30,7 +33,7 @@
   <Target Name="LdkValidateNativePackage" BeforeTargets="PrepareForBuild">
     <Error
       Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkLibPlatform)' != 'x86' and '$(LdkLibPlatform)' != 'x64' and '$(LdkLibPlatform)' != 'ARM' and '$(LdkLibPlatform)' != 'ARM64'"
-      Text="LDK NuGet package contains prebuilt driver libraries for x86, x64, ARM, and ARM64 only. Current platform is '$(Platform)'." />
+      Text="LDK NuGet package contains prebuilt driver libraries for x86, x64, ARM, and ARM64 only, depending on the selected MSVC toolset. Current platform is '$(Platform)'." />
     <Error
       Condition="'$(LdkUseDriverSupport)' == 'true' and '$(LdkExpectedLibToolset)' != '' and '$(LdkLibToolset)' != '$(LdkExpectedLibToolset)'"
       Text="LDK selected MSVC toolset '$(LdkLibToolset)', but the consumer expected '$(LdkExpectedLibToolset)'." />
@@ -56,7 +59,8 @@
     <Link Condition="'$(LdkUseDriverSupport)' == 'true'">
       <AdditionalLibraryDirectories>$(LdkLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>Ldk.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <EntryPointSymbol Condition="'$(LdkUseDriverEntry)' == 'true'">LdkDriverEntry</EntryPointSymbol>
+      <EntryPointSymbol Condition="'$(LdkUseDriverEntry)' == 'true' and '$(LdkLibPlatform)' == 'x86'">LdkDriverEntry@8</EntryPointSymbol>
+      <EntryPointSymbol Condition="'$(LdkUseDriverEntry)' == 'true' and '$(LdkLibPlatform)' != 'x86'">LdkDriverEntry</EntryPointSymbol>
       <AdditionalOptions>/FORCE:MULTIPLE %(AdditionalOptions)</AdditionalOptions>
       <TreatLinkerWarningAsErrors>false</TreatLinkerWarningAsErrors>
     </Link>

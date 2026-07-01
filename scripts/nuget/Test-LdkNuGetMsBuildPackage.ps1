@@ -7,7 +7,7 @@ param(
   [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
   [string] $Architecture = 'x64',
 
-  [ValidateSet('v143', 'v145')]
+  [ValidateSet('v142', 'v143', 'v145')]
   [string] $Toolset = 'v143',
 
   [ValidateSet('Debug', 'Release')]
@@ -74,7 +74,32 @@ function Resolve-MsBuildPath {
   throw "MSBuild.exe for $Toolset was not found."
 }
 
-function Test-LdkWdkLayout {
+function Test-LdkWdkIncludeLayout {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $WindowsKitsRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string] $Version
+  )
+
+  $includeRoot = Join-Path $WindowsKitsRoot "Include\$Version"
+  $requiredPaths = @(
+    (Join-Path $includeRoot 'shared\ntdef.h'),
+    (Join-Path $includeRoot 'km\ntddk.h'),
+    (Join-Path $includeRoot 'km\crt\stddef.h')
+  )
+
+  foreach ($requiredPath in $requiredPaths) {
+    if (-not (Test-Path $requiredPath)) {
+      return $false
+    }
+  }
+
+  return $true
+}
+
+function Test-LdkWdkLibLayout {
   param(
     [Parameter(Mandatory = $true)]
     [string] $WindowsKitsRoot,
@@ -86,41 +111,45 @@ function Test-LdkWdkLayout {
     [string] $WdkLibArchitecture
   )
 
-  $includeRoot = Join-Path $WindowsKitsRoot "Include\$Version"
-  $libDirectory = Join-Path $WindowsKitsRoot "Lib\$Version\km\$WdkLibArchitecture"
-  $requiredPaths = @(
-    (Join-Path $includeRoot 'shared\ntdef.h'),
-    (Join-Path $includeRoot 'km\ntddk.h'),
-    (Join-Path $includeRoot 'km\crt\stddef.h'),
-    (Join-Path $libDirectory 'ntoskrnl.lib'),
-    (Join-Path $libDirectory 'hal.lib'),
-    (Join-Path $libDirectory 'wmilib.lib')
+  $ntoskrnl = Join-Path $WindowsKitsRoot "Lib\$Version\km\$WdkLibArchitecture\ntoskrnl.lib"
+  return (Test-Path $ntoskrnl)
+}
+
+function Resolve-LdkWdkIncludeVersion {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $WindowsKitsRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string] $PreferredVersion
   )
 
-  foreach ($requiredPath in $requiredPaths) {
-    if (-not (Test-Path $requiredPath)) {
-      return $false
+  $candidateVersions = @()
+  if (-not [string]::IsNullOrWhiteSpace($PreferredVersion)) {
+    $candidateVersions += $PreferredVersion
+  }
+
+  $includeRoot = Join-Path $WindowsKitsRoot 'Include'
+  if (Test-Path $includeRoot) {
+    $candidateVersions += @(
+      Get-ChildItem -Path $includeRoot -Directory |
+        Where-Object {
+          $parsedVersion = $null
+          [version]::TryParse($_.Name, [ref]$parsedVersion)
+        } |
+        ForEach-Object { $_.Name } |
+        Sort-Object { [version]$_ } -Descending
+    )
+  }
+
+  $candidateVersions = @($candidateVersions | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+  foreach ($candidateVersion in $candidateVersions) {
+    if (Test-LdkWdkIncludeLayout -WindowsKitsRoot $WindowsKitsRoot -Version $candidateVersion) {
+      return $candidateVersion
     }
   }
 
-  $hasSecurityRuntime = $false
-  foreach ($securityRuntime in @('BufferOverflowK.lib', 'bufferoverflowfastfailk.lib')) {
-    if (Test-Path (Join-Path $libDirectory $securityRuntime)) {
-      $hasSecurityRuntime = $true
-      break
-    }
-  }
-
-  if (-not $hasSecurityRuntime) {
-    return $false
-  }
-
-  if (($WdkLibArchitecture -eq 'arm' -or $WdkLibArchitecture -eq 'arm64') -and
-      -not (Test-Path (Join-Path $libDirectory 'libcntpr.lib'))) {
-    return $false
-  }
-
-  return $true
+  return $null
 }
 
 function Resolve-LdkWdkLayout {
@@ -157,8 +186,13 @@ function Resolve-LdkWdkLayout {
 
     $candidateVersions = @($candidateVersions | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
     foreach ($candidateVersion in $candidateVersions) {
-      if (Test-LdkWdkLayout -WindowsKitsRoot $windowsKitsRoot -Version $candidateVersion -WdkLibArchitecture $WdkLibArchitecture) {
-        $includeRoot = Join-Path $windowsKitsRoot "Include\$candidateVersion"
+      if (Test-LdkWdkLibLayout -WindowsKitsRoot $windowsKitsRoot -Version $candidateVersion -WdkLibArchitecture $WdkLibArchitecture) {
+        $includeVersion = Resolve-LdkWdkIncludeVersion -WindowsKitsRoot $windowsKitsRoot -PreferredVersion $candidateVersion
+        if (-not $includeVersion) {
+          continue
+        }
+
+        $includeRoot = Join-Path $windowsKitsRoot "Include\$includeVersion"
         $libDirectory = Join-Path $windowsKitsRoot "Lib\$candidateVersion\km\$WdkLibArchitecture"
         $securityRuntimePath = $null
         foreach ($securityRuntime in @('BufferOverflowK.lib', 'bufferoverflowfastfailk.lib')) {
@@ -169,13 +203,21 @@ function Resolve-LdkWdkLayout {
           }
         }
 
-        $runtimeLibraryPaths = @($securityRuntimePath)
+        $runtimeLibraryPaths = @()
+        if ($securityRuntimePath) {
+          $runtimeLibraryPaths += $securityRuntimePath
+        }
+
         if ($WdkLibArchitecture -eq 'arm' -or $WdkLibArchitecture -eq 'arm64') {
-          $runtimeLibraryPaths += (Join-Path $libDirectory 'libcntpr.lib')
+          $compilerRuntimePath = Join-Path $libDirectory 'libcntpr.lib'
+          if (Test-Path $compilerRuntimePath) {
+            $runtimeLibraryPaths += $compilerRuntimePath
+          }
         }
 
         return [pscustomobject]@{
           Version = $candidateVersion
+          IncludeVersion = $includeVersion
           IncludeRoot = $includeRoot
           LibDirectory = $libDirectory
           RuntimeLibraryPaths = $runtimeLibraryPaths
@@ -198,7 +240,7 @@ if ([string]::IsNullOrWhiteSpace($WorkDirectory)) {
 }
 
 if ($Toolset -eq 'v145' -and $Architecture -eq 'ARM') {
-  throw "Visual Studio 18 2026 does not provide the 32-bit ARM target in the tested Build Tools layout. Test ARM with v143, or omit ARM for v145."
+  throw "Visual Studio 18 2026 / v145 does not provide the 32-bit ARM target in the tested Build Tools layout. Test ARM with v142 or v143, or omit ARM for v145."
 }
 
 $PackageDirectory = (Resolve-Path $PackageDirectory).Path
@@ -270,8 +312,11 @@ $wdkLayout = Resolve-LdkWdkLayout `
 if ($wdkLayout.Version -ne $WindowsSdkVersion) {
   Write-Host "Requested WDK $WindowsSdkVersion was not usable for $Architecture. Using WDK $($wdkLayout.Version)."
 }
+if ($wdkLayout.IncludeVersion -ne $wdkLayout.Version) {
+  Write-Host "Using WDK $($wdkLayout.IncludeVersion) headers with WDK $($wdkLayout.Version) $Architecture libraries."
+}
 
-$WindowsSdkVersion = $wdkLayout.Version
+$WindowsSdkVersion = $wdkLayout.IncludeVersion
 $wdkIncludeRoot = $wdkLayout.IncludeRoot
 $wdkLibDirectory = $wdkLayout.LibDirectory
 $msbuild = Resolve-MsBuildPath -Toolset $Toolset
@@ -332,9 +377,11 @@ $mainPath = Join-Path $projectDirectory 'main.c'
 $sharedInclude = ConvertTo-XmlEscapedText (Join-Path $wdkIncludeRoot 'shared')
 $kmInclude = ConvertTo-XmlEscapedText (Join-Path $wdkIncludeRoot 'km')
 $kmCrtInclude = ConvertTo-XmlEscapedText (Join-Path $wdkIncludeRoot 'km\crt')
-$ntoskrnlLib = ConvertTo-XmlEscapedText (Join-Path $wdkLibDirectory 'ntoskrnl.lib')
-$halLib = ConvertTo-XmlEscapedText (Join-Path $wdkLibDirectory 'hal.lib')
-$wmilibLib = ConvertTo-XmlEscapedText (Join-Path $wdkLibDirectory 'wmilib.lib')
+$kernelLibraries = @('ntoskrnl.lib', 'hal.lib', 'wmilib.lib') |
+  ForEach-Object { Join-Path $wdkLibDirectory $_ } |
+  Where-Object { Test-Path $_ } |
+  ForEach-Object { ConvertTo-XmlEscapedText $_ }
+$kernelLibraryDependencies = $kernelLibraries -join ';'
 $runtimeLibraries = @($wdkLayout.RuntimeLibraryPaths | ForEach-Object { ConvertTo-XmlEscapedText $_ })
 $runtimeLibraryDependencies = $runtimeLibraries -join ';'
 $escapedWindowsSdkVersion = ConvertTo-XmlEscapedText $WindowsSdkVersion
@@ -385,11 +432,12 @@ $vcxproj = @"
       <PreprocessorDefinitions>$escapedArchitectureDefines;WINNT=1;_WIN32_WINNT=0x0601;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>%(AdditionalOptions) /kernel</AdditionalOptions>
       <RuntimeLibrary>$runtimeLibrary</RuntimeLibrary>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
       <WarningLevel>Level3</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$ntoskrnlLib;$halLib;$wmilibLib;$runtimeLibraryDependencies;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$kernelLibraryDependencies;$runtimeLibraryDependencies;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <SubSystem>Native</SubSystem>
       <AdditionalOptions>%(AdditionalOptions) /DRIVER /MACHINE:$machine</AdditionalOptions>
@@ -420,6 +468,7 @@ DriverUnload(
 }
 
 NTSTATUS
+NTAPI
 DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath

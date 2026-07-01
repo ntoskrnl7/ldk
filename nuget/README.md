@@ -72,6 +72,7 @@ Prebuilt libraries are grouped by MSVC platform toolset, for example
 
 Prebuilt libraries currently target:
 
+- `v142`: `x86`, `x64`, `ARM`, and `ARM64`
 - `v143`: `x86`, `x64`, `ARM`, and `ARM64`
 - `v145`: `x86`, `x64`, and `ARM64`
 - `Debug` and `Release`
