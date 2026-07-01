@@ -119,14 +119,12 @@ SetLocalTime(
     _In_ CONST SYSTEMTIME* lpSystemTime
     );
 
-#if (NTDDI_VERSION >= NTDDI_WIN8)
 WINBASEAPI
 VOID
 WINAPI
 GetSystemTimePreciseAsFileTime(
     _Out_ LPFILETIME lpSystemTimeAsFileTime
     );
-#endif
 
 WINBASEAPI
 VOID

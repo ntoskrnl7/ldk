@@ -37,15 +37,6 @@ LdkpInitializeSListHead (
 	InitializeSListHead( SListHead );
 }
 
-#if (NTDDI_VERSION < NTDDI_WIN8)
-WINBASEAPI
-VOID
-WINAPI
-GetSystemTimePreciseAsFileTime(
-    _Out_ LPFILETIME lpSystemTimeAsFileTime
-    );
-#endif
-
 
 #pragma warning(disable:4152)
 LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
