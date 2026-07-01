@@ -154,6 +154,15 @@ typedef struct _THREADPOOL_FINALIZATION_CONTEXT {
     PVOID ExpectedContext;
 } THREADPOOL_FINALIZATION_CONTEXT, *PTHREADPOOL_FINALIZATION_CONTEXT;
 
+BOOLEAN
+ThreadPoolTestWaitForFinalizationContext (
+    _In_ PTHREADPOOL_FINALIZATION_CONTEXT FinalizationContext
+    );
+
+#ifdef ALLOC_PRAGMA
+#pragma alloc_text(PAGE, ThreadPoolTestWaitForFinalizationContext)
+#endif
+
 typedef struct _THREADPOOL_CLEANUP_GROUP_CONTEXT {
     LONG WorkCallbacks;
     LONG CleanupCallbacks;
@@ -478,6 +487,43 @@ ThreadPoolTestRelativeFileTime (
 }
 
 BOOLEAN
+ThreadPoolTestWaitForFinalizationContext (
+    _In_ PTHREADPOOL_FINALIZATION_CONTEXT FinalizationContext
+    )
+{
+    PAGED_CODE();
+
+    //
+    // Native Win32 x86 can observe the work callback as complete before the
+    // callback-environment finalization callback is visible to this thread.
+    // The test still requires the finalization callback and its context to be
+    // delivered; it just gives the real threadpool implementation a bounded
+    // scheduling window before reading the counters.
+    //
+    for (ULONG Attempt = 0; Attempt < 100; ++Attempt) {
+        LONG WorkCallbacks = InterlockedCompareExchange( &FinalizationContext->WorkCallbacks,
+                                                         0,
+                                                         0 );
+        LONG FinalizationCallbacks = InterlockedCompareExchange( &FinalizationContext->FinalizationCallbacks,
+                                                                 0,
+                                                                 0 );
+        LONG ContextMatches = InterlockedCompareExchange( &FinalizationContext->ContextMatches,
+                                                          0,
+                                                          0 );
+
+        if (WorkCallbacks == 1 &&
+            FinalizationCallbacks == 1 &&
+            ContextMatches == 1) {
+            return TRUE;
+        }
+
+        Sleep( 1 );
+    }
+
+    return FALSE;
+}
+
+BOOLEAN
 ThreadpoolWorkTimerWaitCleanupGroupTest (
     VOID
     )
@@ -737,9 +783,7 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
     work = NULL;
     TpDestroyCallbackEnviron( &CallbackEnvironment );
 
-    if (FinalizationContext.WorkCallbacks != 1 ||
-        FinalizationContext.FinalizationCallbacks != 1 ||
-        FinalizationContext.ContextMatches != 1) {
+    if (!ThreadPoolTestWaitForFinalizationContext( &FinalizationContext )) {
         DbgPrint("[Failed] Threadpool finalization callback Work = %ld Finalization = %ld Context = %ld\n",
                  FinalizationContext.WorkCallbacks,
                  FinalizationContext.FinalizationCallbacks,
