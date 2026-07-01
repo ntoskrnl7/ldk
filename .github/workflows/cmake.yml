@@ -81,6 +81,53 @@ jobs:
           Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -Directory |
             Select-Object -ExpandProperty Name
 
+      - name: Install WDK for VS2026 image
+        shell: pwsh
+        run: |
+          function Find-NtDdk {
+            $roots = @(
+              "${env:ProgramFiles(x86)}\Windows Kits\10\Include",
+              "${env:ProgramFiles}\Windows Kits\10\Include"
+            )
+
+            foreach ($root in $roots) {
+              if (Test-Path $root) {
+                $match = Get-ChildItem -Path $root -Filter ntddk.h -Recurse -File -ErrorAction SilentlyContinue |
+                  Sort-Object FullName |
+                  Select-Object -Last 1
+                if ($match) {
+                  return $match
+                }
+              }
+            }
+
+            return $null
+          }
+
+          $ntddk = Find-NtDdk
+          if (-not $ntddk) {
+            Write-Host "WDK ntddk.h was not found on the VS2026 image. Installing WDK 10.0.26100 with WinGet."
+            winget install `
+              --exact `
+              --id Microsoft.WindowsWDK.10.0.26100 `
+              --source winget `
+              --silent `
+              --accept-package-agreements `
+              --accept-source-agreements `
+              --disable-interactivity
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "WDK installation failed with exit code $LASTEXITCODE."
+            }
+          }
+
+          $ntddk = Find-NtDdk
+          if (-not $ntddk) {
+            throw "WDK ntddk.h was not found after WDK installation."
+          }
+
+          Write-Host "Found WDK ntddk.h: $($ntddk.FullName)"
+
       - name: Build library
         shell: pwsh
         run: |
