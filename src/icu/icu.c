@@ -478,14 +478,14 @@ LDK_FUNCTION_REGISTRATION LdkpIcuFunctionRegistration[] = {
     { "ucal_getDefaultTimeZone", LdkpIcuUcalGetDefaultTimeZone },
     { "ucal_getTimeZoneDisplayName", LdkpIcuUcalGetTimeZoneDisplayName },
     { "ucal_getTimeZoneTransitionDate", LdkpIcuUcalGetTimeZoneTransitionDate },
-    { "ucal_getTZDataVersion", LdkpIcuUcalGetTZDataVersion },
+    { "ucal_getTZDataVersion", (PVOID)LdkpIcuUcalGetTZDataVersion },
     { "ucal_inDaylightTime", LdkpIcuUcalInDaylightTime },
     { "ucal_open", LdkpIcuUcalOpen },
     { "ucal_openTimeZoneIDEnumeration", LdkpIcuUcalOpenTimeZoneIDEnumeration },
     { "ucal_setMillis", LdkpIcuUcalSetMillis },
     { "uenum_close", LdkpIcuUenumClose },
     { "uenum_count", LdkpIcuUenumCount },
-    { "uenum_unext", LdkpIcuUenumUnext },
+    { "uenum_unext", (PVOID)LdkpIcuUenumUnext },
     { NULL, NULL }
 };
 #pragma warning(default:4152)
