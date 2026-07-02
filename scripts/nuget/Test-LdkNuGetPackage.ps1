@@ -7,7 +7,7 @@ param(
   [ValidateSet('x86', 'x64', 'ARM', 'ARM64')]
   [string] $Architecture = 'x64',
 
-  [ValidateSet('v143', 'v145')]
+  [ValidateSet('v142', 'v143', 'v145')]
   [string] $Toolset = 'v143',
 
   [ValidateSet('Debug', 'Release')]
@@ -66,12 +66,19 @@ $platformByArchitecture = @{
 }
 
 $generatorByToolset = @{
+  v142 = 'Visual Studio 17 2022'
   v143 = 'Visual Studio 17 2022'
   v145 = 'Visual Studio 18 2026'
 }
 
+$generatorToolsetByToolset = @{
+  v142 = 'v142,host=x64'
+  v143 = 'host=x64'
+  v145 = 'host=x64'
+}
+
 if ($Toolset -eq 'v145' -and $Architecture -eq 'ARM') {
-  throw "Visual Studio 18 2026 does not provide the 32-bit ARM generator platform in the tested Build Tools layout. Test ARM with v143, or omit ARM when testing v145 libraries."
+  throw "Visual Studio 18 2026 / v145 does not provide the 32-bit ARM generator platform in the tested Build Tools layout. Test ARM with v142 or v143, or omit ARM when testing v145 libraries."
 }
 
 $platform = $platformByArchitecture[$Architecture]
@@ -174,6 +181,7 @@ DriverUnload(
 }
 
 NTSTATUS
+NTAPI
 DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
@@ -198,7 +206,7 @@ $configureArgs = @(
   '-B', $buildDirectory,
   '-G', $generatorByToolset[$Toolset],
   '-A', $platform,
-  '-T', 'host=x64',
+  '-T', $generatorToolsetByToolset[$Toolset],
   "-DLDK_WDK_VERSION=$WindowsSdkVersion",
   "-DCMAKE_SYSTEM_VERSION=$WindowsSdkVersion",
   "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$WindowsSdkVersion",

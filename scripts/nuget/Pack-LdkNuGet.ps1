@@ -36,8 +36,8 @@ if ($Toolset.Count -eq 0) {
   throw "At least one LDK prebuilt MSVC toolset must be specified."
 }
 foreach ($selectedToolset in $Toolset) {
-  if ($selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
-    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v143 and v145."
+  if ($selectedToolset -ne 'v142' -and $selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
+    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v142, v143, and v145."
   }
 }
 

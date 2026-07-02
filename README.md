@@ -106,11 +106,12 @@ imports, and CMake helpers.
 
 Current prebuilt toolset coverage is:
 
+- `v142`: `x86`, `x64`, `ARM`, and `ARM64`
 - `v143`: `x86`, `x64`, `ARM`, and `ARM64`
 - `v145`: `x86`, `x64`, and `ARM64`
 
-Visual Studio 2026 / v145 no longer targets 32-bit ARM, so `lib/native/v145/ARM`
-is intentionally not published.
+Visual Studio 2026 / v145 no longer targets 32-bit ARM, so
+`lib/native/v145/ARM` is intentionally not published.
 
 ### CMake / CPM
 
@@ -265,8 +266,8 @@ Additional implementation and test notes live under [`docs/`](docs/).
 The `Package` GitHub Actions workflow builds prebuilt Debug/Release libraries
 under a toolset-specific package layout, packs the `ldk` NuGet package,
 validates the package with minimal WDK consumer drivers, and prepares GitHub
-Release assets. v143 packages cover x86/x64/ARM/ARM64; v145 packages cover
-x86/x64/ARM64 because Visual Studio 2026 no longer targets 32-bit ARM.
+Release assets. v142 packages cover x86/x64/ARM/ARM64, v143 packages cover
+x86/x64/ARM/ARM64, and v145 packages cover x86/x64/ARM64.
 
 The `Release` workflow is the publishing entry point. It updates
 `include/Ldk/internal/version.h`, creates a `v<version>` tag, then dispatches

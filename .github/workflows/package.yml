@@ -87,20 +87,26 @@ jobs:
           Write-Host "Package version: $version"
 
   build-libs:
-    name: Build NuGet libs ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
+    name: Build NuGet libs ${{ matrix.vs_label }} ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
     needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        toolset: [v143, v145]
+        toolset: [v142, v143, v145]
         arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
         include:
+          - toolset: v142
+            vs_label: VS2019
+            runner: windows-2022
+            windows_sdk: 10.0.22621.0
           - toolset: v143
+            vs_label: VS2022
             runner: windows-2022
             windows_sdk: 10.0.22621.0
           - toolset: v145
+            vs_label: VS2026
             runner: windows-2025-vs2026
             windows_sdk: 10.0.26100.0
         exclude:
@@ -114,6 +120,16 @@ jobs:
         if: ${{ matrix.toolset == 'v145' }}
         shell: pwsh
         run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+
+      - name: Ensure WDK for x86
+        if: ${{ matrix.arch == 'x86' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms x86
+
+      - name: Ensure WDK for ARM32
+        if: ${{ matrix.arch == 'ARM' && matrix.toolset != 'v145' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}' -RequiredPlatforms ARM
 
       - name: Build prebuilt libraries
         shell: pwsh
@@ -213,11 +229,11 @@ jobs:
 
       - name: Pack
         shell: pwsh
-        run: ./scripts/nuget/Pack-LdkNuGet.ps1 -Version '${{ steps.version.outputs.package_version }}' -Toolset v143,v145
+        run: ./scripts/nuget/Pack-LdkNuGet.ps1 -Version '${{ steps.version.outputs.package_version }}' -Toolset v142,v143,v145
 
       - name: Pack GitHub release assets
         shell: pwsh
-        run: ./scripts/nuget/Pack-LdkReleaseAssets.ps1 -Version '${{ steps.version.outputs.package_version }}' -Toolset v143,v145
+        run: ./scripts/nuget/Pack-LdkReleaseAssets.ps1 -Version '${{ steps.version.outputs.package_version }}' -Toolset v142,v143,v145
 
       - uses: actions/upload-artifact@v7
         with:
@@ -232,22 +248,31 @@ jobs:
           if-no-files-found: error
 
   test-package-driver:
-    name: Test NuGet driver package ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
+    name: Test NuGet driver package ${{ matrix.vs_label }} ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
     needs: pack
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        toolset: [v143, v145]
-        arch: [x64, ARM64]
+        toolset: [v142, v143, v145]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
         include:
+          - toolset: v142
+            vs_label: VS2019
+            runner: windows-2022
+            windows_sdk: 10.0.22621.0
           - toolset: v143
+            vs_label: VS2022
             runner: windows-2022
             windows_sdk: 10.0.22621.0
           - toolset: v145
+            vs_label: VS2026
             runner: windows-2025-vs2026
             windows_sdk: 10.0.26100.0
+        exclude:
+          - toolset: v145
+            arch: ARM
 
     steps:
       - uses: actions/checkout@v5
@@ -258,6 +283,26 @@ jobs:
         if: ${{ matrix.toolset == 'v145' }}
         shell: pwsh
         run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+
+      - name: Ensure WDK for x86
+        if: ${{ matrix.arch == 'x86' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms x86
+
+      - name: Ensure WDK for ARM32
+        if: ${{ matrix.arch == 'ARM' && matrix.toolset != 'v145' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}' -RequiredPlatforms ARM
+
+      - name: Select consumer WDK
+        id: consumer-wdk
+        shell: pwsh
+        run: |
+          $version = '${{ matrix.windows_sdk }}'
+          if ('${{ matrix.arch }}' -eq 'x86') {
+            $version = '10.0.22621.0'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v7
         with:
@@ -273,25 +318,34 @@ jobs:
           -Toolset '${{ matrix.toolset }}'
           -Architecture '${{ matrix.arch }}'
           -Configuration '${{ matrix.config }}'
-          -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+          -WindowsSdkVersion '${{ steps.consumer-wdk.outputs.version }}'
 
   test-package-msbuild:
-    name: Test NuGet MSBuild package ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
+    name: Test NuGet MSBuild package ${{ matrix.vs_label }} ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
     needs: pack
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        toolset: [v143, v145]
-        arch: [x64, ARM64]
+        toolset: [v142, v143, v145]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
         include:
+          - toolset: v142
+            vs_label: VS2019
+            runner: windows-2022
+            windows_sdk: 10.0.22621.0
           - toolset: v143
+            vs_label: VS2022
             runner: windows-2022
             windows_sdk: 10.0.22621.0
           - toolset: v145
+            vs_label: VS2026
             runner: windows-2025-vs2026
             windows_sdk: 10.0.26100.0
+        exclude:
+          - toolset: v145
+            arch: ARM
 
     steps:
       - uses: actions/checkout@v5
@@ -302,6 +356,26 @@ jobs:
         if: ${{ matrix.toolset == 'v145' }}
         shell: pwsh
         run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+
+      - name: Ensure WDK for x86
+        if: ${{ matrix.arch == 'x86' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms x86
+
+      - name: Ensure WDK for ARM32
+        if: ${{ matrix.arch == 'ARM' && matrix.toolset != 'v145' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}' -RequiredPlatforms ARM
+
+      - name: Select consumer WDK
+        id: consumer-wdk
+        shell: pwsh
+        run: |
+          $version = '${{ matrix.windows_sdk }}'
+          if ('${{ matrix.arch }}' -eq 'x86') {
+            $version = '10.0.22621.0'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v7
         with:
@@ -317,18 +391,25 @@ jobs:
           -Toolset '${{ matrix.toolset }}'
           -Architecture '${{ matrix.arch }}'
           -Configuration '${{ matrix.config }}'
-          -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+          -WindowsSdkVersion '${{ steps.consumer-wdk.outputs.version }}'
 
   test-package-layout:
-    name: Validate NuGet package layout ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
+    name: Validate NuGet package layout ${{ matrix.vs_label }} ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
     needs: pack
     runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
-        toolset: [v143, v145]
-        arch: [x86, ARM]
+        toolset: [v142, v143, v145]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
+        include:
+          - toolset: v142
+            vs_label: VS2019
+          - toolset: v143
+            vs_label: VS2022
+          - toolset: v145
+            vs_label: VS2026
         exclude:
           - toolset: v145
             arch: ARM
@@ -355,22 +436,31 @@ jobs:
           -SkipDriverBuild
 
   test-release-prebuilt-cmake:
-    name: Test release prebuilt CMake asset ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
+    name: Test release prebuilt CMake asset ${{ matrix.vs_label }} ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
     needs: pack
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        toolset: [v143, v145]
-        arch: [x64, ARM64]
+        toolset: [v142, v143, v145]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
         include:
+          - toolset: v142
+            vs_label: VS2019
+            runner: windows-2022
+            windows_sdk: 10.0.22621.0
           - toolset: v143
+            vs_label: VS2022
             runner: windows-2022
             windows_sdk: 10.0.22621.0
           - toolset: v145
+            vs_label: VS2026
             runner: windows-2025-vs2026
             windows_sdk: 10.0.26100.0
+        exclude:
+          - toolset: v145
+            arch: ARM
 
     steps:
       - uses: actions/checkout@v5
@@ -379,6 +469,26 @@ jobs:
         if: ${{ matrix.toolset == 'v145' }}
         shell: pwsh
         run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+
+      - name: Ensure WDK for x86
+        if: ${{ matrix.arch == 'x86' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '10.0.22621.0' -RequiredPlatforms x86
+
+      - name: Ensure WDK for ARM32
+        if: ${{ matrix.arch == 'ARM' && matrix.toolset != 'v145' }}
+        shell: pwsh
+        run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}' -RequiredPlatforms ARM
+
+      - name: Select consumer WDK
+        id: consumer-wdk
+        shell: pwsh
+        run: |
+          $version = '${{ matrix.windows_sdk }}'
+          if ('${{ matrix.arch }}' -eq 'x86') {
+            $version = '10.0.22621.0'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
 
       - uses: actions/download-artifact@v7
         with:
@@ -394,18 +504,25 @@ jobs:
           -Toolset '${{ matrix.toolset }}'
           -Architecture '${{ matrix.arch }}'
           -Configuration '${{ matrix.config }}'
-          -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+          -WindowsSdkVersion '${{ steps.consumer-wdk.outputs.version }}'
 
   test-release-prebuilt-layout:
-    name: Validate release prebuilt layout ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
+    name: Validate release prebuilt layout ${{ matrix.vs_label }} ${{ matrix.toolset }} ${{ matrix.arch }} ${{ matrix.config }}
     needs: pack
     runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
-        toolset: [v143, v145]
-        arch: [x86, ARM]
+        toolset: [v142, v143, v145]
+        arch: [x86, x64, ARM, ARM64]
         config: [Debug, Release]
+        include:
+          - toolset: v142
+            vs_label: VS2019
+          - toolset: v143
+            vs_label: VS2022
+          - toolset: v145
+            vs_label: VS2026
         exclude:
           - toolset: v145
             arch: ARM
@@ -513,7 +630,7 @@ jobs:
               "LDK $version release assets."
               ""
               "- ldk.$version.nupkg: offline NuGet package"
-              "- ldk-$version-prebuilt.zip: headers, docs, CMake helpers/package config, native MSBuild imports, and toolset-specific prebuilt libraries (v143 x86/x64/ARM/ARM64, v145 x86/x64/ARM64)"
+              "- ldk-$version-prebuilt.zip: headers, docs, CMake helpers/package config, native MSBuild imports, and toolset-specific prebuilt libraries (v142 x86/x64/ARM/ARM64, v143 x86/x64/ARM/ARM64, v145 x86/x64/ARM64)"
               "- ldk-$version-SHA256SUMS.txt: SHA-256 checksums"
             ) -join [Environment]::NewLine
             & gh release create $tagName @assets --repo $repo --target '${{ github.sha }}' --title "LDK $version" --notes $notes

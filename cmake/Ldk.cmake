@@ -57,7 +57,20 @@ list(APPEND CMAKE_MODULE_PATH "${FindWDK_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 
 function(ldk_import_wdk_libraries _version _out_imported)
-    file(GLOB _ldk_wdk_libraries "${WDK_ROOT}/Lib/${_version}/km/${WDK_PLATFORM}/*.lib")
+    set(_ldk_wdk_platform_candidates "${WDK_PLATFORM}")
+    string(TOLOWER "${WDK_PLATFORM}" _ldk_wdk_platform_lower)
+    string(TOUPPER "${WDK_PLATFORM}" _ldk_wdk_platform_upper)
+    list(APPEND _ldk_wdk_platform_candidates
+        "${_ldk_wdk_platform_lower}"
+        "${_ldk_wdk_platform_upper}")
+    list(REMOVE_DUPLICATES _ldk_wdk_platform_candidates)
+
+    set(_ldk_wdk_libraries)
+    foreach(_ldk_wdk_platform IN LISTS _ldk_wdk_platform_candidates)
+        file(GLOB _ldk_wdk_platform_libraries "${WDK_ROOT}/Lib/${_version}/km/${_ldk_wdk_platform}/*.lib")
+        list(APPEND _ldk_wdk_libraries ${_ldk_wdk_platform_libraries})
+    endforeach()
+    list(REMOVE_DUPLICATES _ldk_wdk_libraries)
     if(NOT _ldk_wdk_libraries)
         set(${_out_imported} OFF PARENT_SCOPE)
         return()
@@ -78,7 +91,21 @@ function(ldk_import_wdk_libraries _version _out_imported)
 endfunction()
 
 function(ldk_get_installed_wdk_library_versions _out_versions)
-    file(GLOB _ldk_wdk_library_dirs LIST_DIRECTORIES true "${WDK_ROOT}/Lib/*/km/${WDK_PLATFORM}")
+    set(_ldk_wdk_platform_candidates "${WDK_PLATFORM}")
+    string(TOLOWER "${WDK_PLATFORM}" _ldk_wdk_platform_lower)
+    string(TOUPPER "${WDK_PLATFORM}" _ldk_wdk_platform_upper)
+    list(APPEND _ldk_wdk_platform_candidates
+        "${_ldk_wdk_platform_lower}"
+        "${_ldk_wdk_platform_upper}")
+    list(REMOVE_DUPLICATES _ldk_wdk_platform_candidates)
+
+    set(_ldk_wdk_library_dirs)
+    foreach(_ldk_wdk_platform IN LISTS _ldk_wdk_platform_candidates)
+        file(GLOB _ldk_wdk_platform_library_dirs LIST_DIRECTORIES true "${WDK_ROOT}/Lib/*/km/${_ldk_wdk_platform}")
+        list(APPEND _ldk_wdk_library_dirs ${_ldk_wdk_platform_library_dirs})
+    endforeach()
+    list(REMOVE_DUPLICATES _ldk_wdk_library_dirs)
+
     set(_versions)
 
     foreach(_library_dir IN LISTS _ldk_wdk_library_dirs)
@@ -157,11 +184,11 @@ function(ldk_get_prebuilt_toolset _out_toolset)
     elseif(DEFINED CMAKE_VS_PLATFORM_TOOLSET AND CMAKE_VS_PLATFORM_TOOLSET MATCHES "^v[0-9]+$")
         set(_toolset "${CMAKE_VS_PLATFORM_TOOLSET}")
     else()
-        message(FATAL_ERROR "Unable to determine the LDK prebuilt MSVC toolset. Set LDK_PREBUILT_TOOLSET to v143 or v145.")
+        message(FATAL_ERROR "Unable to determine the LDK prebuilt MSVC toolset. Set LDK_PREBUILT_TOOLSET to v142, v143, or v145.")
     endif()
 
-    if(NOT "${_toolset}" STREQUAL "v143" AND NOT "${_toolset}" STREQUAL "v145")
-        message(FATAL_ERROR "Unsupported LDK prebuilt MSVC toolset: ${_toolset}. Supported toolsets are v143 and v145.")
+    if(NOT "${_toolset}" STREQUAL "v142" AND NOT "${_toolset}" STREQUAL "v143" AND NOT "${_toolset}" STREQUAL "v145")
+        message(FATAL_ERROR "Unsupported LDK prebuilt MSVC toolset: ${_toolset}. Supported toolsets are v142, v143, and v145.")
     endif()
 
     set(${_out_toolset} "${_toolset}" PARENT_SCOPE)
@@ -178,7 +205,7 @@ function(ldk_get_prebuilt_library _out_path _configuration)
     endif()
 
     set(_has_toolset_layout OFF)
-    foreach(_known_toolset IN ITEMS v143 v145)
+    foreach(_known_toolset IN ITEMS v142 v143 v145)
         if(EXISTS "${_LDK_ROOT}/lib/native/${_known_toolset}")
             set(_has_toolset_layout ON)
         endif()

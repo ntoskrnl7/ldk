@@ -30,8 +30,8 @@ if ($Toolset.Count -eq 0) {
   throw "At least one LDK prebuilt MSVC toolset must be specified."
 }
 foreach ($selectedToolset in $Toolset) {
-  if ($selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
-    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v143 and v145."
+  if ($selectedToolset -ne 'v142' -and $selectedToolset -ne 'v143' -and $selectedToolset -ne 'v145') {
+    throw "Unsupported LDK prebuilt MSVC toolset: $selectedToolset. Supported toolsets are v142, v143, and v145."
   }
 }
 
@@ -43,8 +43,15 @@ $platformByArchitecture = @{
 }
 
 $generatorByToolset = @{
+  v142 = 'Visual Studio 17 2022'
   v143 = 'Visual Studio 17 2022'
   v145 = 'Visual Studio 18 2026'
+}
+
+$generatorToolsetByToolset = @{
+  v142 = 'v142,host=x64'
+  v143 = 'host=x64'
+  v145 = 'host=x64'
 }
 
 function Test-LdkToolsetArchitecture {
@@ -62,7 +69,7 @@ function Test-LdkToolsetArchitecture {
 foreach ($selectedToolset in $Toolset) {
   foreach ($arch in $Architecture) {
     if (-not (Test-LdkToolsetArchitecture -MsvcToolset $selectedToolset -Architecture $arch)) {
-      $message = "Visual Studio 18 2026 / v145 does not support the 32-bit ARM target platform. Build ARM with v143, or omit ARM when staging v145 libraries."
+      $message = "Visual Studio 18 2026 / v145 does not support the 32-bit ARM target platform. Build ARM with v142 or v143, or omit ARM when staging v145 libraries."
       if ($Toolset.Count -eq 1 -and $Architecture.Count -eq 1) {
         throw $message
       }
@@ -91,7 +98,7 @@ foreach ($selectedToolset in $Toolset) {
       '-B', $buildDir,
       '-G', $generatorByToolset[$selectedToolset],
       '-A', $platform,
-      '-T', 'host=x64',
+      '-T', $generatorToolsetByToolset[$selectedToolset],
       "-DLDK_WDK_VERSION=$WindowsSdkVersion",
       "-DCMAKE_SYSTEM_VERSION=$WindowsSdkVersion",
       "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$WindowsSdkVersion",
