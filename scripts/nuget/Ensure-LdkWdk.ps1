@@ -76,6 +76,27 @@ function Test-LdkWdkVersion {
   return $true
 }
 
+function Test-LdkWdkAvailable {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]] $KitRoots,
+
+    [Parameter(Mandatory = $true)]
+    [string] $Version,
+
+    [Parameter(Mandatory = $true)]
+    [string[]] $Platforms
+  )
+
+  foreach ($kitRoot in $KitRoots) {
+    if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $Version -Platforms $Platforms)) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
 function Get-LdkWdkInstaller {
   param(
     [Parameter(Mandatory = $true)]
@@ -103,36 +124,114 @@ function Get-LdkWdkInstaller {
   }
 }
 
-function Install-LdkWdkVersion {
+function Invoke-LdkWinGetWdkInstall {
   param(
     [Parameter(Mandatory = $true)]
-    [string] $Version
+    [string] $WinGetPath,
+
+    [Parameter(Mandatory = $true)]
+    [string] $PackageId
   )
 
-  $installer = Get-LdkWdkInstaller -Version $Version
-  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  & $WinGetPath install `
+    --exact `
+    --id $PackageId `
+    --source winget `
+    --silent `
+    --accept-package-agreements `
+    --accept-source-agreements `
+    --disable-interactivity 2>&1 | ForEach-Object { Write-Host $_ }
 
-  if ($winget) {
-    Write-Host "Installing $($installer.PackageId) with WinGet."
-    & $winget.Source install `
-      --exact `
-      --id $installer.PackageId `
-      --source winget `
-      --silent `
-      --accept-package-agreements `
-      --accept-source-agreements `
-      --disable-interactivity
+  return [int]$LASTEXITCODE
+}
 
-    if ($LASTEXITCODE -ne 0) {
-      throw "WDK installation failed with exit code $LASTEXITCODE."
-    }
+function Repair-LdkWinGetSource {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $WinGetPath
+  )
 
-    return
+  Write-Host "Resetting WinGet sources before retrying WDK installation."
+  & $WinGetPath source reset --force
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "WinGet source reset failed with exit code $LASTEXITCODE."
   }
 
+  Write-Host "Updating WinGet sources before retrying WDK installation."
+  & $WinGetPath source update
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "WinGet source update failed with exit code $LASTEXITCODE."
+  }
+}
+
+function Save-LdkFileWithRetry {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Uri,
+
+    [Parameter(Mandatory = $true)]
+    [string] $OutFile,
+
+    [Parameter(Mandatory = $true)]
+    [string] $Description,
+
+    [int] $Attempts = 3
+  )
+
+  $lastErrorMessage = $null
+
+  for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+    Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+
+    try {
+      Write-Host "Downloading $Description (attempt $attempt of $Attempts)."
+      Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing -TimeoutSec 180
+      return
+    } catch {
+      $lastErrorMessage = $_.Exception.Message
+      Write-Warning "Download attempt $attempt for $Description failed: $lastErrorMessage"
+      if ($attempt -lt $Attempts) {
+        Start-Sleep -Seconds ([Math]::Min(60, 10 * $attempt))
+      }
+    }
+  }
+
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if ($curl) {
+    Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+
+    Write-Host "Retrying $Description download with curl.exe."
+    & $curl.Source `
+      --fail `
+      --location `
+      --retry 3 `
+      --retry-delay 10 `
+      --connect-timeout 30 `
+      --max-time 300 `
+      --output $OutFile `
+      $Uri
+
+    if ($LASTEXITCODE -eq 0) {
+      return
+    }
+
+    $lastErrorMessage = "curl.exe failed with exit code $LASTEXITCODE"
+  }
+
+  throw "Failed to download $Description. Last error: $lastErrorMessage"
+}
+
+function Install-LdkWdkFromDownloadedInstaller {
+  param(
+    [Parameter(Mandatory = $true)]
+    [hashtable] $Installer
+  )
+
   $installerPath = Join-Path $env:TEMP "ldk-$($installer.PackageId)-wdksetup.exe"
-  Write-Host "WinGet was not found. Downloading $($installer.PackageId) from Microsoft."
-  Invoke-WebRequest -Uri $installer.Url -OutFile $installerPath
+  Save-LdkFileWithRetry `
+    -Uri $installer.Url `
+    -OutFile $installerPath `
+    -Description "$($installer.PackageId) from Microsoft"
 
   $actualHash = (Get-FileHash -Path $installerPath -Algorithm SHA256).Hash
   if ($actualHash -ne $installer.Sha256) {
@@ -144,9 +243,64 @@ function Install-LdkWdkVersion {
   $process = Start-Process -FilePath $installerPath -ArgumentList '/q' -Wait -PassThru -WindowStyle Hidden
   Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
 
-  if ($process.ExitCode -ne 0) {
-    throw "WDK installer failed with exit code $($process.ExitCode)."
+  return [int]$process.ExitCode
+}
+
+function Install-LdkWdkVersion {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string] $Version,
+
+    [Parameter(Mandatory = $true)]
+    [string[]] $KitRoots,
+
+    [Parameter(Mandatory = $true)]
+    [string[]] $Platforms
+  )
+
+  $installer = Get-LdkWdkInstaller -Version $Version
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+
+  if ($winget) {
+    for ($attempt = 1; $attempt -le 2; $attempt++) {
+      Write-Host "Installing $($installer.PackageId) with WinGet (attempt $attempt of 2)."
+      $exitCode = Invoke-LdkWinGetWdkInstall -WinGetPath $winget.Source -PackageId $installer.PackageId
+      if ($exitCode -eq 0) {
+        return
+      }
+
+      Write-Warning "WinGet WDK installation failed with exit code $exitCode."
+      if (Test-LdkWdkAvailable -KitRoots $KitRoots -Version $Version -Platforms $Platforms) {
+        Write-Host "Found WDK $Version after WinGet returned exit code $exitCode."
+        return
+      }
+
+      if ($attempt -eq 1) {
+        Repair-LdkWinGetSource -WinGetPath $winget.Source
+      }
+    }
+
+    if (Test-LdkWdkAvailable -KitRoots $KitRoots -Version $Version -Platforms $Platforms) {
+      Write-Host "Found WDK $Version after WinGet installation attempts."
+      return
+    }
+
+    Write-Warning "WinGet could not install $($installer.PackageId). Falling back to the Microsoft installer URL."
+  } else {
+    Write-Host "WinGet was not found. Falling back to the Microsoft installer URL."
   }
+
+  $installerExitCode = Install-LdkWdkFromDownloadedInstaller -Installer $installer
+  if ($installerExitCode -eq 0) {
+    return
+  }
+
+  if (Test-LdkWdkAvailable -KitRoots $KitRoots -Version $Version -Platforms $Platforms) {
+    Write-Warning "WDK installer returned exit code $installerExitCode, but WDK $Version is available."
+    return
+  }
+
+  throw "WDK installer failed with exit code $installerExitCode."
 }
 
 $kitRoots = @(
@@ -155,25 +309,34 @@ $kitRoots = @(
 ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 
 $requiredWdkPlatforms = @(
-  foreach ($platform in $RequiredPlatforms) {
-    ConvertTo-LdkWdkPlatform -Platform $platform
+  foreach ($platformValue in $RequiredPlatforms) {
+    foreach ($platform in ($platformValue -split ',')) {
+      $normalizedPlatform = $platform.Trim()
+      if (-not [string]::IsNullOrWhiteSpace($normalizedPlatform)) {
+        ConvertTo-LdkWdkPlatform -Platform $normalizedPlatform
+      }
+    }
   }
 ) | Select-Object -Unique
 
-foreach ($kitRoot in $kitRoots) {
-  if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms)) {
-    Write-Host "Found WDK $WindowsSdkVersion under $kitRoot."
-    return
+if (Test-LdkWdkAvailable -KitRoots $kitRoots -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms) {
+  foreach ($kitRoot in $kitRoots) {
+    if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms)) {
+      Write-Host "Found WDK $WindowsSdkVersion under $kitRoot."
+      return
+    }
   }
 }
 
 Write-Host "WDK $WindowsSdkVersion was not found with required platforms: $($requiredWdkPlatforms -join ', ')."
-Install-LdkWdkVersion -Version $WindowsSdkVersion
+Install-LdkWdkVersion -Version $WindowsSdkVersion -KitRoots $kitRoots -Platforms $requiredWdkPlatforms
 
-foreach ($kitRoot in $kitRoots) {
-  if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms)) {
-    Write-Host "Found WDK $WindowsSdkVersion under $kitRoot."
-    return
+if (Test-LdkWdkAvailable -KitRoots $kitRoots -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms) {
+  foreach ($kitRoot in $kitRoots) {
+    if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms)) {
+      Write-Host "Found WDK $WindowsSdkVersion under $kitRoot."
+      return
+    }
   }
 }
 
