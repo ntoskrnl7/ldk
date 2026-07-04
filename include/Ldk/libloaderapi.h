@@ -125,6 +125,126 @@ LoadLibraryExW(
     _In_ DWORD dwFlags
     );
 
+#ifndef IS_INTRESOURCE
+#define IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)
+#endif
+
+#ifndef MAKEINTRESOURCEA
+#define MAKEINTRESOURCEA(i) ((LPSTR)((ULONG_PTR)((WORD)(i))))
+#endif
+
+#ifndef MAKEINTRESOURCEW
+#define MAKEINTRESOURCEW(i) ((LPWSTR)((ULONG_PTR)((WORD)(i))))
+#endif
+
+#ifdef UNICODE
+#define MAKEINTRESOURCE MAKEINTRESOURCEW
+#else
+#define MAKEINTRESOURCE MAKEINTRESOURCEA
+#endif
+
+#ifndef RT_CURSOR
+#define RT_CURSOR           MAKEINTRESOURCE(1)
+#define RT_BITMAP           MAKEINTRESOURCE(2)
+#define RT_ICON             MAKEINTRESOURCE(3)
+#define RT_MENU             MAKEINTRESOURCE(4)
+#define RT_DIALOG           MAKEINTRESOURCE(5)
+#define RT_STRING           MAKEINTRESOURCE(6)
+#define RT_FONTDIR          MAKEINTRESOURCE(7)
+#define RT_FONT             MAKEINTRESOURCE(8)
+#define RT_ACCELERATOR      MAKEINTRESOURCE(9)
+#define RT_RCDATA           MAKEINTRESOURCE(10)
+#define RT_MESSAGETABLE     MAKEINTRESOURCE(11)
+#define RT_GROUP_CURSOR     MAKEINTRESOURCE((ULONG_PTR)RT_CURSOR + 11)
+#define RT_GROUP_ICON       MAKEINTRESOURCE((ULONG_PTR)RT_ICON + 11)
+#define RT_VERSION          MAKEINTRESOURCE(16)
+#define RT_DLGINCLUDE       MAKEINTRESOURCE(17)
+#define RT_PLUGPLAY         MAKEINTRESOURCE(19)
+#define RT_VXD              MAKEINTRESOURCE(20)
+#define RT_ANICURSOR        MAKEINTRESOURCE(21)
+#define RT_ANIICON          MAKEINTRESOURCE(22)
+#define RT_HTML             MAKEINTRESOURCE(23)
+#define RT_MANIFEST         MAKEINTRESOURCE(24)
+#endif
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceA(
+    _In_opt_ HMODULE hModule,
+    _In_ LPCSTR lpName,
+    _In_ LPCSTR lpType
+    );
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceW(
+    _In_opt_ HMODULE hModule,
+    _In_ LPCWSTR lpName,
+    _In_ LPCWSTR lpType
+    );
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceExA(
+    _In_opt_ HMODULE hModule,
+    _In_ LPCSTR lpType,
+    _In_ LPCSTR lpName,
+    _In_ WORD wLanguage
+    );
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceExW(
+    _In_opt_ HMODULE hModule,
+    _In_ LPCWSTR lpType,
+    _In_ LPCWSTR lpName,
+    _In_ WORD wLanguage
+    );
+
+#ifdef UNICODE
+#define FindResource FindResourceW
+#define FindResourceEx FindResourceExW
+#else
+#define FindResource FindResourceA
+#define FindResourceEx FindResourceExA
+#endif
+
+WINBASEAPI
+_Ret_maybenull_
+HGLOBAL
+WINAPI
+LoadResource(
+    _In_opt_ HMODULE hModule,
+    _In_ HRSRC hResInfo
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+LPVOID
+WINAPI
+LockResource(
+    _In_ HGLOBAL hResData
+    );
+
+WINBASEAPI
+DWORD
+WINAPI
+SizeofResource(
+    _In_opt_ HMODULE hModule,
+    _In_ HRSRC hResInfo
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+FreeResource(
+    _In_ HGLOBAL hResData
+    );
+
 #define DONT_RESOLVE_DLL_REFERENCES         0x00000001
 #define LOAD_LIBRARY_AS_DATAFILE            0x00000002
 // reserved for internal LOAD_PACKAGED_LIBRARY: 0x00000004

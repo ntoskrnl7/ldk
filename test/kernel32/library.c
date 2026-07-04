@@ -287,6 +287,114 @@ VerifyResourceOnlyLoad (
 
 static
 BOOL
+VerifyResourceLookup (
+    VOID
+    )
+{
+    HMODULE Module;
+    HRSRC ResourceW;
+    HRSRC ResourceA;
+    DWORD ResourceSize;
+    HGLOBAL ResourceData;
+    LPVOID LockedResource;
+
+    Module = LoadLibraryExW( L"Test.dll",
+                             NULL,
+                             LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE );
+    if (!Module) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(Test.dll, resource-only) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    ResourceW = FindResourceExW( Module,
+                                 MAKEINTRESOURCEW(10),
+                                 MAKEINTRESOURCEW(101),
+                                 0 );
+    if (!ResourceW) {
+       fprintf(stderr,
+               "[Failed] FindResourceExW(RT_RCDATA/#101) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    if (FindResourceW( Module,
+                       MAKEINTRESOURCEW(101),
+                       MAKEINTRESOURCEW(10) ) != ResourceW) {
+       fprintf(stderr,
+               "[Failed] FindResourceW did not resolve the same RCDATA resource ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    ResourceA = FindResourceExA( Module,
+                                 MAKEINTRESOURCEA(10),
+                                 MAKEINTRESOURCEA(101),
+                                 0 );
+    if (!ResourceA) {
+       fprintf(stderr,
+               "[Failed] FindResourceExA(RT_RCDATA/#101) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    ResourceSize = SizeofResource( Module,
+                                   ResourceW );
+    if (ResourceSize == 0) {
+       fprintf(stderr,
+               "[Failed] SizeofResource(RT_RCDATA/#101) returned %lu ErrorCode = %lu\n",
+               ResourceSize,
+               GetLastError());
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    ResourceData = LoadResource( Module,
+                                 ResourceW );
+    if (!ResourceData) {
+       fprintf(stderr,
+               "[Failed] LoadResource(RT_RCDATA/#101) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    LockedResource = LockResource( ResourceData );
+    if (LockedResource != ResourceData) {
+       fprintf(stderr,
+               "[Failed] LockResource did not return the loaded resource pointer\n");
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    if (FindResourceW( Module,
+                       MAKEINTRESOURCEW(1),
+                       MAKEINTRESOURCEW(0xffff) ) != NULL ||
+        GetLastError() != ERROR_RESOURCE_TYPE_NOT_FOUND) {
+       fprintf(stderr,
+               "[Failed] FindResourceW missing resource type did not report type-not-found ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( Module );
+       return FALSE;
+    }
+
+    if (!FreeLibrary( Module )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(Test.dll resource-only) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    printf("[Success] FindResource/LoadResource/SizeofResource RCDATA lookup\n");
+    return TRUE;
+}
+
+static
+BOOL
 CopyWideAsciiForTest (
     _In_ LPCWSTR Source,
     _Out_writes_(BufferCch) LPSTR Buffer,
@@ -415,6 +523,14 @@ VerifyKernel32ExportVisibility (
         "GetThreadGroupAffinity",
         "SetThreadGroupAffinity",
         "FreeLibraryAndExitThread",
+        "FindResourceA",
+        "FindResourceW",
+        "FindResourceExA",
+        "FindResourceExW",
+        "LoadResource",
+        "LockResource",
+        "SizeofResource",
+        "FreeResource",
         "GetSystemTimePreciseAsFileTime",
         "GetNativeSystemInfo",
         "GetLogicalProcessorInformation",
@@ -427,6 +543,9 @@ VerifyKernel32ExportVisibility (
         "GetActiveProcessorCount",
         "GetMaximumProcessorCount",
         "GetVersionExW",
+        "VerifyVersionInfoA",
+        "VerifyVersionInfoW",
+        "VerSetConditionMask",
         "CompareStringA",
         "CompareStringEx",
         "CompareStringOrdinal",
@@ -1622,6 +1741,10 @@ LibraryTest (
     if (!VerifyResourceOnlyLoad( L"Test.dll",
                                  LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
                                  "LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE" )) {
+       return FALSE;
+    }
+
+    if (!VerifyResourceLookup()) {
        return FALSE;
     }
 

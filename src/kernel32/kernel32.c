@@ -416,6 +416,38 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		FormatMessageW
 	},
 	{
+		"FindResourceA",
+		FindResourceA
+	},
+	{
+		"FindResourceW",
+		FindResourceW
+	},
+	{
+		"FindResourceExA",
+		FindResourceExA
+	},
+	{
+		"FindResourceExW",
+		FindResourceExW
+	},
+	{
+		"LoadResource",
+		LoadResource
+	},
+	{
+		"LockResource",
+		LockResource
+	},
+	{
+		"SizeofResource",
+		SizeofResource
+	},
+	{
+		"FreeResource",
+		FreeResource
+	},
+	{
 		"LocalAlloc",
 		LocalAlloc
 	},
@@ -1263,6 +1295,18 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 	{
 		"GetVersionExW",
 		GetVersionExW
+	},
+	{
+		"VerifyVersionInfoA",
+		VerifyVersionInfoA
+	},
+	{
+		"VerifyVersionInfoW",
+		VerifyVersionInfoW
+	},
+	{
+		"VerSetConditionMask",
+		VerSetConditionMask
 	},
 	{
 		"GlobalMemoryStatusEx",

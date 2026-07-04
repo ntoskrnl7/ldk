@@ -645,6 +645,158 @@ LdkpTestProcessorInformation (
     return TRUE;
 }
 
+static
+BOOLEAN
+LdkpTestTimeAndVersionInformation (
+    VOID
+    )
+{
+    FILETIME SystemTime;
+    FILETIME PreciseSystemTime;
+    TIME_ZONE_INFORMATION TimeZoneInformation;
+    DWORD TimeZoneId;
+    OSVERSIONINFOEXW CurrentVersion;
+    OSVERSIONINFOEXW MinimumVersion;
+    OSVERSIONINFOEXA MinimumVersionA;
+    OSVERSIONINFOEXW FutureVersion;
+    OSVERSIONINFOEXW InvalidVersion;
+    DWORDLONG ConditionMask;
+    BOOL VersionResult;
+
+    RtlZeroMemory( &SystemTime,
+                   sizeof(SystemTime) );
+    RtlZeroMemory( &PreciseSystemTime,
+                   sizeof(PreciseSystemTime) );
+
+    GetSystemTimeAsFileTime( &SystemTime );
+    GetSystemTimePreciseAsFileTime( &PreciseSystemTime );
+    if ((SystemTime.dwLowDateTime == 0 &&
+         SystemTime.dwHighDateTime == 0) ||
+        (PreciseSystemTime.dwLowDateTime == 0 &&
+         PreciseSystemTime.dwHighDateTime == 0)) {
+        fprintf(stderr,
+                "[Failed] system file time System = %08lx:%08lx Precise = %08lx:%08lx\n",
+                SystemTime.dwHighDateTime,
+                SystemTime.dwLowDateTime,
+                PreciseSystemTime.dwHighDateTime,
+                PreciseSystemTime.dwLowDateTime );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &TimeZoneInformation,
+                   sizeof(TimeZoneInformation) );
+    TimeZoneId = GetTimeZoneInformation( &TimeZoneInformation );
+    if (TimeZoneId != TIME_ZONE_ID_UNKNOWN &&
+        TimeZoneId != TIME_ZONE_ID_STANDARD &&
+        TimeZoneId != TIME_ZONE_ID_DAYLIGHT) {
+        fprintf(stderr,
+                "[Failed] GetTimeZoneInformation TimeZoneId = %lu ErrorCode = %lu\n",
+                TimeZoneId,
+                GetLastError() );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &CurrentVersion,
+                   sizeof(CurrentVersion) );
+    CurrentVersion.dwOSVersionInfoSize = sizeof(CurrentVersion);
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable:4996)
+#endif
+    VersionResult = GetVersionExW( (LPOSVERSIONINFOW)&CurrentVersion );
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+    if (!VersionResult) {
+        fprintf(stderr,
+                "[Failed] GetVersionExW ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &MinimumVersion,
+                   sizeof(MinimumVersion) );
+    MinimumVersion.dwOSVersionInfoSize = sizeof(MinimumVersion);
+    MinimumVersion.dwMajorVersion = 6;
+    MinimumVersion.dwMinorVersion = 1;
+    MinimumVersion.wServicePackMajor = 0;
+    ConditionMask = 0;
+    ConditionMask = VerSetConditionMask( ConditionMask,
+                                         VER_MAJORVERSION,
+                                         VER_GREATER_EQUAL );
+    ConditionMask = VerSetConditionMask( ConditionMask,
+                                         VER_MINORVERSION,
+                                         VER_GREATER_EQUAL );
+    ConditionMask = VerSetConditionMask( ConditionMask,
+                                         VER_SERVICEPACKMAJOR,
+                                         VER_GREATER_EQUAL );
+    if (!VerifyVersionInfoW( &MinimumVersion,
+                             VER_MAJORVERSION |
+                             VER_MINORVERSION |
+                             VER_SERVICEPACKMAJOR,
+                             ConditionMask )) {
+        fprintf(stderr,
+                "[Failed] VerifyVersionInfoW minimum version ErrorCode = %lu Current = %lu.%lu\n",
+                GetLastError(),
+                CurrentVersion.dwMajorVersion,
+                CurrentVersion.dwMinorVersion );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &MinimumVersionA,
+                   sizeof(MinimumVersionA) );
+    MinimumVersionA.dwOSVersionInfoSize = sizeof(MinimumVersionA);
+    MinimumVersionA.dwMajorVersion = MinimumVersion.dwMajorVersion;
+    MinimumVersionA.dwMinorVersion = MinimumVersion.dwMinorVersion;
+    MinimumVersionA.wServicePackMajor = MinimumVersion.wServicePackMajor;
+    if (!VerifyVersionInfoA( &MinimumVersionA,
+                             VER_MAJORVERSION |
+                             VER_MINORVERSION |
+                             VER_SERVICEPACKMAJOR,
+                             ConditionMask )) {
+        fprintf(stderr,
+                "[Failed] VerifyVersionInfoA minimum version ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &InvalidVersion,
+                   sizeof(InvalidVersion) );
+    InvalidVersion.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEXW) - 1;
+    InvalidVersion.dwMajorVersion = 1;
+    ConditionMask = VerSetConditionMask( 0,
+                                         VER_MAJORVERSION,
+                                         VER_GREATER_EQUAL );
+    if (!VerifyVersionInfoW( &InvalidVersion,
+                             VER_MAJORVERSION,
+                             ConditionMask )) {
+        fprintf(stderr,
+                "[Failed] VerifyVersionInfoW rejected native-compatible size-tolerant basic check ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &FutureVersion,
+                   sizeof(FutureVersion) );
+    FutureVersion.dwOSVersionInfoSize = sizeof(FutureVersion);
+    FutureVersion.dwMajorVersion = CurrentVersion.dwMajorVersion + 1;
+    ConditionMask = 0;
+    VER_SET_CONDITION( ConditionMask,
+                       VER_MAJORVERSION,
+                       VER_GREATER_EQUAL );
+    if (VerifyVersionInfoW( &FutureVersion,
+                            VER_MAJORVERSION,
+                            ConditionMask )) {
+        fprintf(stderr,
+                "[Failed] VerifyVersionInfoW accepted future major version Current = %lu Future = %lu\n",
+                CurrentVersion.dwMajorVersion,
+                FutureVersion.dwMajorVersion );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 BOOLEAN
 UtilityApiTest (
     VOID
@@ -667,6 +819,10 @@ UtilityApiTest (
     }
 
     if (! LdkpTestProcessorInformation()) {
+        return FALSE;
+    }
+
+    if (! LdkpTestTimeAndVersionInformation()) {
         return FALSE;
     }
 

@@ -14,6 +14,8 @@ LDK is an experimental Windows kernel-mode support library for drivers that
 need a familiar Win32/NTDLL-like surface inside kernel space. It provides a
 static WDK library, public headers under `include/Ldk`, and partial
 implementations of APIs normally provided by `kernel32.dll` and `ntdll.dll`.
+One practical target is acting as the Win32/NTDLL API substrate for controlled
+MSVC CRT/STL code paths, including the crtsys driver test workload.
 
 The project is useful when a driver needs to reuse carefully controlled DLL
 code or when kernel-mode code benefits from familiar primitives such as

@@ -97,6 +97,10 @@ function Test-LdkWdkAvailable {
   return $false
 }
 
+function Complete-LdkWdkSuccess {
+  $global:LASTEXITCODE = 0
+}
+
 function Get-LdkWdkInstaller {
   param(
     [Parameter(Mandatory = $true)]
@@ -323,6 +327,7 @@ if (Test-LdkWdkAvailable -KitRoots $kitRoots -Version $WindowsSdkVersion -Platfo
   foreach ($kitRoot in $kitRoots) {
     if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms)) {
       Write-Host "Found WDK $WindowsSdkVersion under $kitRoot."
+      Complete-LdkWdkSuccess
       return
     }
   }
@@ -335,6 +340,7 @@ if (Test-LdkWdkAvailable -KitRoots $kitRoots -Version $WindowsSdkVersion -Platfo
   foreach ($kitRoot in $kitRoots) {
     if ((Test-Path $kitRoot) -and (Test-LdkWdkVersion -KitRoot $kitRoot -Version $WindowsSdkVersion -Platforms $requiredWdkPlatforms)) {
       Write-Host "Found WDK $WindowsSdkVersion under $kitRoot."
+      Complete-LdkWdkSuccess
       return
     }
   }

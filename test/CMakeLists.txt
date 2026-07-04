@@ -4,7 +4,7 @@ if(POLICY CMP0149)
     cmake_policy(SET CMP0149 OLD)
 endif()
 
-project(LdkTest LANGUAGES C)
+project(LdkTest LANGUAGES C RC)
 
 include(../cmake/CPM.cmake)
 
@@ -37,7 +37,7 @@ foreach(flag
     string(REGEX REPLACE "/RTC(su|[1su])" "" "${flag}" "${${flag}}")
 endforeach()
 
-add_library(Test SHARED dll.c)
+add_library(Test SHARED dll.c dll.rc)
 add_library(OrdinalImport SHARED ordinalimport.c)
 add_library(AutoDependency SHARED autodependency.c)
 add_library(DependencyOwner SHARED dependencyowner.c)

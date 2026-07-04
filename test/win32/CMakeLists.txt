@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14 FATAL_ERROR)
 
-project(LdkWin32ApiTest LANGUAGES C)
+project(LdkWin32ApiTest LANGUAGES C RC)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -34,7 +34,7 @@ add_executable(LdkWin32ApiTest
     ${LDK_WIN32_TEST_SOURCES}
 )
 
-add_library(Test SHARED ../dll.c)
+add_library(Test SHARED ../dll.c ../dll.rc)
 add_library(OrdinalImport SHARED ../ordinalimport.c)
 add_library(AutoDependency SHARED ../autodependency.c)
 add_library(DependencyOwner SHARED ../dependencyowner.c)

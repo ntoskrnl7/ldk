@@ -68,9 +68,16 @@ resolve locale names through the same locale-name mapping used by
 minute, second, and AM/PM pattern tokens used by the current tests and runtime
 paths. It is not a complete NLS format-engine clone.
 
+`GetSystemTimeAsFileTime`, `GetSystemTimePreciseAsFileTime`,
 `FileTimeToSystemTime`, `SystemTimeToFileTime`, `GetTimeZoneInformation`, and
-`SystemTimeToTzSpecificLocalTime` are backed by RTL time conversion helpers and
-kernel time-zone state.
+`SystemTimeToTzSpecificLocalTime` are backed by kernel/RTL time helpers and
+kernel time-zone state. Public `timezoneapi.h` exposes the standard
+`TIME_ZONE_ID_UNKNOWN`, `TIME_ZONE_ID_STANDARD`, `TIME_ZONE_ID_DAYLIGHT`, and
+`TIME_ZONE_ID_INVALID` constants expected by CRT/STL time helpers.
+
+`VerifyVersionInfoA/W` is provided for version-helper compatibility. It uses
+LDK's `GetVersionExW` data and evaluates the common tuple-style
+major/minor/service-pack comparisons used by MSVC helper code.
 
 ## Character classification
 
@@ -84,6 +91,8 @@ category database.
 
 `NlsTest` covers representative locale-name/LCID round trips, locale
 enumeration, `GetLocaleInfoEx`, `GetDateFormatW/Ex`, `GetTimeFormatW/Ex`, and
-script classification for `ko-KR`, `zh-CN`, `ja-JP`, and `ru-RU`. Additional
-code-page conversions and format tokens should still get direct tests when
-expanded.
+script classification for `ko-KR`, `zh-CN`, `ja-JP`, and `ru-RU`.
+`UtilityApiTest` covers system file time, precise system file time,
+`GetTimeZoneInformation`, and `VerifyVersionInfoW` compatibility paths.
+Additional code-page conversions and format tokens should still get direct
+tests when expanded.
