@@ -1,6 +1,20 @@
 #if _KERNEL_MODE
 #include <Ldk/ntdll.h>
 
+HANDLE
+WINAPI
+GetProcessHeap (
+    VOID
+    );
+
+BOOL
+WINAPI
+HeapFree (
+    _Inout_ HANDLE hHeap,
+    _In_ DWORD dwFlags,
+    _Frees_ptr_opt_ LPVOID lpMem
+    );
+
 BOOLEAN
 NtdllEnvironmentVariableTest (
     VOID
@@ -25,6 +39,10 @@ typedef LONG NTSTATUS;
 
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#endif
+
+#ifndef STATUS_VARIABLE_NOT_FOUND
+#define STATUS_VARIABLE_NOT_FOUND ((NTSTATUS)0xC0000100)
 #endif
 
 typedef struct _STRING {
@@ -136,6 +154,104 @@ EXTERN_C_END
 #define PAGED_CODE()
 #endif
 
+static
+BOOLEAN
+LdkTestSetEnvironmentValue (
+    _Inout_opt_ PVOID *Environment,
+    _In_ PCWSTR NameText,
+    _In_opt_ PCWSTR ValueText
+    )
+{
+    UNICODE_STRING Name;
+    UNICODE_STRING Value;
+    NTSTATUS Status;
+
+    RtlInitUnicodeString( &Name,
+                          NameText );
+    RtlInitUnicodeString( &Value,
+                          ValueText );
+
+    Status = RtlSetEnvironmentVariable( Environment,
+                                        &Name,
+                                        ValueText ? &Value : NULL );
+    return NT_SUCCESS(Status);
+}
+
+static
+BOOLEAN
+LdkTestQueryEnvironmentValue (
+    _In_opt_ PVOID Environment,
+    _In_ PCWSTR NameText,
+    _In_ PCWSTR ExpectedText
+    )
+{
+    UNICODE_STRING Name;
+    UNICODE_STRING Expected;
+    UNICODE_STRING Value;
+    WCHAR Buffer[256];
+    NTSTATUS Status;
+
+    RtlInitUnicodeString( &Name,
+                          NameText );
+    RtlInitUnicodeString( &Expected,
+                          ExpectedText );
+
+    Value.Buffer = Buffer;
+    Value.Length = 0;
+    Value.MaximumLength = sizeof(Buffer);
+
+    Status = RtlQueryEnvironmentVariable_U( Environment,
+                                            &Name,
+                                            &Value );
+    if (!NT_SUCCESS(Status)) {
+        return FALSE;
+    }
+
+    return RtlEqualUnicodeString( &Value,
+                                  &Expected,
+                                  FALSE );
+}
+
+static
+BOOLEAN
+LdkTestQueryEnvironmentMissing (
+    _In_opt_ PVOID Environment,
+    _In_ PCWSTR NameText
+    )
+{
+    UNICODE_STRING Name;
+    UNICODE_STRING Value;
+    WCHAR Buffer[16];
+    NTSTATUS Status;
+
+    RtlInitUnicodeString( &Name,
+                          NameText );
+
+    Value.Buffer = Buffer;
+    Value.Length = 0;
+    Value.MaximumLength = sizeof(Buffer);
+
+    Status = RtlQueryEnvironmentVariable_U( Environment,
+                                            &Name,
+                                            &Value );
+    return Status == STATUS_VARIABLE_NOT_FOUND;
+}
+
+static
+VOID
+LdkTestFreePrivateEnvironment (
+    _In_opt_ PVOID Environment
+    )
+{
+    if (!Environment) {
+        return;
+    }
+
+    HeapFree( GetProcessHeap(),
+              0,
+              Environment );
+}
+
 BOOLEAN
 NtdllEnvironmentVariableTest (
     VOID
@@ -164,42 +280,102 @@ NtdllEnvironmentVariableTest (
         return FALSE;
     }
 
-    // Add TestVar
-    RtlInitUnicodeString( &name,
-                          L"TestVar" );
-    UNICODE_STRING expect;
-    RtlInitUnicodeString( &expect,
-                          L"Test" );
-    Status = RtlSetEnvironmentVariable( NULL,
-                                        &name,
-                                        &expect );
-    if (! NT_SUCCESS(Status)) {
-        return FALSE;
-    }
-    Status = RtlQueryEnvironmentVariable_U( NULL,
-                                            &name,
-                                            &value );
-    if (! NT_SUCCESS(Status)) {
-        return FALSE;
-    }
-    if (! RtlEqualUnicodeString( &value,
-                                 &expect,
-                                 FALSE )) {
+    if (!LdkTestSetEnvironmentValue( NULL,
+                                     L"LDK_RTL_ENV_PROCESS_MISSING_DELETE",
+                                     NULL ) ||
+        !LdkTestQueryEnvironmentMissing( NULL,
+                                         L"LDK_RTL_ENV_PROCESS_MISSING_DELETE" )) {
         return FALSE;
     }
 
-    // Remove TestVar
-    Status = RtlSetEnvironmentVariable( NULL,
-                                        &name,
-                                        NULL );
-    if (! NT_SUCCESS(Status)) {
+    if (!LdkTestSetEnvironmentValue( NULL,
+                                     L"LDK_RTL_ENV_PROCESS",
+                                     L"alpha" ) ||
+        !LdkTestQueryEnvironmentValue( NULL,
+                                       L"LDK_RTL_ENV_PROCESS",
+                                       L"alpha" )) {
         return FALSE;
     }
-    Status = RtlQueryEnvironmentVariable_U( NULL,
-                                            &name,
-                                            &value );
-    if (NT_SUCCESS(Status)) {
+
+    if (!LdkTestSetEnvironmentValue( NULL,
+                                     L"LDK_RTL_ENV_PROCESS",
+                                     L"beta" ) ||
+        !LdkTestQueryEnvironmentValue( NULL,
+                                       L"LDK_RTL_ENV_PROCESS",
+                                       L"beta" )) {
         return FALSE;
     }
+
+    if (!LdkTestSetEnvironmentValue( NULL,
+                                     L"LDK_RTL_ENV_PROCESS",
+                                     L"alpha-beta-gamma-long-value" ) ||
+        !LdkTestQueryEnvironmentValue( NULL,
+                                       L"LDK_RTL_ENV_PROCESS",
+                                       L"alpha-beta-gamma-long-value" )) {
+        return FALSE;
+    }
+
+    if (!LdkTestSetEnvironmentValue( NULL,
+                                     L"LDK_RTL_ENV_PROCESS",
+                                     L"z" ) ||
+        !LdkTestQueryEnvironmentValue( NULL,
+                                       L"LDK_RTL_ENV_PROCESS",
+                                       L"z" )) {
+        return FALSE;
+    }
+
+    if (!LdkTestSetEnvironmentValue( NULL,
+                                     L"LDK_RTL_ENV_PROCESS",
+                                     NULL ) ||
+        !LdkTestQueryEnvironmentMissing( NULL,
+                                         L"LDK_RTL_ENV_PROCESS" )) {
+        return FALSE;
+    }
+
+    PVOID PrivateEnvironment = NULL;
+    if (!LdkTestSetEnvironmentValue( &PrivateEnvironment,
+                                     L"LDK_RTL_ENV_PRIVATE_MISSING_DELETE",
+                                     NULL ) ||
+        !LdkTestQueryEnvironmentMissing( PrivateEnvironment,
+                                         L"LDK_RTL_ENV_PRIVATE_MISSING_DELETE" )) {
+        LdkTestFreePrivateEnvironment( PrivateEnvironment );
+        return FALSE;
+    }
+
+    if (!LdkTestSetEnvironmentValue( &PrivateEnvironment,
+                                     L"LDK_RTL_ENV_PRIVATE_B",
+                                     L"bravo" ) ||
+        !LdkTestSetEnvironmentValue( &PrivateEnvironment,
+                                     L"LDK_RTL_ENV_PRIVATE_A",
+                                     L"alpha" ) ||
+        !LdkTestQueryEnvironmentValue( PrivateEnvironment,
+                                       L"LDK_RTL_ENV_PRIVATE_A",
+                                       L"alpha" ) ||
+        !LdkTestQueryEnvironmentValue( PrivateEnvironment,
+                                       L"LDK_RTL_ENV_PRIVATE_B",
+                                       L"bravo" )) {
+        LdkTestFreePrivateEnvironment( PrivateEnvironment );
+        return FALSE;
+    }
+
+    if (!LdkTestSetEnvironmentValue( &PrivateEnvironment,
+                                     L"LDK_RTL_ENV_PRIVATE_A",
+                                     L"alpha-beta-gamma-private-long-value" ) ||
+        !LdkTestQueryEnvironmentValue( PrivateEnvironment,
+                                       L"LDK_RTL_ENV_PRIVATE_A",
+                                       L"alpha-beta-gamma-private-long-value" ) ||
+        !LdkTestSetEnvironmentValue( &PrivateEnvironment,
+                                     L"LDK_RTL_ENV_PRIVATE_A",
+                                     NULL ) ||
+        !LdkTestQueryEnvironmentMissing( PrivateEnvironment,
+                                         L"LDK_RTL_ENV_PRIVATE_A" ) ||
+        !LdkTestQueryEnvironmentValue( PrivateEnvironment,
+                                       L"LDK_RTL_ENV_PRIVATE_B",
+                                       L"bravo" )) {
+        LdkTestFreePrivateEnvironment( PrivateEnvironment );
+        return FALSE;
+    }
+
+    LdkTestFreePrivateEnvironment( PrivateEnvironment );
     return TRUE;
 }

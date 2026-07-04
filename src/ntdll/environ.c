@@ -182,265 +182,228 @@ RtlSetEnvironmentVariable (
     _In_opt_ PCUNICODE_STRING Value
     )
 {
+    PPEB Peb;
+    PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
+    PVOID OldEnvironment;
+    PVOID NewEnvironment;
+    PWSTR OldBlock;
+    PWSTR OldFinal;
+    PWSTR Scan;
+    PWSTR EntryStart;
+    PWSTR EntryEnd;
+    PWSTR EditStart;
+    PWSTR EditEnd;
+    PWSTR InsertBefore;
+    PWSTR Out;
+    ULONG NameChars;
+    SIZE_T OldSize;
+    SIZE_T RemovedSize;
+    SIZE_T NewEntrySize;
+    SIZE_T NewSize;
+    SIZE_T PrefixSize;
+    SIZE_T SuffixSize;
+    BOOLEAN PebLockLocked;
+    BOOLEAN Found;
+    NTSTATUS Status;
+
     PAGED_CODE();
 
-    PWSTR p;
-    ULONG n = Name->Length / sizeof(WCHAR);
-    if (n == 0) {
-        return STATUS_INVALID_PARAMETER;
-    }
+    Peb = NtCurrentPeb();
+    ProcessParameters = Peb->ProcessParameters;
+    OldEnvironment = NULL;
+    NewEnvironment = NULL;
+    OldBlock = NULL;
+    OldFinal = NULL;
+    Scan = NULL;
+    EditStart = NULL;
+    EditEnd = NULL;
+    InsertBefore = NULL;
+    PebLockLocked = FALSE;
+    Found = FALSE;
+    Status = STATUS_VARIABLE_NOT_FOUND;
 
     try {
-        p = Name->Buffer;
-        while (--n) {
-            if (*++p == L'=') {
+        if (!Name ||
+            !Name->Buffer ||
+            Name->Length == 0 ||
+            (Name->Length & (sizeof(WCHAR) - 1))) {
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        NameChars = Name->Length / sizeof(WCHAR);
+        for (ULONG Index = 1; Index < NameChars; Index++) {
+            if (Name->Buffer[Index] == L'=') {
                 return STATUS_INVALID_PARAMETER;
             }
+        }
+
+        if (ARGUMENT_PRESENT(Value) &&
+            Value->Length != 0 &&
+            !Value->Buffer) {
+            return STATUS_INVALID_PARAMETER;
         }
     } except (EXCEPTION_EXECUTE_HANDLER) {
         return GetExceptionCode();
     }
 
-    PVOID pOld;
-    PPEB Peb = NtCurrentPeb();    
-    PRTL_USER_PROCESS_PARAMETERS ProcessParameters = Peb->ProcessParameters;
-    if (ARGUMENT_PRESENT(Environment)) {
-        pOld = *Environment;
-    } else {
-        RtlAcquirePebLock();
-        pOld = ProcessParameters->Environment;
-    }
-
-    MEMORY_BASIC_INFORMATION MemoryInformation;
-    UNICODE_STRING CurrentName;
-    UNICODE_STRING CurrentValue;
-    ULONG Size;
-    SIZE_T NewSize;
-    LONG CompareResult;
-    PWSTR pStart, pEnd;
-    NTSTATUS Status = STATUS_VARIABLE_NOT_FOUND;
-    PVOID pNew = NULL;
-    PWSTR InsertionPoint = NULL;
     RtlpEnvironCacheValid = FALSE;
+
     try {
         try {
-            p = pOld;
-            pEnd = NULL;
-            if (p) {
-                while (*p) {
-                    CurrentName.Buffer = p;
-                    CurrentName.Length = 0;
-                    CurrentName.MaximumLength = 0;
-                    while (*p) {
-                        if (*p == L'=' && p != CurrentName.Buffer) {
-                            CurrentName.Length = (USHORT)(p - CurrentName.Buffer) * sizeof(WCHAR);
-                            CurrentName.MaximumLength = (USHORT)(CurrentName.Length + sizeof(WCHAR));
-                            CurrentValue.Buffer = ++p;
-                            while(*p) {
-                                p++;
-                            }
-                            CurrentValue.Length = (USHORT)(p - CurrentValue.Buffer) * sizeof(WCHAR);
-                            CurrentValue.MaximumLength = (USHORT)(CurrentValue.Length + sizeof(WCHAR));
-                            break;
-                        } else {
-                            p++;
-                        }
-                    }
-                    p++;
-                    if (! (CompareResult = RtlCompareUnicodeString( Name,
-                                                                    &CurrentName,
-                                                                    TRUE ))) {
-                        pEnd = p;
-                        while (*pEnd) {
-                            while (*pEnd++) {}
-                        }
-                        pEnd++;
+            if (ARGUMENT_PRESENT(Environment)) {
+                OldEnvironment = *Environment;
+            } else {
+                PebLockLocked = TRUE;
+                RtlAcquirePebLock();
+                OldEnvironment = ProcessParameters->Environment;
+            }
 
-                        if (! ARGUMENT_PRESENT(Value)) {
-                            RtlMoveMemory( CurrentName.Buffer,
-                                           p,
-                                           (ULONG)((pEnd - p) * sizeof(WCHAR)));
-                            Status = STATUS_SUCCESS;
-                        } else if (Value->Length <= CurrentValue.Length) {
-                            pStart = CurrentValue.Buffer;
-                            RtlMoveMemory( pStart,
-                                           Value->Buffer,
-                                           Value->Length );
-                            pStart += Value->Length / sizeof(WCHAR);
-                            *pStart++ = UNICODE_NULL;
-                            RtlMoveMemory( pStart,
-                                           p,
-                                           (ULONG)((pEnd - p) * sizeof(WCHAR)) );
-                            Status = STATUS_SUCCESS;
-                        } else {
-                            RtlZeroMemory( &MemoryInformation,
-                                           sizeof(MemoryInformation) );
-                            MemoryInformation.BaseAddress = pOld;
-                            MemoryInformation.AllocationBase = pOld;
-                            MemoryInformation.AllocationProtect = PAGE_READWRITE;
-                            MemoryInformation.RegionSize = RtlSizeHeap( RtlProcessHeap(),
-                                                                        0,
-                                                                        pOld );
-                            MemoryInformation.State = MEM_COMMIT;
-                            MemoryInformation.Protect = PAGE_READWRITE;
-                            MemoryInformation.Type = MEM_PRIVATE;
-                            Status = STATUS_SUCCESS;
+        OldBlock = (PWSTR)OldEnvironment;
+        if (OldBlock) {
+            Scan = OldBlock;
+            while (*Scan) {
+                UNICODE_STRING CurrentName;
+                LONG CompareResult;
+                PWSTR Delimiter;
 
-                            NewSize = (pEnd - (PWSTR)pOld) * sizeof(WCHAR) + Value->Length - CurrentValue.Length;
-                            if (NewSize >= MemoryInformation.RegionSize) {
-                                pNew = RtlAllocateHeap( RtlProcessHeap(),
-                                                        0,
-                                                        NewSize );
-                                if (! pNew) {
-                                    Status = STATUS_INSUFFICIENT_RESOURCES;
-                                }
-                                if (! NT_SUCCESS(Status)) {
-                                    leave;
-                                }
-                                Size = (ULONG)(CurrentValue.Buffer - (PWSTR)pOld);
-                                RtlMoveMemory( pNew,
-                                               pOld,
-                                               Size*sizeof(WCHAR) );
-                                pStart = (PWSTR)pNew + Size;
-                                RtlMoveMemory( pStart,
-                                               Value->Buffer,
-                                               Value->Length );
-                                pStart += Value->Length/sizeof(WCHAR);
-                                *pStart++ = UNICODE_NULL;
-                                RtlMoveMemory( pStart,
-                                               p,
-                                               (ULONG)((pEnd - p) * sizeof(WCHAR)) );
-                                if (ARGUMENT_PRESENT(Environment)) {
-                                    *Environment = pNew;
-                                } else {
-                                    ProcessParameters->Environment = pNew;
-                                    Peb->EnvironmentUpdateCount += 1;
-                                }
-                                RtlFreeHeap( RtlProcessHeap(),
-                                            0,
-                                            pOld );
-                                pOld = NULL;
+                EntryStart = Scan;
+                while (*Scan) {
+                    Scan++;
+                }
+                EntryEnd = Scan + 1;
 
-                                // untested :-(
-                                LDK_DIAGNOSTIC_BREAK();
-                                pNew = pOld;
-                            } else {
-                                pStart = CurrentValue.Buffer + Value->Length/sizeof(WCHAR) + 1;
-                                RtlMoveMemory( pStart,
-                                               p,
-                                               (ULONG)((pEnd - p)*sizeof(WCHAR)) );
-                                *--pStart = UNICODE_NULL;
-                                RtlMoveMemory( pStart - Value->Length/sizeof(WCHAR),
-                                               Value->Buffer,
-                                               Value->Length );
-                            }
-                        }
+                Delimiter = EntryStart + 1;
+                while (*Delimiter && *Delimiter != L'=') {
+                    Delimiter++;
+                }
+
+                if (*Delimiter == L'=') {
+                    CurrentName.Buffer = EntryStart;
+                    CurrentName.Length = (USHORT)((Delimiter - EntryStart) * sizeof(WCHAR));
+                    CurrentName.MaximumLength = CurrentName.Length;
+
+                    CompareResult = RtlCompareUnicodeString( Name,
+                                                             &CurrentName,
+                                                             TRUE );
+                    if (CompareResult == 0) {
+                        Found = TRUE;
+                        EditStart = EntryStart;
+                        EditEnd = EntryEnd;
+                        Scan = EntryEnd;
                         break;
-                    } else if (CompareResult < 0) {
-                        if (InsertionPoint == NULL) {
-                            InsertionPoint = CurrentName.Buffer;
-                        }
+                    }
+                    if (CompareResult < 0 && !InsertBefore) {
+                        InsertBefore = EntryStart;
                     }
                 }
+
+                Scan = EntryEnd;
             }
-            if (InsertionPoint) {
-                p = InsertionPoint;
-            }
+            OldFinal = Scan;
+        }
 
-            if (pEnd == NULL && ARGUMENT_PRESENT(Value)) {
-                if (p) {
-                    pEnd = p;
-                    while (*pEnd) {
-                        while (*pEnd++) { }
-                    }
-                    pEnd++;
-                    RtlZeroMemory( &MemoryInformation,
-                                    sizeof(MemoryInformation) );
-                    MemoryInformation.BaseAddress = pOld;
-                    MemoryInformation.AllocationBase = pOld;
-                    MemoryInformation.AllocationProtect = PAGE_READWRITE;
-                    MemoryInformation.RegionSize = RtlSizeHeap( RtlProcessHeap(),
-                                                                0,
-                                                                pOld );
-                    MemoryInformation.State = MEM_COMMIT;
-                    MemoryInformation.Protect = PAGE_READWRITE;
-                    MemoryInformation.Type = MEM_PRIVATE;
-                    Status = STATUS_SUCCESS;
+        if (!ARGUMENT_PRESENT(Value) && !Found) {
+            //
+            // Windows treats deleting a missing environment variable as a
+            // successful no-op.  MSVC UCRT depends on this for
+            // _putenv_s(name, "") / _wputenv_s(name, "").
+            //
+            Status = STATUS_SUCCESS;
+            leave;
+        }
 
-                    if (! NT_SUCCESS(Status)) {
-                        leave;
-                    }
-                    NewSize = (pEnd - (PWSTR)pOld) * sizeof(WCHAR) + Name->Length + sizeof(WCHAR) + Value->Length + sizeof(WCHAR);
-                } else {
-                    NewSize = Name->Length + sizeof(WCHAR) + Value->Length + sizeof(WCHAR);
-                    MemoryInformation.RegionSize = 0;
-                }
-
-                if (NewSize >= MemoryInformation.RegionSize) {
-                    pNew = RtlAllocateHeap( RtlProcessHeap(),
-                                            0,
-                                            NewSize );
-                    if (! pNew) {
-                        Status = STATUS_INSUFFICIENT_RESOURCES;
-                    }
-                    if (! NT_SUCCESS(Status)) {
-                        leave;
-                    }
-                    if (p) {
-                        Size = (ULONG)(p - (PWSTR)pOld);
-                        RtlMoveMemory( pNew,
-                                       pOld,
-                                       Size*sizeof(WCHAR) );
-                    } else {
-                        Size = 0;
-                    }
-                    pStart = (PWSTR)pNew + Size;
-                    RtlMoveMemory( pStart,
-                                   Name->Buffer,
-                                   Name->Length );
-                    pStart += Name->Length/sizeof(WCHAR);
-                    *pStart++ = L'=';
-                    RtlMoveMemory( pStart,
-                                   Value->Buffer,
-                                   Value->Length );
-                    pStart += Value->Length/sizeof(WCHAR);
-                    *pStart++ = UNICODE_NULL;
-                    if (p) {
-                        RtlMoveMemory( pStart,
-                                       p,
-                                       (ULONG)((pEnd - p)*sizeof(WCHAR)) );
-                    }
-                    if (ARGUMENT_PRESENT(Environment)) {
-    		            *Environment = pNew;
-                    } else {
-    		            ProcessParameters->Environment = pNew;
-                        Peb->EnvironmentUpdateCount += 1;
-                    }
-                    RtlFreeHeap( RtlProcessHeap(),
-                                 0,
-                                 pOld);
-                } else {
-                    pStart = p + Name->Length/sizeof(WCHAR) + 1 + Value->Length/sizeof(WCHAR) + 1;
-                    RtlMoveMemory( pStart,
-                                   p,
-                                   (ULONG)((pEnd - p)*sizeof(WCHAR)) );
-                    RtlMoveMemory( p,
-                                   Name->Buffer,
-                                   Name->Length );
-                    p += Name->Length / sizeof(WCHAR);
-                    *p++ = L'=';
-                    RtlMoveMemory( p,
-                                   Value->Buffer,
-                                   Value->Length );
-                    p += Value->Length/sizeof(WCHAR);
-                    *p++ = UNICODE_NULL;
+        if (!OldBlock) {
+            OldSize = sizeof(WCHAR);
+        } else {
+            while (*Scan) {
+                while (*Scan++) {
                 }
             }
+            OldFinal = Scan;
+            OldSize = (OldFinal - OldBlock + 1) * sizeof(WCHAR);
+        }
+
+        if (!Found) {
+            EditStart = InsertBefore ? InsertBefore : OldFinal;
+            EditEnd = EditStart;
+        }
+
+        RemovedSize = Found ? ((EditEnd - EditStart) * sizeof(WCHAR)) : 0;
+        NewEntrySize = ARGUMENT_PRESENT(Value) ?
+            (Name->Length + sizeof(WCHAR) + Value->Length + sizeof(WCHAR)) :
+            0;
+        NewSize = OldSize - RemovedSize + NewEntrySize;
+        if (NewSize < sizeof(WCHAR)) {
+            NewSize = sizeof(WCHAR);
+        }
+
+        NewEnvironment = RtlAllocateHeap( RtlProcessHeap(),
+                                          HEAP_ZERO_MEMORY,
+                                          NewSize );
+        if (!NewEnvironment) {
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            leave;
+        }
+
+        Out = (PWSTR)NewEnvironment;
+        if (OldBlock && EditStart > OldBlock) {
+            PrefixSize = (EditStart - OldBlock) * sizeof(WCHAR);
+            RtlCopyMemory( Out,
+                           OldBlock,
+                           PrefixSize );
+            Out += PrefixSize / sizeof(WCHAR);
+        }
+
+        if (ARGUMENT_PRESENT(Value)) {
+            RtlCopyMemory( Out,
+                           Name->Buffer,
+                           Name->Length );
+            Out += Name->Length / sizeof(WCHAR);
+            *Out++ = L'=';
+            if (Value->Length != 0) {
+                RtlCopyMemory( Out,
+                               Value->Buffer,
+                               Value->Length );
+                Out += Value->Length / sizeof(WCHAR);
+            }
+            *Out++ = UNICODE_NULL;
+        }
+
+        if (OldBlock) {
+            SuffixSize = (OldFinal - EditEnd + 1) * sizeof(WCHAR);
+            if (SuffixSize != 0) {
+                RtlCopyMemory( Out,
+                               EditEnd,
+                               SuffixSize );
+            }
+        }
+
+        if (ARGUMENT_PRESENT(Environment)) {
+            *Environment = NewEnvironment;
+        } else {
+            ProcessParameters->Environment = NewEnvironment;
+            ProcessParameters->EnvironmentSize = (ULONG)NewSize;
+            Peb->EnvironmentUpdateCount += 1;
+        }
+
+        if (OldEnvironment) {
+            RtlFreeHeap( RtlProcessHeap(),
+                         0,
+                         OldEnvironment );
+        }
+
+            NewEnvironment = NULL;
+            Status = STATUS_SUCCESS;
         } except(EXCEPTION_EXECUTE_HANDLER) {
-              Status = STATUS_ACCESS_VIOLATION;
+            Status = STATUS_ACCESS_VIOLATION;
         }
     } finally {
-        if (! ARGUMENT_PRESENT(Environment)) {
+        if (!NT_SUCCESS(Status) && NewEnvironment) {
+            RtlFreeHeap( RtlProcessHeap(),
+                         0,
+                         NewEnvironment );
+        }
+        if (PebLockLocked) {
             RtlReleasePebLock();
         }
     }

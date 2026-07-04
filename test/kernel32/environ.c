@@ -23,6 +23,78 @@ EnvironmentVariableTest (
 #define ERROR_ENVVAR_NOT_FOUND 203L
 #endif
 
+static
+BOOLEAN
+LdkTestExpectEnvironmentA (
+    _In_ LPCSTR Name,
+    _In_ LPCSTR Expected
+    )
+{
+    CHAR Buffer[256];
+    DWORD Length;
+
+    Length = GetEnvironmentVariableA( Name,
+                                      Buffer,
+                                      sizeof(Buffer) );
+    return Length != 0 &&
+           Length < sizeof(Buffer) &&
+           strcmp( Buffer,
+                   Expected ) == 0;
+}
+
+static
+BOOLEAN
+LdkTestExpectEnvironmentW (
+    _In_ LPCWSTR Name,
+    _In_ LPCWSTR Expected
+    )
+{
+    WCHAR Buffer[256];
+    DWORD Length;
+
+    Length = GetEnvironmentVariableW( Name,
+                                      Buffer,
+                                      RTL_NUMBER_OF(Buffer) );
+    return Length != 0 &&
+           Length < RTL_NUMBER_OF(Buffer) &&
+           wcscmp( Buffer,
+                   Expected ) == 0;
+}
+
+static
+BOOLEAN
+LdkTestExpectEnvironmentMissingA (
+    _In_ LPCSTR Name
+    )
+{
+    CHAR Buffer[16];
+    DWORD Length;
+
+    SetLastError( ERROR_SUCCESS );
+    Length = GetEnvironmentVariableA( Name,
+                                      Buffer,
+                                      sizeof(Buffer) );
+    return Length == 0 &&
+           GetLastError() == ERROR_ENVVAR_NOT_FOUND;
+}
+
+static
+BOOLEAN
+LdkTestExpectEnvironmentMissingW (
+    _In_ LPCWSTR Name
+    )
+{
+    WCHAR Buffer[16];
+    DWORD Length;
+
+    SetLastError( ERROR_SUCCESS );
+    Length = GetEnvironmentVariableW( Name,
+                                      Buffer,
+                                      RTL_NUMBER_OF(Buffer) );
+    return Length == 0 &&
+           GetLastError() == ERROR_ENVVAR_NOT_FOUND;
+}
+
 BOOLEAN
 EnvironmentVariableTest (
     VOID
@@ -60,52 +132,75 @@ EnvironmentVariableTest (
         printf("[Success] GetEnvironmentVariableW(SystemRoot)\n\n");
     }
 
-    printf("Test SetEnvironmentVariableA(TestVar, Test)\n");
-    if (SetEnvironmentVariableA( "TestVar", "Test" )) {
-        printf("[Success] SetEnvironmentVariableA(TestVar, Test)\n\n");
+    printf("Test SetEnvironmentVariableA add/update/delete\n");
+    if (SetEnvironmentVariableA( "LDK_ENV_TEST_A_MISSING_DELETE",
+                                 NULL ) &&
+        LdkTestExpectEnvironmentMissingA( "LDK_ENV_TEST_A_MISSING_DELETE" ) &&
+        SetEnvironmentVariableA( "LDK_ENV_TEST_A",
+                                 "alpha" ) &&
+        LdkTestExpectEnvironmentA( "LDK_ENV_TEST_A",
+                                   "alpha" ) &&
+        SetEnvironmentVariableA( "LDK_ENV_TEST_A",
+                                 "beta" ) &&
+        LdkTestExpectEnvironmentA( "LDK_ENV_TEST_A",
+                                   "beta" ) &&
+        SetEnvironmentVariableA( "LDK_ENV_TEST_A",
+                                 "alpha-beta-gamma-long-value" ) &&
+        LdkTestExpectEnvironmentA( "LDK_ENV_TEST_A",
+                                   "alpha-beta-gamma-long-value" ) &&
+        SetEnvironmentVariableA( "LDK_ENV_TEST_A",
+                                 NULL ) &&
+        LdkTestExpectEnvironmentMissingA( "LDK_ENV_TEST_A" )) {
+        printf("[Success] SetEnvironmentVariableA add/update/delete\n\n");
     } else {
         fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
-        printf("[Failed] SetEnvironmentVariableA(TestVar, Test)\n\n");
+        printf("[Failed] SetEnvironmentVariableA add/update/delete\n\n");
         Result = FALSE;
     }
 
-    printf("Test GetEnvironmentVariableA(TestVar)\n");
-    length = GetEnvironmentVariableA( "TestVar", buffer, sizeof(buffer) );
-    if (length == 0) {
-        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
-        printf("[Failed] GetEnvironmentVariableA(TestVar)\n\n");
-        Result = FALSE;
+    printf("Test SetEnvironmentVariableW add/update/delete\n");
+    if (SetEnvironmentVariableW( L"LDK_ENV_TEST_W_MISSING_DELETE",
+                                 NULL ) &&
+        LdkTestExpectEnvironmentMissingW( L"LDK_ENV_TEST_W_MISSING_DELETE" ) &&
+        SetEnvironmentVariableW( L"LDK_ENV_TEST_W",
+                                 L"wide" ) &&
+        LdkTestExpectEnvironmentW( L"LDK_ENV_TEST_W",
+                                   L"wide" ) &&
+        SetEnvironmentVariableW( L"LDK_ENV_TEST_W",
+                                 L"narrower" ) &&
+        LdkTestExpectEnvironmentW( L"LDK_ENV_TEST_W",
+                                   L"narrower" ) &&
+        SetEnvironmentVariableW( L"LDK_ENV_TEST_W",
+                                 L"wide-alpha-beta-gamma-long-value" ) &&
+        LdkTestExpectEnvironmentW( L"LDK_ENV_TEST_W",
+                                   L"wide-alpha-beta-gamma-long-value" ) &&
+        SetEnvironmentVariableW( L"LDK_ENV_TEST_W",
+                                 NULL ) &&
+        LdkTestExpectEnvironmentMissingW( L"LDK_ENV_TEST_W" )) {
+        printf("[Success] SetEnvironmentVariableW add/update/delete\n\n");
     } else {
-        printf("%s\n", buffer);
-        printf("[Success] GetEnvironmentVariableA(TestVar)\n\n");
+        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
+        printf("[Failed] SetEnvironmentVariableW add/update/delete\n\n");
+        Result = FALSE;
     }
 
-   printf("Test SetEnvironmentVariableW(TestVar, NULL)\n");
-    if (SetEnvironmentVariableW( L"TestVar", NULL )) {
-        printf("[Success] SetEnvironmentVariableW(TestVar, NULL)\n\n");
-    } else {
-        fprintf(stderr, "[Failed] ErrorCode = %d\n", GetLastError());
-        printf("[Failed] SetEnvironmentVariableW(TestVar, NULL)\n\n");
-        Result = FALSE;
-    }
-
-    printf("Test GetEnvironmentVariableA(TestVar)\n");
-    length = GetEnvironmentVariableA( "TestVar", buffer, sizeof(buffer) );
+    printf("Test GetEnvironmentVariableA(LDK_ENV_TEST_A)\n");
+    length = GetEnvironmentVariableA( "LDK_ENV_TEST_A", buffer, sizeof(buffer) );
     if (length == 0) {
         DWORD ErrorCode;
 
         ErrorCode = GetLastError();
         if (ErrorCode == ERROR_ENVVAR_NOT_FOUND) {
-            printf("[Success] GetEnvironmentVariableA(TestVar) not found ErrorCode = %d\n\n",
+            printf("[Success] GetEnvironmentVariableA(LDK_ENV_TEST_A) not found ErrorCode = %d\n\n",
                    ErrorCode);
         } else {
             fprintf(stderr, "[Failed] ErrorCode = %d\n", ErrorCode);
-            printf("[Failed] GetEnvironmentVariableA(TestVar)\n\n");
+            printf("[Failed] GetEnvironmentVariableA(LDK_ENV_TEST_A)\n\n");
             Result = FALSE;
         }
     } else {
         printf("[Failed] %s\n", buffer);
-        printf("[Failed] GetEnvironmentVariableA(TestVar)\n\n");
+        printf("[Failed] GetEnvironmentVariableA(LDK_ENV_TEST_A)\n\n");
         Result = FALSE;
     }
 
