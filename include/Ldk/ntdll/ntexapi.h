@@ -81,9 +81,15 @@ ZwQueryDefaultLocale (
 #define DOSDEVICE_DRIVE_RAMDISK     6
 
 
+#ifndef TIME_ZONE_ID_UNKNOWN
 #define TIME_ZONE_ID_UNKNOWN  0
+#endif
+#ifndef TIME_ZONE_ID_STANDARD
 #define TIME_ZONE_ID_STANDARD 1
+#endif
+#ifndef TIME_ZONE_ID_DAYLIGHT
 #define TIME_ZONE_ID_DAYLIGHT 2
+#endif
 
 
 

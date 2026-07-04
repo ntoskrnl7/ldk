@@ -20,6 +20,8 @@
 #pragma alloc_text(PAGE, GetVersion)
 #pragma alloc_text(PAGE, GetVersionExA)
 #pragma alloc_text(PAGE, GetVersionExW)
+#pragma alloc_text(PAGE, VerifyVersionInfoA)
+#pragma alloc_text(PAGE, VerifyVersionInfoW)
 #endif
 
 
@@ -1014,6 +1016,74 @@ GetVersion (
             (vi.dwMinorVersion << 8) |
              vi.dwMajorVersion
            );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+VerifyVersionInfoW (
+    _Inout_ LPOSVERSIONINFOEXW lpVersionInformation,
+    _In_ DWORD dwTypeMask,
+    _In_ DWORDLONG dwlConditionMask
+    )
+{
+    NTSTATUS Status;
+
+    PAGED_CODE();
+
+    if (!lpVersionInformation) {
+        SetLastError( ERROR_BAD_ARGUMENTS );
+        return FALSE;
+    }
+
+    Status = RtlVerifyVersionInfo( (PRTL_OSVERSIONINFOEXW)lpVersionInformation,
+                                   dwTypeMask,
+                                   dwlConditionMask );
+    if (NT_SUCCESS(Status)) {
+        return TRUE;
+    }
+
+    LdkSetLastNTError( Status );
+    return FALSE;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+VerifyVersionInfoA (
+    _Inout_ LPOSVERSIONINFOEXA lpVersionInformation,
+    _In_ DWORD dwTypeMask,
+    _In_ DWORDLONG dwlConditionMask
+    )
+{
+    OSVERSIONINFOEXW VersionInformationW;
+
+    PAGED_CODE();
+
+    if (!lpVersionInformation) {
+        SetLastError( ERROR_BAD_ARGUMENTS );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &VersionInformationW,
+                   sizeof(VersionInformationW) );
+    VersionInformationW.dwOSVersionInfoSize = sizeof(VersionInformationW);
+    VersionInformationW.dwMajorVersion = lpVersionInformation->dwMajorVersion;
+    VersionInformationW.dwMinorVersion = lpVersionInformation->dwMinorVersion;
+    VersionInformationW.dwBuildNumber = lpVersionInformation->dwBuildNumber;
+    VersionInformationW.dwPlatformId = lpVersionInformation->dwPlatformId;
+    if (lpVersionInformation->dwOSVersionInfoSize >= sizeof(OSVERSIONINFOEXA)) {
+        VersionInformationW.wServicePackMajor =
+            lpVersionInformation->wServicePackMajor;
+        VersionInformationW.wServicePackMinor =
+            lpVersionInformation->wServicePackMinor;
+        VersionInformationW.wSuiteMask = lpVersionInformation->wSuiteMask;
+        VersionInformationW.wProductType = lpVersionInformation->wProductType;
+    }
+
+    return VerifyVersionInfoW( &VersionInformationW,
+                               dwTypeMask,
+                               dwlConditionMask );
 }
 
 WINBASEAPI

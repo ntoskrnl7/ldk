@@ -25,6 +25,12 @@ LdkpUnicodeStringToOemSize (
 	_In_ PUNICODE_STRING UnicodeString
 	);
 
+PVOID
+LdkpMapModuleHandle (
+    _In_opt_ HMODULE hModule,
+    _In_ BOOLEAN bResourcesOnly
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, Ldk8BitStringToStaticUnicodeString)
 #pragma alloc_text(PAGE, Ldk8BitStringToDynamicUnicodeString)
@@ -578,6 +584,242 @@ LdkpGetFirstResourceDirectoryEntry (
 	}
 
 	return (PIMAGE_RESOURCE_DIRECTORY_ENTRY)(Directory + 1);
+}
+
+static
+BOOLEAN
+LdkpResourceIdMatches (
+	_In_ LPCWSTR Resource,
+	_In_ USHORT Id
+	)
+{
+	return IS_INTRESOURCE(Resource) && ((USHORT)(ULONG_PTR)Resource == Id);
+}
+
+static
+BOOLEAN
+LdkpResourceStringMatches (
+	_In_reads_bytes_(ResourceSize) PIMAGE_RESOURCE_DIRECTORY ResourceBase,
+	_In_ ULONG ResourceSize,
+	_In_ PIMAGE_RESOURCE_DIRECTORY_ENTRY Entry,
+	_In_ LPCWSTR Name
+	)
+{
+	PIMAGE_RESOURCE_DIR_STRING_U ResourceName;
+	ULONG NameOffset;
+	ULONG RequiredSize;
+	USHORT Length;
+	ULONG Index;
+
+	if (! Entry->NameIsString || IS_INTRESOURCE(Name)) {
+		return FALSE;
+	}
+
+	NameOffset = Entry->NameOffset;
+	if (! LdkpResourceOffsetIsValid( NameOffset,
+									 ResourceSize,
+									 FIELD_OFFSET(IMAGE_RESOURCE_DIR_STRING_U, NameString) )) {
+		return FALSE;
+	}
+
+	ResourceName = (PIMAGE_RESOURCE_DIR_STRING_U)Add2Ptr(ResourceBase, NameOffset);
+	Length = ResourceName->Length;
+	RequiredSize = FIELD_OFFSET(IMAGE_RESOURCE_DIR_STRING_U, NameString) +
+				   Length * sizeof(WCHAR);
+	if (! LdkpResourceOffsetIsValid( NameOffset,
+									 ResourceSize,
+									 RequiredSize )) {
+		return FALSE;
+	}
+
+	for (Index = 0; Index < Length; Index++) {
+		if (Name[Index] == UNICODE_NULL ||
+			Name[Index] != ResourceName->NameString[Index]) {
+			return FALSE;
+		}
+	}
+
+	return Name[Length] == UNICODE_NULL;
+}
+
+static
+PIMAGE_RESOURCE_DIRECTORY_ENTRY
+LdkpFindResourceDirectoryEntry (
+	_In_reads_bytes_(ResourceSize) PIMAGE_RESOURCE_DIRECTORY ResourceBase,
+	_In_ ULONG ResourceSize,
+	_In_ ULONG DirectoryOffset,
+	_In_ LPCWSTR Name
+	)
+{
+	PIMAGE_RESOURCE_DIRECTORY Directory;
+	PIMAGE_RESOURCE_DIRECTORY_ENTRY Entry;
+	ULONG EntryCount;
+	ULONG Index;
+
+	if (! LdkpResourceOffsetIsValid( DirectoryOffset,
+									 ResourceSize,
+									 sizeof(IMAGE_RESOURCE_DIRECTORY) )) {
+		return NULL;
+	}
+
+	Directory = (PIMAGE_RESOURCE_DIRECTORY)Add2Ptr(ResourceBase, DirectoryOffset);
+	EntryCount = Directory->NumberOfNamedEntries + Directory->NumberOfIdEntries;
+	if (EntryCount == 0) {
+		return NULL;
+	}
+
+	if (! LdkpResourceOffsetIsValid( DirectoryOffset + sizeof(IMAGE_RESOURCE_DIRECTORY),
+									 ResourceSize,
+									 EntryCount * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY) )) {
+		return NULL;
+	}
+
+	Entry = (PIMAGE_RESOURCE_DIRECTORY_ENTRY)(Directory + 1);
+	for (Index = 0; Index < EntryCount; Index++) {
+		if (! Entry[Index].NameIsString) {
+			if (LdkpResourceIdMatches( Name,
+									   Entry[Index].Id )) {
+				return &Entry[Index];
+			}
+		} else if (LdkpResourceStringMatches( ResourceBase,
+											  ResourceSize,
+											  &Entry[Index],
+											  Name )) {
+			return &Entry[Index];
+		}
+	}
+
+	return NULL;
+}
+
+static
+PVOID
+LdkpMappedImageRvaToPointer (
+	_In_ PVOID ImageBase,
+	_In_ ULONG Rva,
+	_In_ ULONG RequiredSize
+	)
+{
+	PIMAGE_NT_HEADERS NtHeader;
+	ULONG SizeOfImage;
+
+	NtHeader = RtlImageNtHeader( ImageBase );
+	if (NtHeader == NULL) {
+		return NULL;
+	}
+
+	SizeOfImage = NtHeader->OptionalHeader.SizeOfImage;
+	if ((RequiredSize > SizeOfImage) ||
+		(Rva > SizeOfImage - RequiredSize)) {
+		return NULL;
+	}
+
+	return Add2Ptr(ImageBase, Rva);
+}
+
+static
+PIMAGE_RESOURCE_DATA_ENTRY
+LdkpFindMappedResourceDataEntry (
+	_In_ PVOID ImageBase,
+	_In_ LPCWSTR Type,
+	_In_ LPCWSTR Name,
+	_In_ WORD Language,
+	_Out_ PDWORD ErrorCode
+	)
+{
+	PIMAGE_RESOURCE_DIRECTORY ResourceBase;
+	ULONG ResourceSize;
+	PIMAGE_RESOURCE_DIRECTORY_ENTRY TypeEntry;
+	PIMAGE_RESOURCE_DIRECTORY_ENTRY NameEntry;
+	PIMAGE_RESOURCE_DIRECTORY_ENTRY LanguageEntry;
+	PIMAGE_RESOURCE_DATA_ENTRY DataEntry;
+
+	*ErrorCode = ERROR_RESOURCE_TYPE_NOT_FOUND;
+
+	if ((Type == NULL) || (Name == NULL)) {
+		*ErrorCode = ERROR_INVALID_PARAMETER;
+		return NULL;
+	}
+
+	ResourceBase = RtlImageDirectoryEntryToData(
+		ImageBase,
+		TRUE,
+		IMAGE_DIRECTORY_ENTRY_RESOURCE,
+		&ResourceSize );
+	if ((ResourceBase == NULL) || (ResourceSize == 0)) {
+		return NULL;
+	}
+
+	TypeEntry = LdkpFindResourceDirectoryEntry(
+		ResourceBase,
+		ResourceSize,
+		0,
+		Type );
+	if ((TypeEntry == NULL) || ! TypeEntry->DataIsDirectory) {
+		return NULL;
+	}
+
+	if (! LdkpResourceOffsetIsValid( TypeEntry->OffsetToDirectory,
+									 ResourceSize,
+									 sizeof(IMAGE_RESOURCE_DIRECTORY) )) {
+		*ErrorCode = ERROR_RESOURCE_DATA_NOT_FOUND;
+		return NULL;
+	}
+
+	*ErrorCode = ERROR_RESOURCE_NAME_NOT_FOUND;
+	NameEntry = LdkpFindResourceDirectoryEntry(
+		ResourceBase,
+		ResourceSize,
+		TypeEntry->OffsetToDirectory,
+		Name );
+	if ((NameEntry == NULL) || ! NameEntry->DataIsDirectory) {
+		return NULL;
+	}
+
+	if (! LdkpResourceOffsetIsValid( NameEntry->OffsetToDirectory,
+									 ResourceSize,
+									 sizeof(IMAGE_RESOURCE_DIRECTORY) )) {
+		*ErrorCode = ERROR_RESOURCE_DATA_NOT_FOUND;
+		return NULL;
+	}
+
+	*ErrorCode = ERROR_RESOURCE_LANG_NOT_FOUND;
+	LanguageEntry = NULL;
+	if (Language != 0) {
+		LanguageEntry = LdkpFindResourceDirectoryEntryById(
+			ResourceBase,
+			ResourceSize,
+			NameEntry->OffsetToDirectory,
+			Language );
+	} else {
+		LanguageEntry = LdkpGetFirstResourceDirectoryEntry(
+			ResourceBase,
+			ResourceSize,
+			NameEntry->OffsetToDirectory );
+	}
+
+	if ((LanguageEntry == NULL) || LanguageEntry->DataIsDirectory) {
+		return NULL;
+	}
+
+	if (! LdkpResourceOffsetIsValid( LanguageEntry->OffsetToData,
+									 ResourceSize,
+									 sizeof(IMAGE_RESOURCE_DATA_ENTRY) )) {
+		*ErrorCode = ERROR_RESOURCE_DATA_NOT_FOUND;
+		return NULL;
+	}
+
+	DataEntry = (PIMAGE_RESOURCE_DATA_ENTRY)Add2Ptr(
+		ResourceBase,
+		LanguageEntry->OffsetToData );
+	if (LdkpMappedImageRvaToPointer( ImageBase,
+									 DataEntry->OffsetToData,
+									 DataEntry->Size ) == NULL) {
+		*ErrorCode = ERROR_RESOURCE_DATA_NOT_FOUND;
+		return NULL;
+	}
+
+	return DataEntry;
 }
 
 static
@@ -1386,6 +1628,247 @@ Ldk8BitStringToDynamicUnicodeString (
 	} else {
 		LdkSetLastNTError( Status );
 	}
+	return FALSE;
+}
+
+static
+BOOL
+LdkpAnsiResourceToUnicode (
+	_Out_ PUNICODE_STRING UnicodeString,
+	_In_ LPCSTR AnsiResource,
+	_Out_ LPCWSTR *UnicodeResource
+	)
+{
+	UnicodeString->Length = 0;
+	UnicodeString->MaximumLength = 0;
+	UnicodeString->Buffer = NULL;
+
+	if (AnsiResource == NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return FALSE;
+	}
+
+	if (IS_INTRESOURCE(AnsiResource)) {
+		*UnicodeResource = (LPCWSTR)(ULONG_PTR)(USHORT)(ULONG_PTR)AnsiResource;
+		return TRUE;
+	}
+
+	if (! Ldk8BitStringToDynamicUnicodeString( UnicodeString,
+											   AnsiResource )) {
+		return FALSE;
+	}
+
+	*UnicodeResource = UnicodeString->Buffer;
+	return TRUE;
+}
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceExW (
+    _In_opt_ HMODULE hModule,
+    _In_ LPCWSTR lpType,
+    _In_ LPCWSTR lpName,
+    _In_ WORD wLanguage
+    )
+{
+	PVOID ImageBase;
+	PIMAGE_RESOURCE_DATA_ENTRY DataEntry;
+	DWORD ErrorCode;
+
+	PAGED_CODE();
+
+	ImageBase = LdkpMapModuleHandle( hModule,
+									 TRUE );
+	if (ImageBase == NULL) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return NULL;
+	}
+
+	DataEntry = LdkpFindMappedResourceDataEntry( ImageBase,
+												 lpType,
+												 lpName,
+												 wLanguage,
+												 &ErrorCode );
+	if (DataEntry == NULL) {
+		SetLastError( ErrorCode );
+		return NULL;
+	}
+
+	return (HRSRC)DataEntry;
+}
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceW (
+    _In_opt_ HMODULE hModule,
+    _In_ LPCWSTR lpName,
+    _In_ LPCWSTR lpType
+    )
+{
+	return FindResourceExW( hModule,
+							lpType,
+							lpName,
+							0 );
+}
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceExA (
+    _In_opt_ HMODULE hModule,
+    _In_ LPCSTR lpType,
+    _In_ LPCSTR lpName,
+    _In_ WORD wLanguage
+    )
+{
+	UNICODE_STRING TypeString;
+	UNICODE_STRING NameString;
+	LPCWSTR Type;
+	LPCWSTR Name;
+	HRSRC Resource;
+
+	PAGED_CODE();
+
+	if (! LdkpAnsiResourceToUnicode( &TypeString,
+									 lpType,
+									 &Type )) {
+		return NULL;
+	}
+	if (! LdkpAnsiResourceToUnicode( &NameString,
+									 lpName,
+									 &Name )) {
+		if (TypeString.Buffer != NULL) {
+			RtlFreeUnicodeString( &TypeString );
+		}
+		return NULL;
+	}
+
+	Resource = FindResourceExW( hModule,
+								Type,
+								Name,
+								wLanguage );
+
+	if (NameString.Buffer != NULL) {
+		RtlFreeUnicodeString( &NameString );
+	}
+	if (TypeString.Buffer != NULL) {
+		RtlFreeUnicodeString( &TypeString );
+	}
+
+	return Resource;
+}
+
+WINBASEAPI
+HRSRC
+WINAPI
+FindResourceA (
+    _In_opt_ HMODULE hModule,
+    _In_ LPCSTR lpName,
+    _In_ LPCSTR lpType
+    )
+{
+	return FindResourceExA( hModule,
+							lpType,
+							lpName,
+							0 );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HGLOBAL
+WINAPI
+LoadResource (
+    _In_opt_ HMODULE hModule,
+    _In_ HRSRC hResInfo
+    )
+{
+	PVOID ImageBase;
+	PIMAGE_RESOURCE_DATA_ENTRY DataEntry;
+	PVOID ResourceData;
+
+	PAGED_CODE();
+
+	if (hResInfo == NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return NULL;
+	}
+
+	ImageBase = LdkpMapModuleHandle( hModule,
+									 TRUE );
+	if (ImageBase == NULL) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return NULL;
+	}
+
+	DataEntry = (PIMAGE_RESOURCE_DATA_ENTRY)hResInfo;
+	ResourceData = LdkpMappedImageRvaToPointer( ImageBase,
+												DataEntry->OffsetToData,
+												DataEntry->Size );
+	if (ResourceData == NULL) {
+		SetLastError( ERROR_RESOURCE_DATA_NOT_FOUND );
+		return NULL;
+	}
+
+	return (HGLOBAL)ResourceData;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+LPVOID
+WINAPI
+LockResource (
+    _In_ HGLOBAL hResData
+    )
+{
+	return (LPVOID)hResData;
+}
+
+WINBASEAPI
+DWORD
+WINAPI
+SizeofResource (
+    _In_opt_ HMODULE hModule,
+    _In_ HRSRC hResInfo
+    )
+{
+	PVOID ImageBase;
+	PIMAGE_RESOURCE_DATA_ENTRY DataEntry;
+
+	PAGED_CODE();
+
+	if (hResInfo == NULL) {
+		SetLastError( ERROR_INVALID_PARAMETER );
+		return 0;
+	}
+
+	ImageBase = LdkpMapModuleHandle( hModule,
+									 TRUE );
+	if (ImageBase == NULL) {
+		SetLastError( ERROR_INVALID_HANDLE );
+		return 0;
+	}
+
+	DataEntry = (PIMAGE_RESOURCE_DATA_ENTRY)hResInfo;
+	if (LdkpMappedImageRvaToPointer( ImageBase,
+									 DataEntry->OffsetToData,
+									 DataEntry->Size ) == NULL) {
+		SetLastError( ERROR_RESOURCE_DATA_NOT_FOUND );
+		return 0;
+	}
+
+	return DataEntry->Size;
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+FreeResource (
+    _In_ HGLOBAL hResData
+    )
+{
+	UNREFERENCED_PARAMETER(hResData);
 	return FALSE;
 }
 

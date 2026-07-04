@@ -63,6 +63,19 @@ EXTERN_C_START
 #define FILE_CURRENT         1
 #define FILE_END             2
 
+#ifndef _LDK_OFSTRUCT_DEFINED
+#define _LDK_OFSTRUCT_DEFINED
+#define OFS_MAXPATHNAME 128
+typedef struct _OFSTRUCT {
+    BYTE cBytes;
+    BYTE fFixedDisk;
+    WORD nErrCode;
+    WORD Reserved1;
+    WORD Reserved2;
+    CHAR szPathName[OFS_MAXPATHNAME];
+} OFSTRUCT, *LPOFSTRUCT, *POFSTRUCT;
+#endif
+
 #define WAIT_FAILED ((DWORD)0xFFFFFFFF)
 #define WAIT_OBJECT_0       ((STATUS_WAIT_0 ) + 0 )
 
@@ -533,6 +546,30 @@ FormatMessageW(
 #define FORMAT_MESSAGE_FROM_SYSTEM     0x00001000
 #define FORMAT_MESSAGE_ARGUMENT_ARRAY  0x00002000
 #define FORMAT_MESSAGE_MAX_WIDTH_MASK  0x000000FF
+
+WINBASEAPI
+BOOL
+WINAPI
+VerifyVersionInfoA(
+    _Inout_ LPOSVERSIONINFOEXA lpVersionInformation,
+    _In_ DWORD dwTypeMask,
+    _In_ DWORDLONG dwlConditionMask
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+VerifyVersionInfoW(
+    _Inout_ LPOSVERSIONINFOEXW lpVersionInformation,
+    _In_ DWORD dwTypeMask,
+    _In_ DWORDLONG dwlConditionMask
+    );
+
+#ifdef UNICODE
+#define VerifyVersionInfo VerifyVersionInfoW
+#else
+#define VerifyVersionInfo VerifyVersionInfoA
+#endif
 
 WINBASEAPI
 BOOL
