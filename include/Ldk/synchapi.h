@@ -98,6 +98,95 @@ PulseEvent(
     _In_ HANDLE hEvent
     );
 
+#ifndef MUTANT_QUERY_STATE
+#define MUTANT_QUERY_STATE 0x0001
+#endif
+
+#ifndef MUTANT_ALL_ACCESS
+#define MUTANT_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | MUTANT_QUERY_STATE)
+#endif
+
+#ifndef MUTEX_MODIFY_STATE
+#define MUTEX_MODIFY_STATE MUTANT_QUERY_STATE
+#endif
+
+#ifndef MUTEX_ALL_ACCESS
+#define MUTEX_ALL_ACCESS MUTANT_ALL_ACCESS
+#endif
+
+#ifndef CREATE_MUTEX_INITIAL_OWNER
+#define CREATE_MUTEX_INITIAL_OWNER 0x00000001
+#endif
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexA(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_ BOOL bInitialOwner,
+    _In_opt_ LPCSTR lpName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexW(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_ BOOL bInitialOwner,
+    _In_opt_ LPCWSTR lpName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexExA(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_opt_ LPCSTR lpName,
+    _In_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexExW(
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_opt_ LPCWSTR lpName,
+    _In_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenMutexA(
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCSTR lpName
+    );
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenMutexW(
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCWSTR lpName
+    );
+
+WINBASEAPI
+BOOL
+WINAPI
+ReleaseMutex(
+    _In_ HANDLE hMutex
+    );
+
 WINBASEAPI
 _Ret_maybenull_
 HANDLE

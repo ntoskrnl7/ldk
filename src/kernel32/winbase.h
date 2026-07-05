@@ -30,6 +30,22 @@ LdkCreateCurrentProcessHandle (
 	_In_ BOOL InheritHandle
 	);
 
+HANDLE
+LdkCreateMutantHandle (
+	_In_ DWORD DesiredAccess,
+	_In_ BOOL InheritHandle,
+	_In_ BOOLEAN InitialOwner,
+	_In_opt_ PCUNICODE_STRING Name,
+	_Out_opt_ PBOOLEAN AlreadyExists
+	);
+
+HANDLE
+LdkOpenMutantHandle (
+	_In_ DWORD DesiredAccess,
+	_In_ BOOL InheritHandle,
+	_In_ PCUNICODE_STRING Name
+	);
+
 BOOL
 LdkCloseProcessHandle (
 	_In_ HANDLE Handle,
@@ -43,6 +59,12 @@ LdkDuplicateProcessHandle (
 	_In_ DWORD DesiredAccess,
 	_In_ BOOL InheritHandle,
 	_In_ DWORD Options,
+	_Out_ PBOOL Handled
+	);
+
+BOOL
+LdkReleaseMutantHandle (
+	_In_ HANDLE Handle,
 	_Out_ PBOOL Handled
 	);
 

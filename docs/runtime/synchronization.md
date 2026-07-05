@@ -13,10 +13,12 @@ The current synchronization surface includes:
 - Condition variables: Kernel32 wrappers and RTL condition-variable routines.
 - Waits and delay: `WaitForSingleObject`, `WaitForMultipleObjects`,
   alertable variants, `Sleep`, and `SleepEx`.
-- Kernel object release helpers: `ReleaseSemaphore` and `ReleaseMutex`.
-  Semaphore release is part of the driver synchronization regression test.
-  `ReleaseMutex` is exported for CRT/STL compatibility and uses the native
-  mutant release routine when that routine is available from the kernel.
+- Kernel objects: event, semaphore, and mutex create/open/release helpers.
+  Mutex acquisition follows Win32 semantics through `WaitForSingleObject` or
+  `WaitForMultipleObjects`; `ReleaseMutex` releases the underlying native
+  mutant object. Anonymous and named mutexes are LDK-owned handles; named
+  mutexes are resolved through the LDK runtime registry rather than the kernel
+  object-manager namespace.
 - One-time initialization: `InitOnceExecuteOnce`.
 - Keyed events: `NtCreateKeyedEvent`, `NtOpenKeyedEvent`,
   `NtWaitForKeyedEvent`, and `NtReleaseKeyedEvent`.
@@ -59,8 +61,8 @@ internal list.
 The test driver currently covers:
 
 - Condition variables and critical sections.
-- Event/semaphore wait and release paths; mutex release is covered by the
-  native Win32 baseline test.
+- Event/semaphore/mutex wait and release paths, including `SignalObjectAndWait`
+  with each supported signal object type.
 - Keyed events.
 - Wait-on-address single wake, wake-all, timeout, multiple address sizes, mixed
   address sets, direct RTL waits, native alert waits, and durability loops.

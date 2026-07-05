@@ -29,8 +29,6 @@ ZwReleaseSemaphore(
     _Out_opt_ PLONG PreviousCount
     );
 
-
-
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, CreateEventA)
 #pragma alloc_text(PAGE, CreateEventW)
@@ -40,6 +38,13 @@ ZwReleaseSemaphore(
 #pragma alloc_text(PAGE, SetEvent)
 #pragma alloc_text(PAGE, ResetEvent)
 #pragma alloc_text(PAGE, PulseEvent)
+#pragma alloc_text(PAGE, CreateMutexA)
+#pragma alloc_text(PAGE, CreateMutexW)
+#pragma alloc_text(PAGE, CreateMutexExA)
+#pragma alloc_text(PAGE, CreateMutexExW)
+#pragma alloc_text(PAGE, OpenMutexA)
+#pragma alloc_text(PAGE, OpenMutexW)
+#pragma alloc_text(PAGE, ReleaseMutex)
 #pragma alloc_text(PAGE, CreateSemaphoreExW)
 #pragma alloc_text(PAGE, ReleaseSemaphore)
 #pragma alloc_text(PAGE, InitializeSRWLock)
@@ -343,6 +348,204 @@ PulseEvent (
         return TRUE;
     }
     LdkSetLastNTError(Status);
+    return FALSE;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexA (
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_ BOOL bInitialOwner,
+    _In_opt_ LPCSTR lpName
+    )
+{
+    PCWSTR lpNameW = NULL;
+
+    PAGED_CODE();
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        PUNICODE_STRING NameW = LdkAnsiStringToStaticUnicodeString( lpName );
+        if (! NameW) {
+            return NULL;
+        }
+        lpNameW = (PCWSTR)NameW->Buffer;
+    }
+
+    return CreateMutexW( lpMutexAttributes,
+                         bInitialOwner,
+                         lpNameW );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexW (
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_ BOOL bInitialOwner,
+    _In_opt_ LPCWSTR lpName
+    )
+{
+    PAGED_CODE();
+
+    return CreateMutexExW( lpMutexAttributes,
+                           lpName,
+                           bInitialOwner ? CREATE_MUTEX_INITIAL_OWNER : 0,
+                           MUTEX_ALL_ACCESS );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexExA (
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_opt_ LPCSTR lpName,
+    _In_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    )
+{
+    PCWSTR lpNameW = NULL;
+
+    PAGED_CODE();
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        PUNICODE_STRING NameW = LdkAnsiStringToStaticUnicodeString( lpName );
+        if (! NameW) {
+            return NULL;
+        }
+        lpNameW = (PCWSTR)NameW->Buffer;
+    }
+
+    return CreateMutexExW( lpMutexAttributes,
+                           lpNameW,
+                           dwFlags,
+                           dwDesiredAccess );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+CreateMutexExW (
+    _In_opt_ LPSECURITY_ATTRIBUTES lpMutexAttributes,
+    _In_opt_ LPCWSTR lpName,
+    _In_ DWORD dwFlags,
+    _In_ DWORD dwDesiredAccess
+    )
+{
+    BOOL InheritHandle;
+    UNICODE_STRING Name;
+    PCUNICODE_STRING NamePointer;
+    HANDLE Handle;
+    BOOLEAN AlreadyExists;
+
+    PAGED_CODE();
+
+    if ((dwFlags & ~CREATE_MUTEX_INITIAL_OWNER) != 0) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return NULL;
+    }
+
+    NamePointer = NULL;
+    if (ARGUMENT_PRESENT(lpName)) {
+        RtlInitUnicodeString( &Name,
+                              lpName );
+        if (Name.Length != 0) {
+            NamePointer = &Name;
+        }
+    }
+
+    InheritHandle = ARGUMENT_PRESENT(lpMutexAttributes) &&
+                    lpMutexAttributes->bInheritHandle;
+
+    AlreadyExists = FALSE;
+    Handle = LdkCreateMutantHandle( dwDesiredAccess,
+                                    InheritHandle,
+                                    (BOOLEAN)((dwFlags & CREATE_MUTEX_INITIAL_OWNER) != 0),
+                                    NamePointer,
+                                    &AlreadyExists );
+    if (Handle != NULL) {
+        SetLastError( AlreadyExists ? ERROR_ALREADY_EXISTS : ERROR_SUCCESS );
+    }
+
+    return Handle;
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenMutexA (
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCSTR lpName
+    )
+{
+    PCWSTR lpNameW = NULL;
+
+    PAGED_CODE();
+
+    if (ARGUMENT_PRESENT(lpName)) {
+        PUNICODE_STRING NameW = LdkAnsiStringToStaticUnicodeString( lpName );
+        if (! NameW) {
+            return NULL;
+        }
+        lpNameW = (PCWSTR)NameW->Buffer;
+    }
+
+    return OpenMutexW( dwDesiredAccess,
+                       bInheritHandle,
+                       lpNameW );
+}
+
+WINBASEAPI
+_Ret_maybenull_
+HANDLE
+WINAPI
+OpenMutexW (
+    _In_ DWORD dwDesiredAccess,
+    _In_ BOOL bInheritHandle,
+    _In_ LPCWSTR lpName
+    )
+{
+    UNICODE_STRING Name;
+
+    PAGED_CODE();
+
+    if (! ARGUMENT_PRESENT(lpName)) {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return NULL;
+    }
+
+    RtlInitUnicodeString( &Name,
+                          lpName );
+    return LdkOpenMutantHandle( dwDesiredAccess,
+                                bInheritHandle,
+                                &Name );
+}
+
+WINBASEAPI
+BOOL
+WINAPI
+ReleaseMutex (
+    _In_ HANDLE hMutex
+    )
+{
+    BOOL Handled;
+
+    PAGED_CODE();
+
+    if (LdkReleaseMutantHandle( hMutex,
+                                &Handled )) {
+        return TRUE;
+    }
+
+    if (! Handled) {
+        SetLastError( ERROR_INVALID_HANDLE );
+    }
     return FALSE;
 }
 
@@ -1132,11 +1335,19 @@ SignalObjectAndWait (
     )
 {
     NTSTATUS Status;
+    BOOL Handled;
 
     PAGED_CODE();
 
-    Status = ZwSetEvent( hObjectToSignal,
-                         NULL );
+    if (LdkReleaseMutantHandle( hObjectToSignal,
+                                &Handled )) {
+        Status = STATUS_SUCCESS;
+    } else if (Handled) {
+        return WAIT_FAILED;
+    } else {
+        Status = ZwSetEvent( hObjectToSignal,
+                             NULL );
+    }
     if (Status == STATUS_OBJECT_TYPE_MISMATCH) {
         Status = ZwReleaseSemaphore( hObjectToSignal,
                                      1,
