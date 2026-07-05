@@ -704,6 +704,34 @@ LDK_FUNCTION_REGISTRATION LdkpKernel32FunctionRegistration[] = {
 		PulseEvent
 	},
 	{
+		"CreateMutexA",
+		CreateMutexA
+	},
+	{
+		"CreateMutexW",
+		CreateMutexW
+	},
+	{
+		"CreateMutexExA",
+		CreateMutexExA
+	},
+	{
+		"CreateMutexExW",
+		CreateMutexExW
+	},
+	{
+		"OpenMutexA",
+		OpenMutexA
+	},
+	{
+		"OpenMutexW",
+		OpenMutexW
+	},
+	{
+		"ReleaseMutex",
+		ReleaseMutex
+	},
+	{
 		"CreateSemaphoreExW",
 		CreateSemaphoreExW
 	},

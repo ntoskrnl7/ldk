@@ -1318,7 +1318,13 @@ KernelObjectSynchronizationApiTest(
     HANDLE SignalEvent = NULL;
     HANDLE Semaphore = NULL;
     HANDLE SignalSemaphore = NULL;
+    HANDLE Mutex = NULL;
+    HANDLE NamedMutex = NULL;
+    HANDLE NamedMutexAgain = NULL;
+    HANDLE OpenedMutex = NULL;
+    HANDLE SignalMutex = NULL;
     DWORD WaitResult;
+    DWORD ErrorCode;
     LONG PreviousCount = -1;
     BOOLEAN Result = FALSE;
 
@@ -1406,6 +1412,113 @@ KernelObjectSynchronizationApiTest(
         goto Cleanup;
     }
 
+    Mutex = CreateMutexExW( NULL,
+                            NULL,
+                            CREATE_MUTEX_INITIAL_OWNER,
+                            MUTEX_ALL_ACCESS );
+    if (! Mutex) {
+        fprintf(stderr,
+                "[Failed] CreateMutexExW ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ReleaseMutex( Mutex )) {
+        fprintf(stderr,
+                "[Failed] ReleaseMutex(initial owner) ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( Mutex,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] Mutex wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ReleaseMutex( Mutex )) {
+        fprintf(stderr,
+                "[Failed] ReleaseMutex(acquired mutex) ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    NamedMutex = CreateMutexW( NULL,
+                               FALSE,
+                               L"Local\\LdkConditionVariableNamedMutexTest" );
+    ErrorCode = GetLastError();
+    if (! NamedMutex ||
+        ErrorCode != ERROR_SUCCESS) {
+        fprintf(stderr,
+                "[Failed] CreateMutexW(named) Handle = %p ErrorCode = %lu\n",
+                NamedMutex,
+                ErrorCode);
+        goto Cleanup;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    NamedMutexAgain = CreateMutexW( NULL,
+                                    TRUE,
+                                    L"Local\\LdkConditionVariableNamedMutexTest" );
+    ErrorCode = GetLastError();
+    if (! NamedMutexAgain ||
+        ErrorCode != ERROR_ALREADY_EXISTS) {
+        fprintf(stderr,
+                "[Failed] CreateMutexW(named existing) Handle = %p ErrorCode = %lu\n",
+                NamedMutexAgain,
+                ErrorCode);
+        goto Cleanup;
+    }
+
+    OpenedMutex = OpenMutexA( SYNCHRONIZE | MUTEX_MODIFY_STATE,
+                              FALSE,
+                              "Local\\LdkConditionVariableNamedMutexTest" );
+    if (! OpenedMutex) {
+        fprintf(stderr,
+                "[Failed] OpenMutexA(named) ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( NamedMutex,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] Named mutex wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ReleaseMutex( NamedMutex )) {
+        fprintf(stderr,
+                "[Failed] ReleaseMutex(named) ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( OpenedMutex,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] Opened mutex wait Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ReleaseMutex( OpenedMutex )) {
+        fprintf(stderr,
+                "[Failed] ReleaseMutex(opened named) ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
     WaitEvent = CreateEventExW( NULL,
                                 NULL,
                                 CREATE_EVENT_INITIAL_SET,
@@ -1486,10 +1599,68 @@ KernelObjectSynchronizationApiTest(
         goto Cleanup;
     }
 
+    SignalMutex = CreateMutexW( NULL,
+                                TRUE,
+                                NULL );
+    if (! SignalMutex) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait mutex setup ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! SetEvent( WaitEvent )) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait mutex wait setup ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = SignalObjectAndWait( SignalMutex,
+                                      WaitEvent,
+                                      0,
+                                      FALSE );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait(mutex) Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    WaitResult = WaitForSingleObject( SignalMutex,
+                                      0 );
+    if (WaitResult != WAIT_OBJECT_0) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait mutex signal Wait = 0x%08x ErrorCode = %lu\n",
+                WaitResult,
+                GetLastError());
+        goto Cleanup;
+    }
+
+    if (! ReleaseMutex( SignalMutex )) {
+        fprintf(stderr,
+                "[Failed] SignalObjectAndWait mutex cleanup ErrorCode = %lu\n",
+                GetLastError());
+        goto Cleanup;
+    }
+
     printf("[Success] kernel object synchronization API test\n\n");
     Result = TRUE;
 
 Cleanup:
+    if (SignalMutex) {
+        CloseHandle( SignalMutex );
+    }
+    if (OpenedMutex) {
+        CloseHandle( OpenedMutex );
+    }
+    if (NamedMutexAgain) {
+        CloseHandle( NamedMutexAgain );
+    }
+    if (NamedMutex) {
+        CloseHandle( NamedMutex );
+    }
     if (SignalSemaphore) {
         CloseHandle( SignalSemaphore );
     }
@@ -1501,6 +1672,9 @@ Cleanup:
     }
     if (Semaphore) {
         CloseHandle( Semaphore );
+    }
+    if (Mutex) {
+        CloseHandle( Mutex );
     }
     if (Event) {
         CloseHandle( Event );
