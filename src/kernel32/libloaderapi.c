@@ -273,12 +273,26 @@ GetModuleHandleExA (
 
 			NTSTATUS Status;
 			PLDK_MODULE Module;
+			PVOID Address;
+
+			Address = (PVOID)lpModuleName;
 			Status = LdkReferenceModuleByAddress( (PVOID)lpModuleName,
 												  BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_PIN),
 												  ! BooleanFlagOn(dwFlags, GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT),
 												  &Module );
 
 			if (! NT_SUCCESS(Status)) {
+				PVOID ImageBase = NtCurrentPeb()->ImageBaseAddress;
+				SIZE_T ImageSize = NtCurrentPeb()->ImageBaseSize;
+
+				if (ImageBase &&
+					ImageSize &&
+					((ULONG_PTR)Address >= (ULONG_PTR)ImageBase) &&
+					(((ULONG_PTR)Address - (ULONG_PTR)ImageBase) < ImageSize)) {
+					*phModule = (HMODULE)ImageBase;
+					return TRUE;
+				}
+
 				LdkSetLastNTError( Status );
 				return FALSE;
 			}
