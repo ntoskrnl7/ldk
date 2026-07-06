@@ -31,6 +31,7 @@ set(LDK_WIN32_TEST_SOURCES
 
 add_executable(LdkWin32ApiTest
     main.c
+    ../currentmodule.rc
     ${LDK_WIN32_TEST_SOURCES}
 )
 

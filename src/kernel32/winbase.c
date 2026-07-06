@@ -736,8 +736,13 @@ LdkpFindMappedResourceDataEntry (
 
 	*ErrorCode = ERROR_RESOURCE_TYPE_NOT_FOUND;
 
-	if ((Type == NULL) || (Name == NULL)) {
-		*ErrorCode = ERROR_INVALID_PARAMETER;
+	if (Type == NULL) {
+		*ErrorCode = ERROR_RESOURCE_TYPE_NOT_FOUND;
+		return NULL;
+	}
+
+	if (Name == NULL) {
+		*ErrorCode = ERROR_RESOURCE_NAME_NOT_FOUND;
 		return NULL;
 	}
 

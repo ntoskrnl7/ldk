@@ -19,7 +19,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 file(GLOB SOURCE_FILES CONFIGURE_DEPENDS ./driver.c ./*/*.c)
 list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/win32/.*")
 
-ldk_add_driver(LdkTest ${SOURCE_FILES})
+ldk_add_driver(LdkTest ${SOURCE_FILES} currentmodule.rc)
 
 foreach(flag
         CMAKE_C_FLAGS_RELEASE

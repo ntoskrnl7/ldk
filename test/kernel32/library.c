@@ -55,6 +55,10 @@ typedef LONG(__stdcall* THREAD_NOTIFY_GET_EVENT_FN)(LONG);
 #define THREAD_NOTIFY_EVENT_THREAD_DETACH  0x311
 #define THREAD_NOTIFY_EVENT_PROCESS_DETACH 0x411
 #define THREAD_NOTIFY_TEST_LOG_CAPACITY    16
+#define CURRENT_MODULE_RCDATA_ID           201
+#define CURRENT_MODULE_RCDATA_TYPE_ID      10
+#define CURRENT_MODULE_RCDATA_TEXT         "LDK_CURRENT_MODULE_RESOURCE"
+#define CURRENT_MODULE_RCDATA_SIZE         (sizeof(CURRENT_MODULE_RCDATA_TEXT) - 1)
 
 #if _KERNEL_MODE
 static
@@ -282,6 +286,302 @@ VerifyResourceOnlyLoad (
     }
 
     printf("[Success] LoadLibraryExW %s\n", Label);
+    return TRUE;
+}
+
+static
+BOOL
+ResourcePayloadMatches (
+    _In_reads_bytes_(ResourceSize) const CHAR *ResourceData,
+    _In_ DWORD ResourceSize
+    )
+{
+    DWORD Index;
+    static const CHAR ExpectedResource[] = CURRENT_MODULE_RCDATA_TEXT;
+
+    if (ResourceSize != CURRENT_MODULE_RCDATA_SIZE) {
+        return FALSE;
+    }
+
+    for (Index = 0; Index < CURRENT_MODULE_RCDATA_SIZE; Index++) {
+        if (ResourceData[Index] != ExpectedResource[Index]) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static
+BOOL
+VerifyCurrentModuleResourceByHandle (
+    _In_ HMODULE Module,
+    _In_ LPCSTR Label
+    )
+{
+    HRSRC ResourceW;
+    HRSRC ResourceWByName;
+    HRSRC ResourceA;
+    HRSRC ResourceAByName;
+    HGLOBAL ResourceData;
+    LPVOID LockedResource;
+    DWORD ResourceSize;
+
+    if (!Module) {
+        fprintf(stderr,
+                "[Failed] %s returned NULL current module handle\n",
+                Label);
+        return FALSE;
+    }
+
+    ResourceW = FindResourceExW( Module,
+                                 MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_TYPE_ID),
+                                 MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_ID),
+                                 0 );
+    if (!ResourceW) {
+        fprintf(stderr,
+                "[Failed] %s FindResourceExW(current RT_RCDATA/#%u) ErrorCode = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                GetLastError());
+        return FALSE;
+    }
+
+    ResourceWByName = FindResourceW( Module,
+                                     MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_ID),
+                                     MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_TYPE_ID) );
+    if (ResourceWByName != ResourceW) {
+        fprintf(stderr,
+                "[Failed] %s FindResourceW(current RT_RCDATA/#%u) mismatch ErrorCode = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                GetLastError());
+        return FALSE;
+    }
+
+    ResourceA = FindResourceExA( Module,
+                                 MAKEINTRESOURCEA(CURRENT_MODULE_RCDATA_TYPE_ID),
+                                 MAKEINTRESOURCEA(CURRENT_MODULE_RCDATA_ID),
+                                 0 );
+    if (!ResourceA) {
+        fprintf(stderr,
+                "[Failed] %s FindResourceExA(current RT_RCDATA/#%u) ErrorCode = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                GetLastError());
+        return FALSE;
+    }
+
+    ResourceAByName = FindResourceA( Module,
+                                     MAKEINTRESOURCEA(CURRENT_MODULE_RCDATA_ID),
+                                     MAKEINTRESOURCEA(CURRENT_MODULE_RCDATA_TYPE_ID) );
+    if (ResourceAByName != ResourceA) {
+        fprintf(stderr,
+                "[Failed] %s FindResourceA(current RT_RCDATA/#%u) mismatch ErrorCode = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                GetLastError());
+        return FALSE;
+    }
+
+    ResourceSize = SizeofResource( Module,
+                                   ResourceW );
+    if (ResourceSize != CURRENT_MODULE_RCDATA_SIZE) {
+        fprintf(stderr,
+                "[Failed] %s SizeofResource(current RT_RCDATA/#%u) returned %lu Expected = %lu ErrorCode = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                ResourceSize,
+                (DWORD)CURRENT_MODULE_RCDATA_SIZE,
+                GetLastError());
+        return FALSE;
+    }
+
+    ResourceData = LoadResource( Module,
+                                 ResourceW );
+    if (!ResourceData) {
+        fprintf(stderr,
+                "[Failed] %s LoadResource(current RT_RCDATA/#%u) ErrorCode = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                GetLastError());
+        return FALSE;
+    }
+
+    LockedResource = LockResource( ResourceData );
+    if (LockedResource != ResourceData) {
+        fprintf(stderr,
+                "[Failed] %s LockResource(current RT_RCDATA/#%u) did not return the resource pointer\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID);
+        return FALSE;
+    }
+
+    if (!ResourcePayloadMatches( (const CHAR *)LockedResource,
+                                 ResourceSize )) {
+        fprintf(stderr,
+                "[Failed] %s current RT_RCDATA/#%u payload mismatch Size = %lu\n",
+                Label,
+                CURRENT_MODULE_RCDATA_ID,
+                ResourceSize);
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (FindResourceW( Module,
+                       MAKEINTRESOURCEW(0xfffd),
+                       MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_TYPE_ID) ) != NULL ||
+        GetLastError() != ERROR_RESOURCE_NAME_NOT_FOUND) {
+        fprintf(stderr,
+                "[Failed] %s missing resource name did not report name-not-found ErrorCode = %lu\n",
+                Label,
+                GetLastError());
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (FindResourceA( Module,
+                       MAKEINTRESOURCEA(CURRENT_MODULE_RCDATA_ID),
+                       MAKEINTRESOURCEA(0xfffe) ) != NULL ||
+        GetLastError() != ERROR_RESOURCE_TYPE_NOT_FOUND) {
+        fprintf(stderr,
+                "[Failed] %s missing resource type did not report type-not-found ErrorCode = %lu\n",
+                Label,
+                GetLastError());
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (FindResourceExW( Module,
+                         NULL,
+                         MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_ID),
+                         0 ) != NULL ||
+        GetLastError() != ERROR_RESOURCE_TYPE_NOT_FOUND) {
+        fprintf(stderr,
+                "[Failed] %s FindResourceExW(NULL type) did not report type-not-found ErrorCode = %lu\n",
+                Label,
+                GetLastError());
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (FindResourceExW( Module,
+                         MAKEINTRESOURCEW(CURRENT_MODULE_RCDATA_TYPE_ID),
+                         NULL,
+                         0 ) != NULL ||
+        GetLastError() != ERROR_RESOURCE_NAME_NOT_FOUND) {
+        fprintf(stderr,
+                "[Failed] %s FindResourceExW(NULL name) did not report name-not-found ErrorCode = %lu\n",
+                Label,
+                GetLastError());
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (SizeofResource( Module,
+                        NULL ) != 0 ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+        fprintf(stderr,
+                "[Failed] %s SizeofResource(NULL) did not report invalid-parameter ErrorCode = %lu\n",
+                Label,
+                GetLastError());
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (LoadResource( Module,
+                      NULL ) != NULL ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+        fprintf(stderr,
+                "[Failed] %s LoadResource(NULL) did not report invalid-parameter ErrorCode = %lu\n",
+                Label,
+                GetLastError());
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+BOOL
+VerifyCurrentModuleResourceSemantics (
+    VOID
+    )
+{
+    HMODULE ModuleA;
+    HMODULE ModuleW;
+    HMODULE UnchangedA = NULL;
+    HMODULE UnchangedW = NULL;
+    HMODULE FromAddressA = NULL;
+    HMODULE FromAddressW = NULL;
+
+    ModuleW = GetModuleHandleW( NULL );
+    if (!VerifyCurrentModuleResourceByHandle( ModuleW,
+                                              "GetModuleHandleW(NULL)" )) {
+        return FALSE;
+    }
+
+    ModuleA = GetModuleHandleA( NULL );
+    if (!VerifyCurrentModuleResourceByHandle( ModuleA,
+                                              "GetModuleHandleA(NULL)" )) {
+        return FALSE;
+    }
+
+    if (!GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                             NULL,
+                             &UnchangedW )) {
+        fprintf(stderr,
+                "[Failed] GetModuleHandleExW(NULL, UNCHANGED_REFCOUNT) ErrorCode = %lu\n",
+                GetLastError());
+        return FALSE;
+    }
+    if (!VerifyCurrentModuleResourceByHandle( UnchangedW,
+                                              "GetModuleHandleExW(NULL, UNCHANGED_REFCOUNT)" )) {
+        return FALSE;
+    }
+
+    if (!GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                             NULL,
+                             &UnchangedA )) {
+        fprintf(stderr,
+                "[Failed] GetModuleHandleExA(NULL, UNCHANGED_REFCOUNT) ErrorCode = %lu\n",
+                GetLastError());
+        return FALSE;
+    }
+    if (!VerifyCurrentModuleResourceByHandle( UnchangedA,
+                                              "GetModuleHandleExA(NULL, UNCHANGED_REFCOUNT)" )) {
+        return FALSE;
+    }
+
+    if (!GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                             (LPCWSTR)VerifyCurrentModuleResourceSemantics,
+                             &FromAddressW )) {
+        fprintf(stderr,
+                "[Failed] GetModuleHandleExW(current test function, FROM_ADDRESS) ErrorCode = %lu\n",
+                GetLastError());
+        return FALSE;
+    }
+    if (!VerifyCurrentModuleResourceByHandle( FromAddressW,
+                                              "GetModuleHandleExW(current test function, FROM_ADDRESS)" )) {
+        return FALSE;
+    }
+
+    if (!GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                             (LPCSTR)VerifyCurrentModuleResourceSemantics,
+                             &FromAddressA )) {
+        fprintf(stderr,
+                "[Failed] GetModuleHandleExA(current test function, FROM_ADDRESS) ErrorCode = %lu\n",
+                GetLastError());
+        return FALSE;
+    }
+    if (!VerifyCurrentModuleResourceByHandle( FromAddressA,
+                                              "GetModuleHandleExA(current test function, FROM_ADDRESS)" )) {
+        return FALSE;
+    }
+
+    printf("[Success] Current module GetModuleHandle/FindResource semantics\n");
     return TRUE;
 }
 
@@ -625,6 +925,10 @@ LibraryTest (
     printf("Library Test\n");
 
     if (!VerifyKernel32ExportVisibility()) {
+       return FALSE;
+    }
+
+    if (!VerifyCurrentModuleResourceSemantics()) {
        return FALSE;
     }
 
