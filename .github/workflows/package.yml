@@ -131,6 +131,16 @@ jobs:
         shell: pwsh
         run: ./scripts/nuget/Ensure-LdkWdk.ps1 -WindowsSdkVersion '${{ matrix.windows_sdk }}' -RequiredPlatforms ARM
 
+      - name: Select build WDK
+        id: build-wdk
+        shell: pwsh
+        run: |
+          $version = '${{ matrix.windows_sdk }}'
+          if ('${{ matrix.arch }}' -eq 'x86') {
+            $version = '10.0.22621.0'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
       - name: Build prebuilt libraries
         shell: pwsh
         run: >
@@ -138,7 +148,7 @@ jobs:
           -Toolset '${{ matrix.toolset }}'
           -Architecture '${{ matrix.arch }}'
           -Configuration '${{ matrix.config }}'
-          -WindowsSdkVersion '${{ matrix.windows_sdk }}'
+          -WindowsSdkVersion '${{ steps.build-wdk.outputs.version }}'
 
       - uses: actions/upload-artifact@v7
         with:

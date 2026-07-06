@@ -19,6 +19,7 @@ documented. It is meant to keep docs changes honest when new APIs are added.
 | Console shims | `src/kernel32/consoleapi.c`, `src/kernel32/consoleapi2.c` | [Console and pipe APIs](../api/console-and-pipes.md) |
 | NLS, strings, locale, and time formatting | `src/kernel32/stringapiset.c`, `src/kernel32/winnls.c`, `src/kernel32/timezoneapi.c`, `src/ntdll/nls.c`, `src/ntdll/time.c` | [NLS, strings, and time formatting](../api/nls-and-time.md) |
 | ICU pseudo-module | `src/icu/icu.c` | [ICU virtual module](../api/icu.md) |
+| ADVAPI pseudo-module | `src/advapi32/advapi32.c` | [ADVAPI compatibility module](../api/advapi.md) |
 | COMBASE pseudo-module | `src/combase/combase.c` | [COMBASE virtual module](../api/combase.md) |
 | Registry helpers | `src/kernel32/winreg.c`, `include/Ldk/winreg.h` | [Registry APIs](../api/registry.md) |
 | Messages, debug, exceptions, and last error | `src/kernel32/winbase.c`, `src/kernel32/debugapi.c`, `src/kernel32/errhandlingapi.c`, `src/ntdll/except.c`, `src/ntdll/error.c` | [Messages and debugging](../api/messages-and-debugging.md), [Runtime state](runtime-state.md) |

@@ -26,6 +26,11 @@ UtilityApiTest (
     );
 
 BOOLEAN
+AdvapiCompatibilityTest (
+    VOID
+    );
+
+BOOLEAN
 FormatMessageTest (
     VOID
     );
@@ -238,6 +243,7 @@ DriverEntry (
         { "PipeTest", PipeTest },
         { "HeapApiTest", HeapApiTest },
         { "UtilityApiTest", UtilityApiTest },
+        { "AdvapiCompatibilityTest", AdvapiCompatibilityTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
         { "RegistryApiTest", RegistryApiTest },

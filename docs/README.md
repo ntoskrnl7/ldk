@@ -38,6 +38,8 @@ APIs:
 - [File and handle APIs](api/file-and-handles.md): file I/O, file information
   classes, temporary files, enumeration, and `DeviceIoControl` limits.
 - [Heap APIs](api/heap.md): heap lifetime, walking, query behavior, and tests.
+- [ADVAPI compatibility module](api/advapi.md): `SystemFunction036` random-byte
+  compatibility for UCRT `rand_s` and STL `std::random_device`.
 - [COMBASE virtual module](api/combase.md): the minimal `COMBASE.DLL`
   pseudo-module, task-memory helpers, and runtime-initialization helpers.
 - [ICU virtual module](api/icu.md): the minimal `ICU.DLL` pseudo-module and
