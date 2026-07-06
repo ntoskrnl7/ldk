@@ -489,9 +489,21 @@ LdkpGetModuleByBase (
 	return Status;
 }
 
+FORCEINLINE
+BOOLEAN
+LdkpModuleMatchesResourceMode (
+	_In_ PLDK_MODULE Module,
+	_In_ BOOLEAN ResourceOnly
+	)
+{
+	return BooleanFlagOn( Module->Flags,
+						  LDK_MODULE_FLAG_RESOURCE_ONLY ) == ResourceOnly;
+}
+
 NTSTATUS
-LdkpGetModuleByName (
+LdkpGetModuleByNameEx (
 	_In_ PCSZ ModuleName,
+	_In_ BOOLEAN ResourceOnly,
 	_Out_ PLDK_MODULE *Module
 	)
 {
@@ -506,7 +518,9 @@ LdkpGetModuleByName (
 		 NextEntry = NextEntry->Flink) {
 		
 		FoundModule = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);		
-		if (_stricmp(FoundModule->ModuleName.Buffer, ModuleName) == 0) {
+		if (LdkpModuleMatchesResourceMode( FoundModule,
+										   ResourceOnly ) &&
+			_stricmp(FoundModule->ModuleName.Buffer, ModuleName) == 0) {
 			*Module = FoundModule;
 			Status = STATUS_SUCCESS;
 			break;
@@ -515,6 +529,17 @@ LdkpGetModuleByName (
 	}
 
 	return Status;
+}
+
+NTSTATUS
+LdkpGetModuleByName (
+	_In_ PCSZ ModuleName,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	return LdkpGetModuleByNameEx( ModuleName,
+								  FALSE,
+								  Module );
 }
 
 BOOLEAN
@@ -1669,7 +1694,9 @@ LdkReferenceModuleByAddress (
 
 		FoundModule = CONTAINING_RECORD(NextEntry, LDK_MODULE, ActiveLinks);
 
-		if (FoundModule->Base) {
+		if (FoundModule->Base &&
+			(! FlagOn( FoundModule->Flags,
+					   LDK_MODULE_FLAG_RESOURCE_ONLY ))) {
 			PVOID ImageBase = FoundModule->Base;
 			ULONG ImageSize = FoundModule->Size;
 
@@ -1691,8 +1718,9 @@ LdkReferenceModuleByAddress (
 }
 
 NTSTATUS
-LdkReferenceModuleByName (
+LdkpReferenceModuleByNameEx (
 	_In_ PCSZ ModuleName,
+	_In_ BOOLEAN ResourceOnly,
 	_In_ BOOLEAN Pin,
 	_In_ BOOLEAN IncrementLoadCount,
 	_Out_ PLDK_MODULE *Module
@@ -1702,8 +1730,9 @@ LdkReferenceModuleByName (
 
 	LdkpAcquireModuleListExclusive();
 
-	Status = LdkpGetModuleByName( ModuleName,
-								  Module );
+	Status = LdkpGetModuleByNameEx( ModuleName,
+									ResourceOnly,
+									Module );
 	if (NT_SUCCESS(Status)) {
 		LdkpReferenceModuleLocked( *Module,
 								   Pin,
@@ -1713,6 +1742,21 @@ LdkReferenceModuleByName (
 	LdkpReleaseModuleList();
 
 	return Status;
+}
+
+NTSTATUS
+LdkReferenceModuleByName (
+	_In_ PCSZ ModuleName,
+	_In_ BOOLEAN Pin,
+	_In_ BOOLEAN IncrementLoadCount,
+	_Out_ PLDK_MODULE *Module
+	)
+{
+	return LdkpReferenceModuleByNameEx( ModuleName,
+										FALSE,
+										Pin,
+										IncrementLoadCount,
+										Module );
 }
 
 NTSTATUS
@@ -1820,7 +1864,9 @@ LdkpGetModuleByNtPath (
 		PLDK_MODULE FoundModule = CONTAINING_RECORD( NextEntry,
 													 LDK_MODULE,
 													 ActiveLinks );
-		if (FoundModule->FullPathName.Buffer &&
+		if ((! FlagOn( FoundModule->Flags,
+					   LDK_MODULE_FLAG_RESOURCE_ONLY )) &&
+			FoundModule->FullPathName.Buffer &&
 			_stricmp( FoundModule->FullPathName.Buffer,
 					  FullPathName.Buffer ) == 0) {
 			*Module = FoundModule;
@@ -1861,7 +1907,9 @@ LdkpReferenceModuleByNtPath (
 		PLDK_MODULE FoundModule = CONTAINING_RECORD( NextEntry,
 													 LDK_MODULE,
 													 ActiveLinks );
-		if (FoundModule->FullPathName.Buffer &&
+		if ((! FlagOn( FoundModule->Flags,
+					   LDK_MODULE_FLAG_RESOURCE_ONLY )) &&
+			FoundModule->FullPathName.Buffer &&
 			_stricmp( FoundModule->FullPathName.Buffer,
 					  FullPathName.Buffer ) == 0) {
 			LdkpReferenceModuleLocked( FoundModule,
@@ -2057,20 +2105,22 @@ LdkLoadDll (
 											   FALSE );
 		if (NT_SUCCESS(Status)) {
 			PLDK_MODULE Module;
-			Status = LdkReferenceModuleByName( DllNameAnsi.Buffer,
-											   FALSE,
-											   TRUE,
-											   &Module );
+			Status = LdkpReferenceModuleByNameEx( DllNameAnsi.Buffer,
+												  ResourceOnly,
+												  FALSE,
+												  TRUE,
+												  &Module );
 			if (! NT_SUCCESS(Status)) {	
 				DllNameAnsi.Buffer[DllNameAnsi.Length] = '.';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 1] = 'd';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 2] = 'l';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 3] = 'l';
 				DllNameAnsi.Buffer[DllNameAnsi.Length + 4] = ANSI_NULL;
-				Status = LdkReferenceModuleByName( DllNameAnsi.Buffer,
-												   FALSE,
-												   TRUE,
-												   &Module );
+				Status = LdkpReferenceModuleByNameEx( DllNameAnsi.Buffer,
+													  ResourceOnly,
+													  FALSE,
+													  TRUE,
+													  &Module );
 			}
 			if (NT_SUCCESS(Status)) {
 				*DllHandle = Module->Base ? Module->Base : (PVOID)Module;
@@ -2148,6 +2198,10 @@ retry:
 									ImageSize,
 									&RegisteredModule );
 		if (NT_SUCCESS(Status)) {
+			if (ResourceOnly) {
+				SetFlag( RegisteredModule->Flags,
+						 LDK_MODULE_FLAG_RESOURCE_ONLY );
+			}
 			LdkpMoveModuleDependencies( &RegisteredModule->DependencyList,
 										&LoadDependencyList );
 			if ((! ResourceOnly) &&
