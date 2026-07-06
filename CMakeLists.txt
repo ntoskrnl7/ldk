@@ -51,6 +51,31 @@ if(NOT "${_LDK_REQUESTED_WDK_VERSION}" STREQUAL "" AND
     endif()
 endif()
 
+function(ldk_import_wdk_library _library_name)
+    set(_ldk_wdk_platform_candidates "${WDK_PLATFORM}")
+    string(TOLOWER "${WDK_PLATFORM}" _ldk_wdk_platform_lower)
+    string(TOUPPER "${WDK_PLATFORM}" _ldk_wdk_platform_upper)
+    list(APPEND _ldk_wdk_platform_candidates
+        "${_ldk_wdk_platform_lower}"
+        "${_ldk_wdk_platform_upper}")
+    list(REMOVE_DUPLICATES _ldk_wdk_platform_candidates)
+
+    foreach(_ldk_wdk_platform IN LISTS _ldk_wdk_platform_candidates)
+        set(_ldk_wdk_library "${WDK_ROOT}/Lib/${WDK_VERSION}/km/${_ldk_wdk_platform}/${_library_name}.lib")
+        if(EXISTS "${_ldk_wdk_library}")
+            string(TOUPPER "${_library_name}" _ldk_wdk_target_name)
+            if(NOT TARGET WDK::${_ldk_wdk_target_name})
+                add_library(WDK::${_ldk_wdk_target_name} INTERFACE IMPORTED)
+            endif()
+
+            set_property(TARGET WDK::${_ldk_wdk_target_name} PROPERTY INTERFACE_LINK_LIBRARIES "${_ldk_wdk_library}")
+            return()
+        endif()
+    endforeach()
+endfunction()
+
+ldk_import_wdk_library(cng)
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /WX")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /W4 /WX")
 
@@ -65,6 +90,10 @@ list(REMOVE_DUPLICATES SOURCE_FILES)
 wdk_add_library(Ldk STATIC ${SOURCE_FILES})
 
 target_compile_definitions(Ldk PUBLIC -D_KERNEL32_)
+if(NOT TARGET WDK::CNG)
+    message(FATAL_ERROR "WDK::CNG was not found for platform ${WDK_PLATFORM}. LDK requires cng.lib for SystemFunction036.")
+endif()
+target_link_libraries(Ldk PUBLIC WDK::CNG)
 if (NOT LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS)
     target_compile_definitions(Ldk PRIVATE -DLDK_ENABLE_DIAGNOSTIC_BREAKPOINTS=0)
 endif()

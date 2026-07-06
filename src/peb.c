@@ -569,6 +569,10 @@ LdkpInitializePeb (
 	InitializeListHead(&LdkpNtdllModule.DependencyList);
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpNtdllModule.ActiveLinks);
 
+	extern LDK_MODULE LdkpAdvapi32Module;
+	InitializeListHead(&LdkpAdvapi32Module.DependencyList);
+	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpAdvapi32Module.ActiveLinks);
+
 	extern LDK_MODULE LdkpIcuModule;
 	InitializeListHead(&LdkpIcuModule.DependencyList);
 	InsertTailList(&LdkpPeb.ModuleListHead, &LdkpIcuModule.ActiveLinks);

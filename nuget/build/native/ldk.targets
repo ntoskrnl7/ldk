@@ -28,6 +28,12 @@
     <LdkLibDir Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkRoot)lib\native\v142\') and !Exists('$(LdkRoot)lib\native\v143\') and !Exists('$(LdkRoot)lib\native\v145\') and Exists('$(LdkLegacyLibDir)Ldk.lib')">$(LdkLegacyLibDir)</LdkLibDir>
     <LdkUseDriverEntry Condition="'$(LdkUseDriverEntry)' == ''">true</LdkUseDriverEntry>
     <LdkDriverPreprocessorDefinitions Condition="'$(LdkDriverPreprocessorDefinitions)' == ''">_KERNEL32_</LdkDriverPreprocessorDefinitions>
+    <LdkUserWdkLibDir Condition="'$(LdkWdkLibDir)' != ''">true</LdkUserWdkLibDir>
+    <LdkWdkLibVersion Condition="'$(LdkWdkLibVersion)' == ''">$(WindowsTargetPlatformVersion)</LdkWdkLibVersion>
+    <LdkWdkPreferredLibDir Condition="'$(WindowsSdkDir)' != '' and '$(LdkWdkLibVersion)' != ''">$([MSBuild]::NormalizeDirectory('$(WindowsSdkDir)', 'Lib', '$(LdkWdkLibVersion)', 'km', '$(LdkLibPlatform)'))</LdkWdkPreferredLibDir>
+    <LdkWdkX86FallbackLibDir Condition="'$(WindowsSdkDir)' != ''">$([MSBuild]::NormalizeDirectory('$(WindowsSdkDir)', 'Lib', '10.0.22621.0', 'km', '$(LdkLibPlatform)'))</LdkWdkX86FallbackLibDir>
+    <LdkWdkLibDir Condition="'$(LdkWdkLibDir)' == ''">$(LdkWdkPreferredLibDir)</LdkWdkLibDir>
+    <LdkWdkLibDir Condition="'$(LdkUserWdkLibDir)' != 'true' and '$(LdkLibPlatform)' == 'x86' and !Exists('$(LdkWdkLibDir)cng.lib') and Exists('$(LdkWdkX86FallbackLibDir)cng.lib')">$(LdkWdkX86FallbackLibDir)</LdkWdkLibDir>
   </PropertyGroup>
 
   <Target Name="LdkValidateNativePackage" BeforeTargets="PrepareForBuild">
@@ -40,6 +46,9 @@
     <Error
       Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkLibDir)Ldk.lib')"
       Text="Ldk.lib was not found under '$(LdkLibDir)' for MSVC toolset '$(LdkLibToolset)'. Install a package that contains lib\native\$(LdkLibToolset)\$(LdkLibPlatform)\$(LdkLibraryConfiguration), or set LdkLibToolset explicitly." />
+    <Error
+      Condition="'$(LdkUseDriverSupport)' == 'true' and !Exists('$(LdkWdkLibDir)cng.lib')"
+      Text="cng.lib was not found under '$(LdkWdkLibDir)'. Install a WDK with kernel CNG libraries for $(LdkLibPlatform), or set LdkWdkLibDir explicitly." />
     <Message
       Importance="high"
       Condition="'$(LdkUseDriverSupport)' != 'true'"
@@ -57,8 +66,8 @@
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link Condition="'$(LdkUseDriverSupport)' == 'true'">
-      <AdditionalLibraryDirectories>$(LdkLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>Ldk.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(LdkLibDir);$(LdkWdkLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>Ldk.lib;cng.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EntryPointSymbol Condition="'$(LdkUseDriverEntry)' == 'true' and '$(LdkLibPlatform)' == 'x86'">LdkDriverEntry@8</EntryPointSymbol>
       <EntryPointSymbol Condition="'$(LdkUseDriverEntry)' == 'true' and '$(LdkLibPlatform)' != 'x86'">LdkDriverEntry</EntryPointSymbol>
       <AdditionalOptions>/FORCE:MULTIPLE %(AdditionalOptions)</AdditionalOptions>

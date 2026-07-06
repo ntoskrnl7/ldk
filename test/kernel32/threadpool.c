@@ -115,6 +115,11 @@ ThreadPoolTestRelativeFileTime (
     _In_ LONG Milliseconds
     );
 
+BOOLEAN
+ThreadPoolTestWaitForModuleUnload (
+    _In_ LPCWSTR ModuleName
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(PAGE, QueueUserWorkItemTest)
 #pragma alloc_text(PAGE, LegacyThreadWorkFunction)
@@ -132,6 +137,7 @@ ThreadPoolTestRelativeFileTime (
 #pragma alloc_text(PAGE, ThreadPoolTestLegacyTimerCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestLegacyWaitCallback)
 #pragma alloc_text(PAGE, ThreadPoolTestRelativeFileTime)
+#pragma alloc_text(PAGE, ThreadPoolTestWaitForModuleUnload)
 #endif
 #else
 #include <windows.h>
@@ -487,6 +493,24 @@ ThreadPoolTestRelativeFileTime (
 }
 
 BOOLEAN
+ThreadPoolTestWaitForModuleUnload (
+    _In_ LPCWSTR ModuleName
+    )
+{
+    PAGED_CODE();
+
+    for (ULONG Attempt = 0; Attempt < 100; ++Attempt) {
+        if (GetModuleHandleW( ModuleName ) == NULL) {
+            return TRUE;
+        }
+
+        Sleep( 1 );
+    }
+
+    return FALSE;
+}
+
+BOOLEAN
 ThreadPoolTestWaitForFinalizationContext (
     _In_ PTHREADPOOL_FINALIZATION_CONTEXT FinalizationContext
     )
@@ -754,7 +778,7 @@ ThreadpoolWorkTimerWaitCleanupGroupTest (
     work = NULL;
 
     if (ModuleContext.Count != 1 ||
-        GetModuleHandleW( L"Test.dll" ) != NULL) {
+        !ThreadPoolTestWaitForModuleUnload( L"Test.dll" )) {
         DbgPrint("[Failed] Threadpool deferred free Count = %ld Handle = %p\n",
                  ModuleContext.Count,
                  GetModuleHandleW( L"Test.dll" ));

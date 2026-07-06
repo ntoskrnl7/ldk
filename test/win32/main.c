@@ -62,6 +62,11 @@ UtilityApiTest (
     );
 
 BOOLEAN
+AdvapiCompatibilityTest (
+    VOID
+    );
+
+BOOLEAN
 FormatMessageTest (
     VOID
     );
@@ -222,6 +227,7 @@ main (
         { "PipeTest", PipeTest },
         { "HeapApiTest", HeapApiTest },
         { "UtilityApiTest", UtilityApiTest },
+        { "AdvapiCompatibilityTest", AdvapiCompatibilityTest },
         { "FormatMessageTest", FormatMessageTest },
         { "NlsTest", NlsTest },
         { "RegistryApiTest", RegistryApiTest },

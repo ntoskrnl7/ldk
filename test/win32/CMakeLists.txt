@@ -13,6 +13,7 @@ set(LDK_WIN32_TEST_SOURCES
     ../kernel32/fibers.c
     ../kernel32/file.c
     ../kernel32/formatmessage.c
+    ../kernel32/advapi.c
     ../kernel32/heap.c
     ../kernel32/library.c
     ../kernel32/nls.c

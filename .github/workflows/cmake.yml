@@ -220,6 +220,9 @@ jobs:
             ARM64 = 'ARM64'
           }
           $platform = $platformByArch[$arch]
+          if ($arch -eq 'x86') {
+            $sdkVersion = '10.0.22621.0'
+          }
 
           cmake `
             -S . `
@@ -227,6 +230,7 @@ jobs:
             -G "Visual Studio 18 2026" `
             -A $platform `
             -T host=x64 `
+            "-DLDK_WDK_VERSION=$sdkVersion" `
             "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
             "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
             "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$sdkVersion" `
@@ -255,6 +259,9 @@ jobs:
             ARM64 = 'ARM64'
           }
           $platform = $platformByArch[$arch]
+          if ($arch -eq 'x86') {
+            $sdkVersion = '10.0.22621.0'
+          }
 
           cmake `
             -S . `
@@ -262,6 +269,7 @@ jobs:
             -G "Visual Studio 18 2026" `
             -A $platform `
             -T host=x64 `
+            "-DLDK_WDK_VERSION=$sdkVersion" `
             "-DCMAKE_SYSTEM_VERSION=$sdkVersion" `
             "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION=$sdkVersion" `
             "-DCMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION_MAXIMUM=$sdkVersion" `

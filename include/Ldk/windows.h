@@ -19,6 +19,7 @@
 #include "winbase.h"
 #include "ioapiset.h"
 #include "winreg.h"
+#include "ntsecapi.h"
 #include "combaseapi.h"
 
 #include "winnls.h"
