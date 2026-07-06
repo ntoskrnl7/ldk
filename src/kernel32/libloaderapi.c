@@ -112,6 +112,12 @@ GetModuleFileNameA (
 
 	PAGED_CODE();
 
+	if (! lpFilename ||
+		nSize == 0) {
+		SetLastError( ERROR_INSUFFICIENT_BUFFER );
+		return 0;
+	}
+
 	if (ARGUMENT_PRESENT(hModule)) {
 		PLDK_MODULE Module;
 		PVOID ModuleBase = LdkpMapModuleHandle( hModule,
@@ -132,7 +138,7 @@ GetModuleFileNameA (
 		return 0;
 	}
 
-	if (FileNameLength > nSize) {
+	if (FileNameLength >= nSize) {
 		RtlCopyMemory( lpFilename,
 					   FileName,
 					   nSize );
@@ -158,42 +164,52 @@ GetModuleFileNameW (
     _In_ DWORD nSize
     )
 {
-	NTSTATUS Status;
-	ANSI_STRING FileName;
+	PSTR FileName = NULL;
+	DWORD FileNameLength = 0;
+	DWORD CopyLength;
+	BOOLEAN Truncated;
 
 	PAGED_CODE();
 
-	FileName.MaximumLength = (USHORT)nSize;
-	Status = LdkAllocateAnsiString( &FileName );
-	if (! NT_SUCCESS(Status)) {
-		LdkSetLastNTError( Status );
+	if (! lpFilename ||
+		nSize == 0) {
+		SetLastError( ERROR_INSUFFICIENT_BUFFER );
 		return 0;
 	}
 
-	DWORD length = GetModuleFileNameA( hModule,
-									   FileName.Buffer,
-									   FileName.MaximumLength );
-	if (length) {
-		FileName.Length = (USHORT)length;
-
-		UNICODE_STRING FileNameW;
-		FileNameW.Buffer = lpFilename;
-		FileNameW.Length = 0;
-		FileNameW.MaximumLength = (USHORT)nSize;
-		Status = LdkAnsiStringToUnicodeString( &FileNameW,
-											   &FileName,
-											   FALSE );
-
-		if (! NT_SUCCESS(Status)) {
-			LdkFreeAnsiString( &FileName );
-			LdkSetLastNTError( Status );
-			return 0;
+	if (ARGUMENT_PRESENT(hModule)) {
+		PLDK_MODULE Module;
+		PVOID ModuleBase = LdkpMapModuleHandle( hModule,
+												TRUE );
+		if (ModuleBase &&
+			NT_SUCCESS(LdkGetModuleByBase( ModuleBase,
+										   &Module ))) {
+			FileName = Module->FullPathName.Buffer;
+			FileNameLength = Module->FullPathName.Length;
 		}
-		length = FileNameW.Length / sizeof(WCHAR);
+	} else {
+		FileName = (PSTR)NtCurrentPeb()->FullPathName.Buffer;
+		FileNameLength = (DWORD)NtCurrentPeb()->FullPathName.Length;
 	}
 
-	LdkFreeAnsiString( &FileName );
-	return length;
+	if (FileNameLength == 0) {
+		SetLastError( ERROR_NOT_FOUND );
+		return 0;
+	}
+
+	Truncated = FileNameLength >= nSize;
+	CopyLength = Truncated ? nSize : FileNameLength;
+	for (DWORD Index = 0; Index < CopyLength; Index++) {
+		lpFilename[Index] = (WCHAR)(UCHAR)FileName[Index];
+	}
+
+	if (Truncated) {
+		SetLastError( ERROR_INSUFFICIENT_BUFFER );
+		return nSize;
+	}
+
+	lpFilename[CopyLength] = UNICODE_NULL;
+	return CopyLength;
 }
 
 WINBASEAPI

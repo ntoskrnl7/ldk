@@ -164,6 +164,354 @@ ThreadNotifyTestThreadProc (
 
 static
 BOOL
+ContainsStringA (
+    _In_ LPCSTR String,
+    _In_ LPCSTR Needle
+    )
+{
+    if (!String ||
+        !Needle ||
+        !Needle[0]) {
+        return FALSE;
+    }
+
+    for (DWORD Index = 0; String[Index] != ANSI_NULL; Index++) {
+        DWORD Match = 0;
+        while (Needle[Match] != ANSI_NULL &&
+               String[Index + Match] == Needle[Match]) {
+            Match++;
+        }
+        if (Needle[Match] == ANSI_NULL) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static
+BOOL
+ContainsStringW (
+    _In_ LPCWSTR String,
+    _In_ LPCWSTR Needle
+    )
+{
+    if (!String ||
+        !Needle ||
+        !Needle[0]) {
+        return FALSE;
+    }
+
+    for (DWORD Index = 0; String[Index] != UNICODE_NULL; Index++) {
+        DWORD Match = 0;
+        while (Needle[Match] != UNICODE_NULL &&
+               String[Index + Match] == Needle[Match]) {
+            Match++;
+        }
+        if (Needle[Match] == UNICODE_NULL) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static
+BOOL
+VerifyModuleFileNameSemantics (
+    _In_ HMODULE TestModule
+    )
+{
+    WCHAR CurrentPathW[MAX_PATH];
+    CHAR CurrentPathA[MAX_PATH];
+    WCHAR ModulePathW[MAX_PATH];
+    CHAR ModulePathA[MAX_PATH];
+    WCHAR SmallPathW[5] = { L'X', L'X', L'X', L'X', L'Z' };
+    CHAR SmallPathA[5] = { 'X', 'X', 'X', 'X', 'Z' };
+    DWORD Length;
+    DWORD ErrorCode;
+
+    Length = GetModuleFileNameW( NULL,
+                                 CurrentPathW,
+                                 RTL_NUMBER_OF(CurrentPathW) );
+    if (Length == 0 ||
+        Length >= RTL_NUMBER_OF(CurrentPathW)) {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameW(NULL) Length = %lu ErrorCode = %lu\n",
+               Length,
+               GetLastError());
+       return FALSE;
+    }
+
+    Length = GetModuleFileNameA( NULL,
+                                 CurrentPathA,
+                                 RTL_NUMBER_OF(CurrentPathA) );
+    if (Length == 0 ||
+        Length >= RTL_NUMBER_OF(CurrentPathA)) {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameA(NULL) Length = %lu ErrorCode = %lu\n",
+               Length,
+               GetLastError());
+       return FALSE;
+    }
+
+    Length = GetModuleFileNameW( TestModule,
+                                 ModulePathW,
+                                 RTL_NUMBER_OF(ModulePathW) );
+    if (Length == 0 ||
+        Length >= RTL_NUMBER_OF(ModulePathW) ||
+        !ContainsStringW( ModulePathW,
+                          L"Test.dll" )) {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameW(Test.dll) Length = %lu ErrorCode = %lu Path = %ws\n",
+               Length,
+               GetLastError(),
+               ModulePathW);
+       return FALSE;
+    }
+
+    Length = GetModuleFileNameA( TestModule,
+                                 ModulePathA,
+                                 RTL_NUMBER_OF(ModulePathA) );
+    if (Length == 0 ||
+        Length >= RTL_NUMBER_OF(ModulePathA) ||
+        !ContainsStringA( ModulePathA,
+                          "Test.dll" )) {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameA(Test.dll) Length = %lu ErrorCode = %lu Path = %s\n",
+               Length,
+               GetLastError(),
+               ModulePathA);
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    Length = GetModuleFileNameW( TestModule,
+                                 SmallPathW,
+                                 RTL_NUMBER_OF(SmallPathW) - 1 );
+    ErrorCode = GetLastError();
+    if (Length != RTL_NUMBER_OF(SmallPathW) - 1 ||
+        ErrorCode != ERROR_INSUFFICIENT_BUFFER ||
+        SmallPathW[RTL_NUMBER_OF(SmallPathW) - 1] != L'Z') {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameW small buffer Length = %lu ErrorCode = %lu Sentinel = %wc\n",
+               Length,
+               ErrorCode,
+               SmallPathW[RTL_NUMBER_OF(SmallPathW) - 1]);
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    Length = GetModuleFileNameA( TestModule,
+                                 SmallPathA,
+                                 RTL_NUMBER_OF(SmallPathA) - 1 );
+    ErrorCode = GetLastError();
+    if (Length != RTL_NUMBER_OF(SmallPathA) - 1 ||
+        ErrorCode != ERROR_INSUFFICIENT_BUFFER ||
+        SmallPathA[RTL_NUMBER_OF(SmallPathA) - 1] != 'Z') {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameA small buffer Length = %lu ErrorCode = %lu Sentinel = %c\n",
+               Length,
+               ErrorCode,
+               SmallPathA[RTL_NUMBER_OF(SmallPathA) - 1]);
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (GetModuleFileNameW( TestModule,
+                            NULL,
+                            0 ) != 0 ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameW zero buffer ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (GetModuleFileNameA( TestModule,
+                            NULL,
+                            0 ) != 0 ||
+        GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+       fprintf(stderr,
+               "[Failed] GetModuleFileNameA zero buffer ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    printf("[Success] GetModuleFileNameA/W module and buffer edges\n");
+    return TRUE;
+}
+
+static
+BOOL
+VerifyGetModuleHandleExEdgeCases (
+    VOID
+    )
+{
+    HMODULE Module = (HMODULE)(ULONG_PTR)0x1234;
+    DWORD ErrorCode;
+
+    SetLastError( ERROR_SUCCESS );
+    if (GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_PIN |
+                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            L"Test.dll",
+                            &Module ) ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW invalid PIN/UNCHANGED flags ErrorCode = %lu Module = %p\n",
+               GetLastError(),
+               Module);
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    if (GetModuleHandleExW( 0,
+                            L"Test.dll",
+                            NULL ) ||
+        GetLastError() != ERROR_INVALID_PARAMETER) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW NULL output ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    Module = (HMODULE)(ULONG_PTR)0x1234;
+    if (GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                            NULL,
+                            &Module ) ||
+        GetLastError() != ERROR_INVALID_PARAMETER ||
+        Module != NULL) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW FROM_ADDRESS NULL address ErrorCode = %lu Module = %p\n",
+               GetLastError(),
+               Module);
+       return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    Module = (HMODULE)(ULONG_PTR)0x1234;
+    if (GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            (LPCWSTR)&Module,
+                            &Module )) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW FROM_ADDRESS stack address unexpectedly succeeded Module = %p\n",
+               Module);
+       return FALSE;
+    }
+    ErrorCode = GetLastError();
+    if (ErrorCode == ERROR_SUCCESS) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleExW FROM_ADDRESS stack address left ERROR_SUCCESS\n");
+       return FALSE;
+    }
+
+    printf("[Success] GetModuleHandleEx invalid and not-found edges\n");
+    return TRUE;
+}
+
+static
+BOOL
+VerifyResourceOnlyModuleIsolation (
+    VOID
+    )
+{
+    HMODULE ResourceModule;
+    HMODULE CodeModule;
+    HMODULE ProbeModule;
+    TEST_FN ordinalImportFn;
+
+    ResourceModule = LoadLibraryExW( L"OrdinalImport.dll",
+                                     NULL,
+                                     LOAD_LIBRARY_AS_DATAFILE |
+                                     LOAD_LIBRARY_AS_IMAGE_RESOURCE );
+    if (!ResourceModule) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryExW(OrdinalImport.dll, resource-only) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    if (GetProcAddress( ResourceModule,
+                        "TestOrdinalImportFunction" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] GetProcAddress unexpectedly succeeded for OrdinalImport resource-only handle\n");
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    if (GetModuleHandleW( L"OrdinalImport.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleW saw OrdinalImport resource-only load ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    CodeModule = LoadLibraryW( L"OrdinalImport.dll" );
+    if (!CodeModule) {
+       fprintf(stderr,
+               "[Failed] LoadLibraryW(OrdinalImport.dll) while resource-only handle is live ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    ProbeModule = GetModuleHandleW( L"OrdinalImport.dll" );
+    if (ProbeModule != CodeModule) {
+       fprintf(stderr,
+               "[Failed] GetModuleHandleW did not return the OrdinalImport code module Probe = %p Code = %p ErrorCode = %lu\n",
+               ProbeModule,
+               CodeModule,
+               GetLastError());
+       FreeLibrary( CodeModule );
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    ordinalImportFn = (TEST_FN)GetProcAddress( CodeModule,
+                                               "TestOrdinalImportFunction" );
+    if (!ordinalImportFn ||
+        ordinalImportFn(10) != 17) {
+       fprintf(stderr,
+               "[Failed] OrdinalImport code module export after resource-only load ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( CodeModule );
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    if (!FreeLibrary( CodeModule )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(OrdinalImport.dll code module) ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    if (GetModuleHandleW( L"OrdinalImport.dll" ) != NULL) {
+       fprintf(stderr,
+               "[Failed] OrdinalImport resource-only handle kept module visible after code unload ErrorCode = %lu\n",
+               GetLastError());
+       FreeLibrary( ResourceModule );
+       return FALSE;
+    }
+
+    if (!FreeLibrary( ResourceModule )) {
+       fprintf(stderr,
+               "[Failed] FreeLibrary(OrdinalImport.dll resource-only) ErrorCode = %lu\n",
+               GetLastError());
+       return FALSE;
+    }
+
+    printf("[Success] LoadLibraryExW resource-only/code module isolation\n");
+    return TRUE;
+}
+
+static
+BOOL
 BuildTestDllPath (
     _In_ LPCWSTR DllName,
     _Out_writes_(BufferCch) LPWSTR Buffer,
@@ -974,6 +1322,11 @@ LibraryTest (
     }
     printf("[Success] LoadLibraryW(Test.dll)\n");
 
+    if (!VerifyModuleFileNameSemantics( hModule )) {
+       FreeLibrary( hModule );
+       return FALSE;
+    }
+
     TEST_FN testFn = (TEST_FN)GetProcAddress( hModule, "TestFunction" );
     if (!testFn) {
        fprintf(stderr,
@@ -989,6 +1342,11 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] GetProcAddress(TestFunction)\n");
+
+    if (!VerifyGetModuleHandleExEdgeCases()) {
+       FreeLibrary( hModule );
+       return FALSE;
+    }
 
     HMODULE hUnchanged = NULL;
     if (!GetModuleHandleExW( GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -1085,6 +1443,11 @@ LibraryTest (
        return FALSE;
     }
     printf("[Success] GetProcAddress(Test.dll, ordinal 7)\n");
+
+    if (!VerifyResourceOnlyModuleIsolation()) {
+       FreeLibrary( hModule );
+       return FALSE;
+    }
 
     HMODULE hOrdinalImport = LoadLibraryW( L"OrdinalImport.dll" );
     if (!hOrdinalImport) {
