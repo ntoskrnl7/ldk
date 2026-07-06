@@ -21,6 +21,35 @@ list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/win32/.*")
 
 ldk_add_driver(LdkTest ${SOURCE_FILES})
 
+set(LDK_TEST_MESSAGE_MC "${CMAKE_CURRENT_LIST_DIR}/messages.mc")
+set(LDK_TEST_MESSAGE_BASENAME "ldk_test_messages")
+set(LDK_TEST_MESSAGE_RC "${CMAKE_CURRENT_BINARY_DIR}/${LDK_TEST_MESSAGE_BASENAME}.rc")
+set(LDK_TEST_MESSAGE_MC_HINTS)
+foreach(version ${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION} ${CMAKE_SYSTEM_VERSION} ${WDK_VERSION} 10.0.26100.0 10.0.22621.0 10.0.19041.0)
+    if(version)
+        list(APPEND LDK_TEST_MESSAGE_MC_HINTS
+            "C:/Program Files (x86)/Windows Kits/10/bin/${version}/x64"
+            "C:/Program Files (x86)/Windows Kits/10/bin/${version}/arm64"
+            "C:/Program Files (x86)/Windows Kits/10/bin/${version}/x86")
+    endif()
+endforeach()
+find_program(LDK_TEST_MESSAGE_MC_EXE NAMES mc.exe HINTS ${LDK_TEST_MESSAGE_MC_HINTS})
+if(NOT LDK_TEST_MESSAGE_MC_EXE)
+    message(FATAL_ERROR "mc.exe was not found. Install the Windows SDK message compiler.")
+endif()
+add_custom_command(
+    OUTPUT
+        "${LDK_TEST_MESSAGE_RC}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${LDK_TEST_MESSAGE_BASENAME}.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/${LDK_TEST_MESSAGE_BASENAME}_MSG00409.bin"
+    COMMAND "${LDK_TEST_MESSAGE_MC_EXE}"
+        -h "${CMAKE_CURRENT_BINARY_DIR}"
+        -r "${CMAKE_CURRENT_BINARY_DIR}"
+        -z "${LDK_TEST_MESSAGE_BASENAME}"
+        "${LDK_TEST_MESSAGE_MC}"
+    MAIN_DEPENDENCY "${LDK_TEST_MESSAGE_MC}"
+    VERBATIM)
+
 foreach(flag
         CMAKE_C_FLAGS_RELEASE
         CMAKE_C_FLAGS_RELWITHDEBINFO
@@ -37,7 +66,7 @@ foreach(flag
     string(REGEX REPLACE "/RTC(su|[1su])" "" "${flag}" "${${flag}}")
 endforeach()
 
-add_library(Test SHARED dll.c dll.rc)
+add_library(Test SHARED dll.c dll.rc "${LDK_TEST_MESSAGE_RC}")
 add_library(OrdinalImport SHARED ordinalimport.c)
 add_library(AutoDependency SHARED autodependency.c)
 add_library(DependencyOwner SHARED dependencyowner.c)

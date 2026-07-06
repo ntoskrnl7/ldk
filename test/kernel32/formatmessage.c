@@ -20,6 +20,13 @@ FormatMessageTest (
 #define PAGED_CODE()
 #endif
 
+#ifndef ERROR_MR_MID_NOT_FOUND
+#define ERROR_MR_MID_NOT_FOUND 317L
+#endif
+
+#define LDK_TEST_DLL_MESSAGE_ID 0x4001
+#define LDK_TEST_DLL_MISSING_MESSAGE_ID 0x4002
+
 static
 BOOLEAN
 ContainsStringA (
@@ -68,6 +75,170 @@ ContainsStringW (
     }
 
     return FALSE;
+}
+
+static
+BOOLEAN
+VerifyModuleMessageResource (
+    VOID
+    )
+{
+    BOOLEAN Result = TRUE;
+    HMODULE Module;
+    CHAR StackBuffer[96] = { 0 };
+    WCHAR WideBuffer[96] = { 0 };
+    LPSTR AllocatedBuffer = NULL;
+    LPWSTR AllocatedWideBuffer = NULL;
+    DWORD Chars;
+    DWORD ErrorCode;
+
+    Module = LoadLibraryExW( L"Test.dll",
+                             NULL,
+                             LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE );
+    if (!Module) {
+        fprintf(stderr,
+                "[Failed] LoadLibraryExW(Test.dll, message resource) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    Chars = FormatMessageA( FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
+                            Module,
+                            LDK_TEST_DLL_MESSAGE_ID,
+                            0x0409,
+                            StackBuffer,
+                            sizeof(StackBuffer),
+                            NULL );
+    if ((Chars == 0) ||
+        !ContainsStringA( StackBuffer,
+                          "LDK module message resource." )) {
+        fprintf(stderr,
+                "[Failed] FormatMessageA(FROM_HMODULE) ErrorCode = %lu Message = %s\n",
+                GetLastError(),
+                StackBuffer );
+        Result = FALSE;
+    }
+
+    Chars = FormatMessageW( FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
+                            Module,
+                            LDK_TEST_DLL_MESSAGE_ID,
+                            0x0409,
+                            WideBuffer,
+                            RTL_NUMBER_OF(WideBuffer),
+                            NULL );
+    if ((Chars == 0) ||
+        !ContainsStringW( WideBuffer,
+                          L"LDK module message resource." )) {
+        fprintf(stderr,
+                "[Failed] FormatMessageW(FROM_HMODULE) ErrorCode = %lu\n",
+                GetLastError() );
+        Result = FALSE;
+    }
+
+    Chars = FormatMessageA( FORMAT_MESSAGE_FROM_HMODULE |
+                                FORMAT_MESSAGE_IGNORE_INSERTS |
+                                FORMAT_MESSAGE_ALLOCATE_BUFFER,
+                            Module,
+                            LDK_TEST_DLL_MESSAGE_ID,
+                            0x0409,
+                            (LPSTR)&AllocatedBuffer,
+                            0,
+                            NULL );
+    if ((Chars == 0) ||
+        (AllocatedBuffer == NULL) ||
+        !ContainsStringA( AllocatedBuffer,
+                          "LDK module message resource." )) {
+        fprintf(stderr,
+                "[Failed] FormatMessageA(FROM_HMODULE, ALLOCATE_BUFFER) ErrorCode = %lu Message = %s\n",
+                GetLastError(),
+                AllocatedBuffer != NULL ? AllocatedBuffer : "" );
+        Result = FALSE;
+    }
+
+    if (AllocatedBuffer != NULL) {
+        if (LocalFree( AllocatedBuffer ) != NULL) {
+            fprintf(stderr,
+                    "[Failed] LocalFree(FormatMessageA module buffer)\n" );
+            Result = FALSE;
+        }
+    }
+
+    Chars = FormatMessageW( FORMAT_MESSAGE_FROM_HMODULE |
+                                FORMAT_MESSAGE_IGNORE_INSERTS |
+                                FORMAT_MESSAGE_ALLOCATE_BUFFER,
+                            Module,
+                            LDK_TEST_DLL_MESSAGE_ID,
+                            0x0409,
+                            (LPWSTR)&AllocatedWideBuffer,
+                            0,
+                            NULL );
+    if ((Chars == 0) ||
+        (AllocatedWideBuffer == NULL) ||
+        !ContainsStringW( AllocatedWideBuffer,
+                          L"LDK module message resource." )) {
+        fprintf(stderr,
+                "[Failed] FormatMessageW(FROM_HMODULE, ALLOCATE_BUFFER) ErrorCode = %lu\n",
+                GetLastError() );
+        Result = FALSE;
+    }
+
+    if (AllocatedWideBuffer != NULL) {
+        if (LocalFree( AllocatedWideBuffer ) != NULL) {
+            fprintf(stderr,
+                    "[Failed] LocalFree(FormatMessageW module buffer)\n" );
+            Result = FALSE;
+        }
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    StackBuffer[0] = ANSI_NULL;
+    Chars = FormatMessageA( FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_IGNORE_INSERTS,
+                            Module,
+                            LDK_TEST_DLL_MISSING_MESSAGE_ID,
+                            0x0409,
+                            StackBuffer,
+                            sizeof(StackBuffer),
+                            NULL );
+    ErrorCode = GetLastError();
+    if ((Chars != 0) ||
+        (ErrorCode != ERROR_MR_MID_NOT_FOUND)) {
+        fprintf(stderr,
+                "[Failed] FormatMessageA(FROM_HMODULE, missing id) Chars = %lu ErrorCode = %lu Message = %s\n",
+                Chars,
+                ErrorCode,
+                StackBuffer );
+        Result = FALSE;
+    }
+
+    RtlZeroMemory( StackBuffer,
+                   sizeof(StackBuffer) );
+    Chars = FormatMessageA( FORMAT_MESSAGE_FROM_HMODULE |
+                                FORMAT_MESSAGE_FROM_SYSTEM |
+                                FORMAT_MESSAGE_IGNORE_INSERTS,
+                            Module,
+                            ERROR_ACCESS_DENIED,
+                            0x0409,
+                            StackBuffer,
+                            sizeof(StackBuffer),
+                            NULL );
+    if ((Chars == 0) ||
+        !ContainsStringA( StackBuffer,
+                          "Access is denied." )) {
+        fprintf(stderr,
+                "[Failed] FormatMessageA(FROM_HMODULE | FROM_SYSTEM fallback) ErrorCode = %lu Message = %s\n",
+                GetLastError(),
+                StackBuffer );
+        Result = FALSE;
+    }
+
+    if (!FreeLibrary( Module )) {
+        fprintf(stderr,
+                "[Failed] FreeLibrary(Test.dll message resource) ErrorCode = %lu\n",
+                GetLastError() );
+        Result = FALSE;
+    }
+
+    return Result;
 }
 
 BOOLEAN
@@ -167,6 +338,10 @@ FormatMessageTest (
         Result = FALSE;
     }
 #endif
+
+    if (!VerifyModuleMessageResource()) {
+        Result = FALSE;
+    }
 
     if (Result) {
 #if _KERNEL_MODE
