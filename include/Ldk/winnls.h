@@ -1352,6 +1352,10 @@ EnumSystemLocalesEx(
 #define LOCALE_NAME_INVARIANT               L""
 #define LOCALE_NAME_SYSTEM_DEFAULT          L"!x-sys-default-locale"
 
+#ifndef LOCALE_INVARIANT
+#define LOCALE_INVARIANT                    0x007f
+#endif
+
 #endif // NONLS
 
 // Restore the original value of the 'DEPRECATED' macro");

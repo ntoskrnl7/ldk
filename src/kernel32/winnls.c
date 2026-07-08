@@ -29,6 +29,10 @@ LdkpTerminateNls (
 
 LCID LdkpSystemLocale;
 
+#ifndef LOCALE_INVARIANT
+#define LOCALE_INVARIANT 0x007f
+#endif
+
 extern USHORT *NlsAnsiCodePage;
 extern USHORT *NlsOemCodePage;
 extern PUSHORT *NlsLeadByteInfo;
@@ -1022,6 +1026,7 @@ LdkpGetLocaleName (
     case 0x007A: return L"arn";
     case 0x007C: return L"moh";
     case 0x007E: return L"br";
+    case LOCALE_INVARIANT: return L"";
     case 0x0080: return L"ug";
     case 0x0081: return L"mi";
     case 0x0082: return L"oc";
@@ -2690,7 +2695,7 @@ LocaleNameToLCID (
                               &lcid );
         return lcid;
     } else if (wcslen(lpName) == 0) { // LOCALE_NAME_INVARIANT
-        return 0x0409;
+        return LOCALE_INVARIANT;
     } else {
         WCHAR NormalizedName[128];
         LCID lcid = LdkpGetLCID(lpName);
