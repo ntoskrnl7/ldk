@@ -528,6 +528,38 @@ NlsCheckStringApis (
         return FALSE;
     }
 
+    if (LocaleNameToLCID( LOCALE_NAME_INVARIANT,
+                          0 ) != LOCALE_INVARIANT) {
+        fprintf(stderr,
+                "[Failed] LocaleNameToLCID(LOCALE_NAME_INVARIANT) = 0x%08lx Expected = 0x%08lx\n",
+                LocaleNameToLCID( LOCALE_NAME_INVARIANT,
+                                  0 ),
+                LOCALE_INVARIANT );
+        return FALSE;
+    }
+
+    Chars = LCIDToLocaleName( LOCALE_INVARIANT,
+                              WideBuffer,
+                              RTL_NUMBER_OF(WideBuffer),
+                              0 );
+    if (Chars != 1 ||
+        WideBuffer[0] != L'\0') {
+        fprintf(stderr,
+                "[Failed] LCIDToLocaleName(LOCALE_INVARIANT) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! IsValidLocale( LOCALE_INVARIANT,
+                         LCID_SUPPORTED ) ||
+        ! IsValidLocaleName( LOCALE_NAME_INVARIANT )) {
+        fprintf(stderr,
+                "[Failed] invariant locale validation ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
     if (! GetStringTypeA( 0x0409,
                           CT_CTYPE1,
                           "Az0",
@@ -540,6 +572,20 @@ NlsCheckStringApis (
         ! FlagOn(Types[2], C1_DIGIT)) {
         fprintf(stderr,
                 "[Failed] GetStringTypeA(CT_CTYPE1) ErrorCode = %lu\n",
+                GetLastError() );
+        return FALSE;
+    }
+
+    if (! GetStringTypeExW( LOCALE_INVARIANT,
+                            CT_CTYPE1,
+                            L"A1 ",
+                            3,
+                            Types ) ||
+        ! FlagOn(Types[0], C1_UPPER) ||
+        ! FlagOn(Types[1], C1_DIGIT) ||
+        ! FlagOn(Types[2], C1_SPACE)) {
+        fprintf(stderr,
+                "[Failed] GetStringTypeExW(LOCALE_INVARIANT, CT_CTYPE1) ErrorCode = %lu\n",
                 GetLastError() );
         return FALSE;
     }
