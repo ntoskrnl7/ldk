@@ -2659,6 +2659,12 @@ LdkpNormalizeLocaleName (
         Index++;
     }
 
+    if (LocaleName[Index] != UNICODE_NULL) {
+        NormalizedName[0] = UNICODE_NULL;
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+
     NormalizedName[Index] = UNICODE_NULL;
     return TRUE;
 }

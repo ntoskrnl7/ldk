@@ -3,7 +3,10 @@
 #include <stdlib.h>
 
 
-#define MB_UTF8_VALID_FLAGS        MB_ERR_INVALID_CHARS
+#define MB_UTF8_VALID_FLAGS        (MB_PRECOMPOSED | \
+									MB_COMPOSITE | \
+									MB_USEGLYPHCHARS | \
+									MB_ERR_INVALID_CHARS)
 #define WC_UTF8_VALID_FLAGS        (WC_COMPOSITECHECK | \
 									WC_DISCARDNS | \
 									WC_SEPCHARS | \
