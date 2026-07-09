@@ -21,6 +21,14 @@ list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/win32/.*")
 
 ldk_add_driver(LdkTest ${SOURCE_FILES} currentmodule.rc)
 
+ldk_add_driver(LdkMultiA multi_instance_driver.c)
+target_compile_definitions(LdkMultiA PRIVATE LDK_MULTI_INSTANCE_ID=1)
+
+ldk_add_driver(LdkMultiB multi_instance_driver.c)
+target_compile_definitions(LdkMultiB PRIVATE LDK_MULTI_INSTANCE_ID=2)
+
+add_executable(LdkMultiProbe multi_instance_probe.c)
+
 set(LDK_TEST_MESSAGE_MC "${CMAKE_CURRENT_LIST_DIR}/messages.mc")
 set(LDK_TEST_MESSAGE_BASENAME "ldk_test_messages")
 set(LDK_TEST_MESSAGE_RC "${CMAKE_CURRENT_BINARY_DIR}/${LDK_TEST_MESSAGE_BASENAME}.rc")

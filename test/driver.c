@@ -135,10 +135,16 @@ TebExpandedStackTest (
     VOID
     );
 
+BOOLEAN
+TebForeignStackCacheTest (
+    VOID
+    );
+
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, DriverEntry)
 #pragma alloc_text(PAGE, DriverUnload)
 #pragma alloc_text(PAGE, TebExpandedStackTest)
+#pragma alloc_text(PAGE, TebForeignStackCacheTest)
 #endif
 
 typedef struct _TEB_EXPANDED_STACK_TEST_CONTEXT {
@@ -146,6 +152,12 @@ typedef struct _TEB_EXPANDED_STACK_TEST_CONTEXT {
     PLDK_TEB ActualTeb;
     NTSTATUS Status;
 } TEB_EXPANDED_STACK_TEST_CONTEXT, *PTEB_EXPANDED_STACK_TEST_CONTEXT;
+
+typedef struct _LDK_TEST_TEB_PREFIX {
+    PLDK_PEB ProcessEnvironmentBlock;
+    EX_RUNDOWN_REF RundownProtect;
+    PETHREAD Thread;
+} LDK_TEST_TEB_PREFIX, *PLDK_TEST_TEB_PREFIX;
 
 VOID
 TebExpandedStackTestCallout (
@@ -209,6 +221,82 @@ TebExpandedStackTest (
     return TRUE;
 }
 
+BOOLEAN
+TebForeignStackCacheTest (
+    VOID
+    )
+{
+    ULONG_PTR LowLimit;
+    ULONG_PTR HighLimit;
+    PLDK_TEB *StackTebSlot;
+    PLDK_TEB OriginalStackTeb;
+    PLDK_TEB ExpectedTeb;
+    PLDK_TEB ActualTeb;
+    LDK_TEST_TEB_PREFIX ForeignTeb;
+
+    PAGED_CODE();
+
+    IoGetStackLimits( &LowLimit,
+                      &HighLimit );
+    if (! LowLimit ||
+        LowLimit >= HighLimit ||
+        ! MmIsAddressValid( (PVOID)LowLimit )) {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[Failed] TebForeignStackCacheTest invalid stack limits Low = %p High = %p\n",
+                    (PVOID)LowLimit,
+                    (PVOID)HighLimit );
+        return FALSE;
+    }
+
+    ExpectedTeb = LdkCurrentTeb();
+    if (ExpectedTeb == NULL) {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[Failed] TebForeignStackCacheTest expected TEB is NULL\n" );
+        return FALSE;
+    }
+
+    RtlZeroMemory( &ForeignTeb,
+                   sizeof(ForeignTeb) );
+    ForeignTeb.Thread = PsGetCurrentThread();
+    ForeignTeb.ProcessEnvironmentBlock = (PLDK_PEB)&ForeignTeb;
+
+    //
+    // The stack cache slot is shared by the current kernel stack, not by one
+    // statically-linked LDK instance. Simulate a TEB left by another driver
+    // using LDK on the same ETHREAD; LdkCurrentTeb must reject it and fall back
+    // to this instance's TEB list.
+    //
+    StackTebSlot = (PLDK_TEB *)LowLimit;
+    OriginalStackTeb = *StackTebSlot;
+    *StackTebSlot = (PLDK_TEB)&ForeignTeb;
+
+    ActualTeb = LdkCurrentTeb();
+    if (ActualTeb != ExpectedTeb) {
+        *StackTebSlot = OriginalStackTeb;
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[Failed] TebForeignStackCacheTest ActualTeb = %p ExpectedTeb = %p ForeignTeb = %p\n",
+                    ActualTeb,
+                    ExpectedTeb,
+                    (PLDK_TEB)&ForeignTeb );
+        return FALSE;
+    }
+
+    if (*StackTebSlot != ExpectedTeb) {
+        *StackTebSlot = OriginalStackTeb;
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[Failed] TebForeignStackCacheTest stack cache was not refreshed Slot = %p ExpectedTeb = %p\n",
+                    *StackTebSlot,
+                    ExpectedTeb );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 typedef
 _IRQL_requires_max_(PASSIVE_LEVEL)
 _IRQL_requires_same_
@@ -238,6 +326,7 @@ DriverEntry (
         { "KeyedEventTest", KeyedEventTest },
         { "LdrTest", LdrTest },
         { "TebExpandedStackTest", TebExpandedStackTest },
+        { "TebForeignStackCacheTest", TebForeignStackCacheTest },
         { "FibersTest", FibersTest },
         { "FileTest", FileTest },
         { "PipeTest", PipeTest },

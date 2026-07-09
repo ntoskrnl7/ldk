@@ -187,7 +187,9 @@ LdkCurrentTeb (
 
 	if (Teb &&
 		MmIsAddressValid( Teb ) &&
+		MmIsAddressValid(Add2Ptr(Teb, FIELD_OFFSET(LDK_TEB, ProcessEnvironmentBlock))) &&
 		MmIsAddressValid(Add2Ptr(Teb, FIELD_OFFSET(LDK_TEB, Thread))) &&
+		Teb->ProcessEnvironmentBlock == LdkCurrentPeb() &&
 		Teb->Thread == PsGetCurrentThread()
 		) {
 		return Teb;
