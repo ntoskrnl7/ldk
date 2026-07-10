@@ -2944,6 +2944,10 @@ typedef struct _LDKP_LOCALE_DATA {
     PCWSTR PmDesignator;
     PCWSTR Scripts;
     PCWSTR Parent;
+    DWORD DefaultAnsiCodePage;
+    DWORD DefaultOemCodePage;
+    DWORD DefaultMacCodePage;
+    DWORD DefaultEbcdicCodePage;
     DWORD DialingCode;
     DWORD DefaultCountry;
     DWORD Measure;
@@ -2971,24 +2975,27 @@ static const LDKP_LOCALE_DATA LdkpLocaleData[] = {
         L"United States", L"USA", L"US", L"USA", L",", L".", L",", L"3;0",
         L".", L",", L"3;0", L"$", L"USD", L"M/d/yyyy",
         L"dddd, MMMM d, yyyy", L"h:mm:ss tt", L"h:mm tt", L"MMMM yyyy",
-        L"h:mm:ss", L"/", L":", L"AM", L"PM", L"Latn;", L"en", 1, 1, 1, 2,
-        2, 2, 1, 1, 0, 0, 3, 0, 0, 0, 6, 244, 0, 0, 0
+        L"h:mm:ss", L"/", L":", L"AM", L"PM", L"Latn;", L"en",
+        1252, 437, 10000, 37, 1, 1, 1, 2, 2, 2, 1, 1, 0, 0, 3, 0,
+        0, 0, 6, 244, 0, 0, 0
     },
     {
         0x0407, L"German (Germany)", L"German", L"DEU", L"de", L"deu",
         L"Germany", L"DEU", L"DE", L"DEU", L";", L",", L".", L"3;0",
         L",", L".", L"3;0", L"\x20ac", L"EUR", L"dd.MM.yyyy",
         L"dddd, d. MMMM yyyy", L"HH:mm:ss", L"HH:mm", L"MMMM yyyy",
-        L"HH:mm:ss", L".", L":", L"", L"", L"Latn;", L"de", 49, 49, 0, 2,
-        2, 2, 0, 0, 1, 1, 3, 1, 3, 8, 0, 94, 1, 1, 1
+        L"HH:mm:ss", L".", L":", L"", L"", L"Latn;", L"de",
+        1252, 850, 10000, 20273, 49, 49, 0, 2, 2, 2, 0, 0, 1, 1, 3,
+        1, 3, 8, 0, 94, 1, 1, 1
     },
     {
         0x0809, L"English (United Kingdom)", L"English", L"ENG", L"en", L"eng",
         L"United Kingdom", L"GBR", L"GB", L"GBR", L",", L".", L",", L"3;0",
         L".", L",", L"3;0", L"\x00a3", L"GBP", L"dd/MM/yyyy",
         L"dd MMMM yyyy", L"HH:mm:ss", L"HH:mm", L"MMMM yyyy", L"HH:mm:ss",
-        L"/", L":", L"am", L"pm", L"Latn;", L"en", 44, 44, 0, 2, 2, 2, 1,
-        1, 0, 0, 3, 1, 0, 1, 0, 242, 1, 1, 1
+        L"/", L":", L"am", L"pm", L"Latn;", L"en",
+        1252, 850, 10000, 20285, 44, 44, 0, 2, 2, 2, 1, 1, 0, 0,
+        3, 1, 0, 1, 0, 242, 1, 1, 1
     },
     {
         0x0412, L"Korean (Korea)", L"Korean", L"KOR", L"ko", L"kor",
@@ -2996,8 +3003,9 @@ static const LDKP_LOCALE_DATA LdkpLocaleData[] = {
         L".", L",", L"3;0", L"\x20a9", L"KRW", L"yyyy-MM-dd",
         L"yyyy'\xb144' M'\xc6d4' d'\xc77c' dddd", L"tt h:mm:ss", L"tt h:mm",
         L"yyyy'\xb144' M'\xc6d4'", L"h:mm:ss", L"-", L":",
-        L"\xc624\xc804", L"\xc624\xd6c4", L"Hang;Hani;Kore;", L"ko", 82, 82, 0, 2,
-        0, 0, 1, 1, 0, 0, 3, 3, 0, 0, 6, 134, 2, 2, 0
+        L"\xc624\xc804", L"\xc624\xd6c4", L"Hang;Hani;Kore;", L"ko",
+        949, 949, 10003, 20833, 82, 82, 0, 2, 0, 0, 1, 1, 0, 0,
+        3, 3, 0, 0, 6, 134, 2, 2, 0
     },
     {
         0x0804, L"Chinese (Simplified, China)", L"Chinese", L"CHS", L"zh", L"zho",
@@ -3005,8 +3013,9 @@ static const LDKP_LOCALE_DATA LdkpLocaleData[] = {
         L".", L",", L"3;0", L"\x00a5", L"CNY", L"yyyy/M/d",
         L"yyyy'\x5e74'M'\x6708'd'\x65e5'", L"H:mm:ss", L"H:mm",
         L"yyyy'\x5e74'M'\x6708'", L"H:mm:ss", L"/", L":",
-        L"\x4e0a\x5348", L"\x4e0b\x5348", L"Hani;Hans;", L"zh-Hans", 86, 86, 0, 2,
-        2, 2, 1, 1, 0, 0, 3, 3, 0, 0, 0, 45, 2, 2, 1
+        L"\x4e0a\x5348", L"\x4e0b\x5348", L"Hani;Hans;", L"zh-Hans",
+        936, 936, 10008, 500, 86, 86, 0, 2, 2, 2, 1, 1, 0, 0,
+        3, 3, 0, 0, 0, 45, 2, 2, 1
     },
     {
         0x0411, L"Japanese (Japan)", L"Japanese", L"JPN", L"ja", L"jpn",
@@ -3014,8 +3023,9 @@ static const LDKP_LOCALE_DATA LdkpLocaleData[] = {
         L".", L",", L"3;0", L"\x00a5", L"JPY", L"yyyy/MM/dd",
         L"yyyy'\x5e74'M'\x6708'd'\x65e5'", L"H:mm:ss", L"H:mm",
         L"yyyy'\x5e74'M'\x6708'", L"H:mm:ss", L"/", L":",
-        L"\x5348\x524d", L"\x5348\x5f8c", L"Hani;Hira;Jpan;Kana;", L"ja", 81, 81, 0, 2,
-        0, 0, 1, 1, 0, 0, 3, 3, 0, 0, 0, 122, 2, 2, 1
+        L"\x5348\x524d", L"\x5348\x5f8c", L"Hani;Hira;Jpan;Kana;", L"ja",
+        932, 932, 10001, 20290, 81, 81, 0, 2, 0, 0, 1, 1, 0, 0,
+        3, 3, 0, 0, 0, 122, 2, 2, 1
     },
     {
         0x0419, L"Russian (Russia)", L"Russian", L"RUS", L"ru", L"rus",
@@ -3023,7 +3033,8 @@ static const LDKP_LOCALE_DATA LdkpLocaleData[] = {
         L",", L"\x00a0", L"3;0", L"\x20bd", L"RUB", L"dd.MM.yyyy",
         L"d MMMM yyyy '\x0433.'", L"H:mm:ss", L"H:mm",
         L"MMMM yyyy", L"H:mm:ss", L".", L":", L"", L"",
-        L"Cyrl;", L"ru", 7, 7, 0, 2, 2, 2, 0, 0, 1, 1, 3, 3, 3, 8, 0, 203, 1, 1, 1
+        L"Cyrl;", L"ru", 1251, 866, 10007, 20880, 7, 7, 0, 2, 2, 2,
+        0, 0, 1, 1, 3, 3, 3, 8, 0, 203, 1, 1, 1
     },
 };
 
@@ -3061,16 +3072,16 @@ LdkpGetLocaleNumber (
         *Value = Locale;
         return TRUE;
     case LOCALE_IDEFAULTANSICODEPAGE:
-        *Value = GetACP();
+        *Value = LocaleData->DefaultAnsiCodePage;
         return TRUE;
     case LOCALE_IDEFAULTCODEPAGE:
-        *Value = GetOEMCP();
+        *Value = LocaleData->DefaultOemCodePage;
         return TRUE;
     case LOCALE_IDEFAULTMACCODEPAGE:
-        *Value = LdkpGetMacCodePage();
+        *Value = LocaleData->DefaultMacCodePage;
         return TRUE;
     case LOCALE_IDEFAULTEBCDICCODEPAGE:
-        *Value = 37;
+        *Value = LocaleData->DefaultEbcdicCodePage;
         return TRUE;
     case LOCALE_IDIALINGCODE:
         *Value = LocaleData->DialingCode;
@@ -3565,10 +3576,21 @@ GetLocaleInfoW (
             WCHAR NumberString[16];
             PWSTR Cursor = NumberString;
             SIZE_T Remaining = RTL_NUMBER_OF(NumberString);
+            BOOLEAN Appended;
 
-            if (! LdkpAppendNumber( &Cursor,
-                                    &Remaining,
-                                    Value )) {
+            if (BaseType == LOCALE_IDEFAULTEBCDICCODEPAGE &&
+                Value < 100) {
+                Appended = LdkpAppendPaddedNumber( &Cursor,
+                                                   &Remaining,
+                                                   Value,
+                                                   3 );
+            } else {
+                Appended = LdkpAppendNumber( &Cursor,
+                                             &Remaining,
+                                             Value );
+            }
+
+            if (! Appended) {
                 SetLastError( ERROR_INSUFFICIENT_BUFFER );
                 return 0;
             }
