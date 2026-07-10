@@ -63,6 +63,82 @@ NlsCheckLocaleString (
 
 static
 BOOLEAN
+NlsCheckLocaleCodePage (
+    _In_z_ PCWSTR LocaleName,
+    _In_ LCID Lcid,
+    _In_ LCTYPE Type,
+    _In_ DWORD Expected,
+    _In_z_ PCWSTR ExpectedText
+    )
+{
+    DWORD Number = 0;
+    int Chars;
+
+    if (! NlsCheckLocaleString( LocaleName,
+                                Type,
+                                ExpectedText )) {
+        return FALSE;
+    }
+
+    Chars = GetLocaleInfoW( Lcid,
+                            Type | LOCALE_RETURN_NUMBER,
+                            (LPWSTR)&Number,
+                            sizeof(Number) / sizeof(WCHAR) );
+    if (Chars == 0 ||
+        Number != Expected) {
+        fprintf(stderr,
+                "[Failed] GetLocaleInfoW(0x%08lx, 0x%08lx | LOCALE_RETURN_NUMBER) Chars = %d Value = %lu Expected = %lu ErrorCode = %lu\n",
+                Lcid,
+                Type,
+                Chars,
+                Number,
+                Expected,
+                GetLastError() );
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static
+BOOLEAN
+NlsCheckLocaleCodePages (
+    _In_z_ PCWSTR LocaleName,
+    _In_ LCID Lcid,
+    _In_ DWORD ExpectedAnsi,
+    _In_z_ PCWSTR ExpectedAnsiText,
+    _In_ DWORD ExpectedOem,
+    _In_z_ PCWSTR ExpectedOemText,
+    _In_ DWORD ExpectedMac,
+    _In_z_ PCWSTR ExpectedMacText,
+    _In_ DWORD ExpectedEbcdic,
+    _In_z_ PCWSTR ExpectedEbcdicText
+    )
+{
+    return NlsCheckLocaleCodePage( LocaleName,
+                                   Lcid,
+                                   LOCALE_IDEFAULTANSICODEPAGE,
+                                   ExpectedAnsi,
+                                   ExpectedAnsiText ) &&
+           NlsCheckLocaleCodePage( LocaleName,
+                                   Lcid,
+                                   LOCALE_IDEFAULTCODEPAGE,
+                                   ExpectedOem,
+                                   ExpectedOemText ) &&
+           NlsCheckLocaleCodePage( LocaleName,
+                                   Lcid,
+                                   LOCALE_IDEFAULTMACCODEPAGE,
+                                   ExpectedMac,
+                                   ExpectedMacText ) &&
+           NlsCheckLocaleCodePage( LocaleName,
+                                   Lcid,
+                                   LOCALE_IDEFAULTEBCDICCODEPAGE,
+                                   ExpectedEbcdic,
+                                   ExpectedEbcdicText );
+}
+
+static
+BOOLEAN
 NlsCheckLocale (
     _In_z_ PCWSTR LocaleName,
     _In_ LCID ExpectedLcid,
@@ -602,6 +678,40 @@ NlsCheckStringApis (
         return FALSE;
     }
 
+    SetLastError( ERROR_SUCCESS );
+    Chars = MultiByteToWideChar( CP_UTF8,
+                                 0x10,
+                                 "A",
+                                 -1,
+                                 WideBuffer,
+                                 RTL_NUMBER_OF(WideBuffer) );
+    if (Chars != 0 ||
+        GetLastError() != ERROR_INVALID_FLAGS) {
+        fprintf(stderr,
+                "[Failed] MultiByteToWideChar(CP_UTF8, invalid flag 0x10) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
+    SetLastError( ERROR_SUCCESS );
+    Chars = WideCharToMultiByte( CP_UTF8,
+                                 0x100,
+                                 L"A",
+                                 -1,
+                                 AnsiBuffer,
+                                 RTL_NUMBER_OF(AnsiBuffer),
+                                 NULL,
+                                 NULL );
+    if (Chars != 0 ||
+        GetLastError() != ERROR_INVALID_FLAGS) {
+        fprintf(stderr,
+                "[Failed] WideCharToMultiByte(CP_UTF8, invalid flag 0x100) Chars = %d ErrorCode = %lu\n",
+                Chars,
+                GetLastError() );
+        return FALSE;
+    }
+
     return TRUE;
 }
 
@@ -664,6 +774,76 @@ NlsTest (
                              L"\x042f\x043d\x0432\x0430\x0440\x044c",
                              L"\x043f\x043e\x043d\x0435\x0434\x0435\x043b\x044c\x043d\x0438\x043a",
                              L"\x20bd" ) &&
+             NlsCheckLocaleCodePages( L"en-US",
+                                      0x0409,
+                                      1252,
+                                      L"1252",
+                                      437,
+                                      L"437",
+                                      10000,
+                                      L"10000",
+                                      37,
+                                      L"037" ) &&
+             NlsCheckLocaleCodePages( L"de-DE",
+                                      0x0407,
+                                      1252,
+                                      L"1252",
+                                      850,
+                                      L"850",
+                                      10000,
+                                      L"10000",
+                                      20273,
+                                      L"20273" ) &&
+             NlsCheckLocaleCodePages( L"en-GB",
+                                      0x0809,
+                                      1252,
+                                      L"1252",
+                                      850,
+                                      L"850",
+                                      10000,
+                                      L"10000",
+                                      20285,
+                                      L"20285" ) &&
+             NlsCheckLocaleCodePages( L"ko-KR",
+                                      0x0412,
+                                      949,
+                                      L"949",
+                                      949,
+                                      L"949",
+                                      10003,
+                                      L"10003",
+                                      20833,
+                                      L"20833" ) &&
+             NlsCheckLocaleCodePages( L"zh-CN",
+                                      0x0804,
+                                      936,
+                                      L"936",
+                                      936,
+                                      L"936",
+                                      10008,
+                                      L"10008",
+                                      500,
+                                      L"500" ) &&
+             NlsCheckLocaleCodePages( L"ja-JP",
+                                      0x0411,
+                                      932,
+                                      L"932",
+                                      932,
+                                      L"932",
+                                      10001,
+                                      L"10001",
+                                      20290,
+                                      L"20290" ) &&
+             NlsCheckLocaleCodePages( L"ru-RU",
+                                      0x0419,
+                                      1251,
+                                      L"1251",
+                                      866,
+                                      L"866",
+                                      10007,
+                                      L"10007",
+                                      20880,
+                                      L"20880" ) &&
              NlsCheckLocaleEnumeration() &&
              NlsCheckCharacterTypes() &&
              NlsCheckStringApis();
