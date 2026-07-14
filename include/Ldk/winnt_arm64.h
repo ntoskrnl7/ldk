@@ -810,10 +810,12 @@ WriteNoFence64 (
 // PreFetchCacheLine level defines.
 //
 
+#ifndef PF_TEMPORAL_LEVEL_1
 #define PF_TEMPORAL_LEVEL_1         0
 #define PF_TEMPORAL_LEVEL_2         1
 #define PF_TEMPORAL_LEVEL_3         2
 #define PF_NON_TEMPORAL_LEVEL_ALL   3
+#endif
 
 #if defined(_M_HYBRID_X86_ARM64)
 
@@ -1180,16 +1182,22 @@ YieldProcessor (
 // violation.
 //
 
+#ifndef EXCEPTION_READ_FAULT
 #define EXCEPTION_READ_FAULT 0          // exception caused by a read
 #define EXCEPTION_WRITE_FAULT 1         // exception caused by a write
 #define EXCEPTION_EXECUTE_FAULT 8       // exception caused by an instruction fetch
+#endif
 
 //
 // Define initial Cpsr/Fpscr value
 //
 
+#ifndef INITIAL_CPSR
 #define INITIAL_CPSR 0x10
+#endif
+#ifndef INITIAL_FPSCR
 #define INITIAL_FPSCR 0
+#endif
 
 //
 //
@@ -1224,9 +1232,11 @@ typedef struct _IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY RUNTIME_FUNCTION, *PRUNTIME_F
 // Define unwind information flags.
 //
 
+#ifndef UNW_FLAG_NHANDLER
 #define UNW_FLAG_NHANDLER       0x0             /* any handler */
 #define UNW_FLAG_EHANDLER       0x1             /* filter handler */
 #define UNW_FLAG_UHANDLER       0x2             /* unwind handler */
+#endif
 
 #if defined(_ARM64_) || defined(_CHPE_X86_ARM64_)
 
@@ -1240,11 +1250,19 @@ typedef struct _IMAGE_ARM64_RUNTIME_FUNCTION_ENTRY RUNTIME_FUNCTION, *PRUNTIME_F
 // Define exception dispatch context structure.
 //
 
+#ifndef NONVOL_INT_NUMREG_ARM64
 #define NONVOL_INT_NUMREG_ARM64 (11)
+#endif
+#ifndef NONVOL_FP_NUMREG_ARM64
 #define NONVOL_FP_NUMREG_ARM64  (8)
+#endif
 
+#ifndef NONVOL_INT_SIZE_ARM64
 #define NONVOL_INT_SIZE_ARM64 (NONVOL_INT_NUMREG_ARM64 * sizeof(DWORD64))
+#endif
+#ifndef NONVOL_FP_SIZE_ARM64
 #define NONVOL_FP_SIZE_ARM64  (NONVOL_FP_NUMREG_ARM64 * sizeof(double))
+#endif
 
 typedef union _DISPATCHER_CONTEXT_NONVOLREG_ARM64 {
     BYTE  Buffer[NONVOL_INT_SIZE_ARM64 + NONVOL_FP_SIZE_ARM64];

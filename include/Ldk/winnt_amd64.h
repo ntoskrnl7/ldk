@@ -843,10 +843,12 @@ _m_prefetchw (
 // PreFetchCacheLine level defines.
 //
 
+#ifndef PF_TEMPORAL_LEVEL_1
 #define PF_TEMPORAL_LEVEL_1 _MM_HINT_T0
 #define PF_TEMPORAL_LEVEL_2 _MM_HINT_T1
 #define PF_TEMPORAL_LEVEL_3 _MM_HINT_T2
 #define PF_NON_TEMPORAL_LEVEL_ALL _MM_HINT_NTA
+#endif
 
 #endif // !defined(_M_ARM64EC)
 
@@ -1360,9 +1362,11 @@ __addgsqword (
 
 #if !defined(_ARM64EC_)
 
+#ifndef EXCEPTION_READ_FAULT
 #define EXCEPTION_READ_FAULT 0          // exception caused by a read
 #define EXCEPTION_WRITE_FAULT 1         // exception caused by a write
 #define EXCEPTION_EXECUTE_FAULT 8       // exception caused by an instruction fetch
+#endif
 
 #endif // !defined(_ARM64EC_)
 
@@ -1372,6 +1376,7 @@ __addgsqword (
 
 #if !defined(RC_INVOKED)
 
+#ifndef CONTEXT_AMD64
 #define CONTEXT_AMD64   0x00100000L
 
 #define CONTEXT_CONTROL         (CONTEXT_AMD64 | 0x00000001L)
@@ -1400,6 +1405,7 @@ __addgsqword (
 #define CONTEXT_SERVICE_ACTIVE      0x10000000L
 #define CONTEXT_EXCEPTION_REQUEST   0x40000000L
 #define CONTEXT_EXCEPTION_REPORTING 0x80000000L
+#endif
 
 //
 // CONTEXT_UNWOUND_TO_CALL flag is set by the unwinder if it
@@ -1407,7 +1413,9 @@ __addgsqword (
 // through a trap frame.
 //
 
-#define CONTEXT_UNWOUND_TO_CALL     0x20000000
+#ifndef CONTEXT_UNWOUND_TO_CALL
+#define CONTEXT_UNWOUND_TO_CALL     0x20000000L
+#endif
 
 #endif // !defined(RC_INVOKED)
 
@@ -1415,8 +1423,12 @@ __addgsqword (
 // Define initial MxCsr and FpCsr control.
 //
 
+#ifndef INITIAL_MXCSR
 #define INITIAL_MXCSR 0x1f80            // initial MXCSR value
+#endif
+#ifndef INITIAL_FPCSR
 #define INITIAL_FPCSR 0x027f            // initial FPCSR value
+#endif
 
 //
 //
@@ -1589,20 +1601,28 @@ typedef struct DECLSPEC_ALIGN(16) DECLSPEC_NOINITALL _CONTEXT {
 typedef struct _IMAGE_RUNTIME_FUNCTION_ENTRY RUNTIME_FUNCTION, *PRUNTIME_FUNCTION;
 typedef SCOPE_TABLE_AMD64 SCOPE_TABLE, *PSCOPE_TABLE;
 
+#ifndef RUNTIME_FUNCTION_INDIRECT
 #define RUNTIME_FUNCTION_INDIRECT 0x1
+#endif
 
 //
 // Define unwind information flags.
 //
 
+#ifndef UNW_FLAG_NHANDLER
 #define UNW_FLAG_NHANDLER       0x0
 #define UNW_FLAG_EHANDLER       0x1
 #define UNW_FLAG_UHANDLER       0x2
 #define UNW_FLAG_CHAININFO      0x4
+#endif
 
+#ifndef UNW_FLAG_NO_EPILOGUE
 #define UNW_FLAG_NO_EPILOGUE    0x80000000UL    // Software only flag
+#endif
 
+#ifndef UNWIND_CHAIN_LIMIT
 #define UNWIND_CHAIN_LIMIT      32
+#endif
 
 //
 // Define dynamic function table entry.
