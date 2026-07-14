@@ -932,10 +932,12 @@ _mm_prefetch (
 // PreFetchCacheLine level defines.
 //
 
+#ifndef PF_TEMPORAL_LEVEL_1
 #define PF_TEMPORAL_LEVEL_1 _MM_HINT_T0
 #define PF_TEMPORAL_LEVEL_2 _MM_HINT_T1
 #define PF_TEMPORAL_LEVEL_3 _MM_HINT_T2
 #define PF_NON_TEMPORAL_LEVEL_ALL _MM_HINT_NTA
+#endif
 
 #define PreFetchCacheLine(l, a)  _mm_prefetch((CHAR CONST *) a, l)
 #define PrefetchForWrite(p)
@@ -994,9 +996,11 @@ __inline PVOID GetCurrentFiber( void ) { return (PVOID) (ULONG_PTR) __readfsdwor
 // STATUS_ACCESS_VIOLATION and the first parameter in the execpetion record.
 //
 
+#ifndef EXCEPTION_READ_FAULT
 #define EXCEPTION_READ_FAULT          0 // Access violation was caused by a read
 #define EXCEPTION_WRITE_FAULT         1 // Access violation was caused by a write
 #define EXCEPTION_EXECUTE_FAULT       8 // Access violation was caused by an instruction fetch
+#endif
 
 // begin_wx86
 // begin_ntddk
@@ -1006,7 +1010,9 @@ __inline PVOID GetCurrentFiber( void ) { return (PVOID) (ULONG_PTR) __readfsdwor
 //  Define the size of the 80387 save area, which is in the context frame.
 //
 
+#ifndef SIZE_OF_80387_REGISTERS
 #define SIZE_OF_80387_REGISTERS      80
+#endif
 
 //
 // The following flags control the contents of the CONTEXT structure.
@@ -1014,6 +1020,7 @@ __inline PVOID GetCurrentFiber( void ) { return (PVOID) (ULONG_PTR) __readfsdwor
 
 #if !defined(RC_INVOKED)
 
+#ifndef CONTEXT_i386
 #define CONTEXT_i386    0x00010000L    // this assumes that i386 and
 #define CONTEXT_i486    0x00010000L    // i486 have identical context records
 
@@ -1039,6 +1046,7 @@ __inline PVOID GetCurrentFiber( void ) { return (PVOID) (ULONG_PTR) __readfsdwor
 #define CONTEXT_SERVICE_ACTIVE      0x10000000L
 #define CONTEXT_EXCEPTION_REQUEST   0x40000000L
 #define CONTEXT_EXCEPTION_REPORTING 0x80000000L
+#endif
 
 // begin_wx86
 

@@ -662,10 +662,12 @@ WriteNoFence64 (
 // PreFetchCacheLine level defines.
 //
 
+#ifndef PF_TEMPORAL_LEVEL_1
 #define PF_TEMPORAL_LEVEL_1         0
 #define PF_TEMPORAL_LEVEL_2         1
 #define PF_TEMPORAL_LEVEL_3         2
 #define PF_NON_TEMPORAL_LEVEL_ALL   3
+#endif
 
 //
 // Define function to read the value of the time stamp counter which
@@ -714,9 +716,11 @@ YieldProcessor (
 // violation.
 //
 
+#ifndef EXCEPTION_READ_FAULT
 #define EXCEPTION_READ_FAULT 0          // exception caused by a read
 #define EXCEPTION_WRITE_FAULT 1         // exception caused by a write
 #define EXCEPTION_EXECUTE_FAULT 8       // exception caused by an instruction fetch
+#endif
 
 // begin_wx86
 //
@@ -725,6 +729,7 @@ YieldProcessor (
 
 #if !defined(RC_INVOKED)
 
+#ifndef CONTEXT_ARM
 #define CONTEXT_ARM   0x00200000L
 
 // end_wx86
@@ -742,6 +747,7 @@ YieldProcessor (
 #define CONTEXT_SERVICE_ACTIVE 0x10000000L
 #define CONTEXT_EXCEPTION_REQUEST 0x40000000L
 #define CONTEXT_EXCEPTION_REPORTING 0x80000000L
+#endif
 
 //
 // This flag is set by the unwinder if it has unwound to a call
@@ -750,7 +756,9 @@ YieldProcessor (
 // differentiate exception scopes during dispatching.
 //
 
-#define CONTEXT_UNWOUND_TO_CALL 0x20000000
+#ifndef CONTEXT_UNWOUND_TO_CALL
+#define CONTEXT_UNWOUND_TO_CALL 0x20000000L
+#endif
 
 // begin_wx86
 
@@ -760,8 +768,12 @@ YieldProcessor (
 // Define initial Cpsr/Fpscr value
 //
 
+#ifndef INITIAL_CPSR
 #define INITIAL_CPSR 0x10
+#endif
+#ifndef INITIAL_FPSCR
 #define INITIAL_FPSCR 0
+#endif
 
 //
 // Specify the number of breakpoints and watchpoints that the OS
@@ -769,8 +781,12 @@ YieldProcessor (
 // however, almost no one implements more than 4 of each.
 //
 
+#ifndef ARM_MAX_BREAKPOINTS
 #define ARM_MAX_BREAKPOINTS     8
+#endif
+#ifndef ARM_MAX_WATCHPOINTS
 #define ARM_MAX_WATCHPOINTS     1
+#endif
 
 //
 // Context Frame
@@ -882,9 +898,11 @@ typedef SCOPE_TABLE_ARM SCOPE_TABLE, *PSCOPE_TABLE;
 // Define unwind information flags.
 //
 
+#ifndef UNW_FLAG_NHANDLER
 #define UNW_FLAG_NHANDLER               0x0             /* any handler */
 #define UNW_FLAG_EHANDLER               0x1             /* filter handler */
 #define UNW_FLAG_UHANDLER               0x2             /* unwind handler */
+#endif
 
 //
 // Define exception dispatch context structure.
