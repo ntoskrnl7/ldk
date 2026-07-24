@@ -101,6 +101,16 @@ ProcessApiTest (
     );
 
 BOOLEAN
+ThreadLifetimeDrainTest (
+    VOID
+    );
+
+BOOLEAN
+ThreadLifetimeDrainFinish (
+    VOID
+    );
+
+BOOLEAN
 NtdllCurrentDirectoryTest (
     VOID
     );
@@ -347,6 +357,7 @@ DriverEntry (
         { "LibraryTest", LibraryTest },
         { "ConsoleTest", ConsoleTest },
         { "ProcessApiTest", ProcessApiTest },
+        { "ThreadLifetimeDrainTest", ThreadLifetimeDrainTest },
         { NULL, NULL }
     };
 
@@ -390,4 +401,14 @@ DriverUnload (
 {
     PAGED_CODE();
     UNREFERENCED_PARAMETER(DriverObject);
+
+    if (ThreadLifetimeDrainFinish()) {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_INFO_LEVEL,
+                    "[LdkTest] PASS ThreadLifetimeDrainFinish\n" );
+    } else {
+        DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_ERROR_LEVEL,
+                    "[LdkTest] FAIL ThreadLifetimeDrainFinish\n" );
+    }
 }

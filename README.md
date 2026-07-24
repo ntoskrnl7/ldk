@@ -149,6 +149,12 @@ ldk_add_driver(MyDriver main.c)
 Using `LdkDriverEntry` as the custom entry point lets LDK run its initialization
 and termination hooks automatically. If you use your own driver entry point,
 call `LdkInitialize` during driver startup and `LdkTerminate` before unload.
+Before termination, signal long-running `CreateThread` workers to stop.
+`LdkTerminate` then waits for every LDK-created system thread, including
+detached threads whose handles have already been closed, before releasing
+runtime and driver-image state. A driver that must release another runtime
+before calling `LdkTerminate` can call `LdkPrepareForTermination` immediately
+after sending those stop signals.
 
 ## Driver Example
 

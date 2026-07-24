@@ -8,6 +8,16 @@
 LDK_INITIALIZE_COMPONENT LdkpInitializeThreadContexts;
 LDK_TERMINATE_COMPONENT LdkpTerminateThreadContexts;
 
+VOID
+LdkpBeginThreadContextShutdown (
+	VOID
+	);
+
+VOID
+LdkpWaitForThreadContexts (
+	VOID
+	);
+
 EXPAND_STACK_CALLOUT LdkpThreadStartExpandStackAndCallout;
 KSTART_ROUTINE LdkpThreadStartRoutine;
 
@@ -31,14 +41,23 @@ LdkpFindThreadContextByIdLocked (
 	);
 
 VOID
-LdkpInsertThreadContext (
-	_Inout_ PLDK_THREAD_CONTEXT Context
+LdkpReapTerminatedThreadContextsLocked (
+	VOID
 	);
 
 VOID
-LdkpRemoveThreadContext (
-	_Inout_ PLDK_THREAD_CONTEXT Context
+LdkpCompleteThreadContextCreationLocked (
+	VOID
 	);
+
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+static
+VOID
+LdkpReportThreadContextDiagnostics (
+	_In_ ULONG Level,
+	_In_z_ PCSTR Phase
+	);
+#endif
 
 PLDK_THREAD_DESCRIPTION_ENTRY
 LdkpFindThreadDescriptionByIdLocked (
@@ -86,12 +105,17 @@ LdkpQueryNativeProcessImageName (
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkpInitializeThreadContexts)
 #pragma alloc_text(PAGE, LdkpTerminateThreadContexts)
+#pragma alloc_text(PAGE, LdkpBeginThreadContextShutdown)
+#pragma alloc_text(PAGE, LdkpWaitForThreadContexts)
 #pragma alloc_text(PAGE, LdkpThreadStartExpandStackAndCallout)
 #pragma alloc_text(PAGE, LdkpThreadStartRoutine)
 #pragma alloc_text(PAGE, LdkpGetThreadIdFromHandle)
 #pragma alloc_text(PAGE, LdkpFindThreadContextByIdLocked)
-#pragma alloc_text(PAGE, LdkpInsertThreadContext)
-#pragma alloc_text(PAGE, LdkpRemoveThreadContext)
+#pragma alloc_text(PAGE, LdkpReapTerminatedThreadContextsLocked)
+#pragma alloc_text(PAGE, LdkpCompleteThreadContextCreationLocked)
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+#pragma alloc_text(PAGE, LdkpReportThreadContextDiagnostics)
+#endif
 #pragma alloc_text(PAGE, LdkpFindThreadDescriptionByIdLocked)
 #pragma alloc_text(PAGE, LdkpFreeThreadDescriptionEntry)
 #pragma alloc_text(PAGE, CreateThread)
@@ -126,14 +150,20 @@ LdkpQueryNativeProcessImageName (
 
 
 #define TAG_LDK_THREAD_CONTEXT			'xtCT'
+#define LDK_THREAD_DRAIN_WAIT_INTERVAL_100NS (-5LL * 1000 * 1000 * 10)
+#define LDK_THREAD_DRAIN_WARNING_PERIODS 6
+#define LDK_THREAD_DIAGNOSTIC_SNAPSHOT_LIMIT 16
 
 struct _LDK_THREAD_CONTEXT {
 	LIST_ENTRY Links;
 	KEVENT StartEvent;
 	HANDLE ThreadId;
+	PETHREAD ThreadObject;
+	ULONGLONG CreatedAt;
 	LONG StartupSuspendCount;
 	BOOLEAN Linked;
 	BOOLEAN StartReleased;
+	BOOLEAN ShutdownCancelled;
 	DWORD dwCreationFlags;
 	SIZE_T dwStackSize;
 	PTHREAD_START_ROUTINE ThreadStartRoutine;
@@ -154,9 +184,25 @@ typedef struct _LDK_THREAD_CALLOUT_CONTEXT {
 	DWORD ExitCode;
 } LDK_THREAD_CALLOUT_CONTEXT, *PLDK_THREAD_CALLOUT_CONTEXT;
 
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+typedef struct _LDK_THREAD_DIAGNOSTIC_SNAPSHOT {
+	HANDLE ThreadId;
+	PETHREAD ThreadObject;
+	PVOID StartRoutine;
+	ULONGLONG AgeMilliseconds;
+	DWORD CreationFlags;
+	BOOLEAN StartReleased;
+	BOOLEAN ShutdownCancelled;
+	BOOLEAN CurrentThread;
+} LDK_THREAD_DIAGNOSTIC_SNAPSHOT, *PLDK_THREAD_DIAGNOSTIC_SNAPSHOT;
+#endif
+
 NPAGED_LOOKASIDE_LIST LdkpThreadContextLookaside;
 FAST_MUTEX LdkpThreadContextListMutex;
 LIST_ENTRY LdkpThreadContextListHead;
+KEVENT LdkpThreadContextCreationCompleteEvent;
+ULONG LdkpThreadContextCreationCount;
+BOOLEAN LdkpThreadContextShutdown;
 FAST_MUTEX LdkpThreadDescriptionListMutex;
 LIST_ENTRY LdkpThreadDescriptionListHead;
 
@@ -322,6 +368,11 @@ LdkpInitializeThreadContexts (
 									 0 );
 	ExInitializeFastMutex( &LdkpThreadContextListMutex );
 	InitializeListHead( &LdkpThreadContextListHead );
+	KeInitializeEvent( &LdkpThreadContextCreationCompleteEvent,
+					   NotificationEvent,
+					   TRUE );
+	LdkpThreadContextCreationCount = 0;
+	LdkpThreadContextShutdown = FALSE;
 	ExInitializeFastMutex( &LdkpThreadDescriptionListMutex );
 	InitializeListHead( &LdkpThreadDescriptionListHead );
 
@@ -335,11 +386,8 @@ LdkpTerminateThreadContexts (
 {
 	PAGED_CODE();
 
-	ExAcquireFastMutex( &LdkpThreadContextListMutex );
-	if (! IsListEmpty( &LdkpThreadContextListHead )) {
-		LDK_DIAGNOSTIC_BREAK();
-	}
-	ExReleaseFastMutex( &LdkpThreadContextListMutex );
+	LdkpBeginThreadContextShutdown();
+	LdkpWaitForThreadContexts();
 
 	ExAcquireFastMutex( &LdkpThreadDescriptionListMutex );
 	while (! IsListEmpty( &LdkpThreadDescriptionListHead )) {
@@ -355,6 +403,208 @@ LdkpTerminateThreadContexts (
 
 	ExDeleteNPagedLookasideList( &LdkpThreadContextLookaside );
 }
+
+VOID
+LdkpBeginThreadContextShutdown (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+	ExAcquireFastMutex( &LdkpThreadContextListMutex );
+	LdkpThreadContextShutdown = TRUE;
+	LdkpReapTerminatedThreadContextsLocked();
+
+	for (PLIST_ENTRY Current = LdkpThreadContextListHead.Flink;
+		 Current != &LdkpThreadContextListHead;
+		 Current = Current->Flink) {
+		PLDK_THREAD_CONTEXT Context = CONTAINING_RECORD( Current,
+														LDK_THREAD_CONTEXT,
+														Links );
+		if (! Context->StartReleased) {
+			Context->ShutdownCancelled = TRUE;
+			Context->StartReleased = TRUE;
+			Context->StartupSuspendCount = 0;
+			KeSetEvent( &Context->StartEvent,
+						IO_NO_INCREMENT,
+						FALSE );
+		}
+	}
+
+	ExReleaseFastMutex( &LdkpThreadContextListMutex );
+}
+
+VOID
+LdkpWaitForThreadContexts (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+	LARGE_INTEGER Timeout;
+	ULONG TimeoutCount = 0;
+
+	LdkpReportThreadContextDiagnostics( DPFLTR_INFO_LEVEL,
+										"drain started" );
+	Timeout.QuadPart = LDK_THREAD_DRAIN_WAIT_INTERVAL_100NS;
+#endif
+
+	for (;;) {
+		PETHREAD ThreadObject = NULL;
+		BOOLEAN WaitForCreation = FALSE;
+
+		ExAcquireFastMutex( &LdkpThreadContextListMutex );
+		LdkpReapTerminatedThreadContextsLocked();
+
+		if (! IsListEmpty( &LdkpThreadContextListHead )) {
+			PLDK_THREAD_CONTEXT Context = CONTAINING_RECORD(
+				LdkpThreadContextListHead.Flink,
+				LDK_THREAD_CONTEXT,
+				Links );
+			ThreadObject = Context->ThreadObject;
+			ObReferenceObject( ThreadObject );
+		} else if (LdkpThreadContextCreationCount != 0) {
+			WaitForCreation = TRUE;
+		} else {
+			ExReleaseFastMutex( &LdkpThreadContextListMutex );
+			break;
+		}
+
+		ExReleaseFastMutex( &LdkpThreadContextListMutex );
+
+		NTSTATUS Status = KeWaitForSingleObject(
+			WaitForCreation ? (PVOID)&LdkpThreadContextCreationCompleteEvent
+							: (PVOID)ThreadObject,
+			Executive,
+			KernelMode,
+			FALSE,
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+			&Timeout );
+#else
+			NULL );
+#endif
+		if (ThreadObject != NULL) {
+			ObDereferenceObject( ThreadObject );
+		}
+		if (Status == STATUS_TIMEOUT) {
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+			TimeoutCount++;
+			if (TimeoutCount == 1 ||
+				(TimeoutCount % LDK_THREAD_DRAIN_WARNING_PERIODS) == 0) {
+				LdkpReportThreadContextDiagnostics(
+					DPFLTR_WARNING_LEVEL,
+					"still waiting" );
+			}
+#endif
+			continue;
+		}
+		if (! NT_SUCCESS(Status)) {
+			LDK_DIAGNOSTIC_BREAK();
+			break;
+		}
+	}
+}
+
+#if LDK_ENABLE_RUNTIME_DIAGNOSTICS
+static
+VOID
+LdkpReportThreadContextDiagnostics (
+	_In_ ULONG Level,
+	_In_z_ PCSTR Phase
+	)
+{
+	LDK_THREAD_DIAGNOSTIC_SNAPSHOT Snapshots[
+		LDK_THREAD_DIAGNOSTIC_SNAPSHOT_LIMIT];
+	ULONG ActiveCount = 0;
+	ULONG CapturedCount = 0;
+	ULONG CreationCount;
+	ULONGLONG CurrentTime;
+
+	PAGED_CODE();
+
+	CurrentTime = KeQueryInterruptTime();
+
+	ExAcquireFastMutex( &LdkpThreadContextListMutex );
+	LdkpReapTerminatedThreadContextsLocked();
+	CreationCount = LdkpThreadContextCreationCount;
+
+	for (PLIST_ENTRY Current = LdkpThreadContextListHead.Flink;
+		 Current != &LdkpThreadContextListHead;
+		 Current = Current->Flink) {
+		PLDK_THREAD_CONTEXT Context = CONTAINING_RECORD( Current,
+														LDK_THREAD_CONTEXT,
+														Links );
+		ActiveCount++;
+		if (CapturedCount >= LDK_THREAD_DIAGNOSTIC_SNAPSHOT_LIMIT) {
+			continue;
+		}
+
+		PLDK_THREAD_DIAGNOSTIC_SNAPSHOT Snapshot =
+			&Snapshots[CapturedCount++];
+		Snapshot->ThreadId = Context->ThreadId;
+		Snapshot->ThreadObject = Context->ThreadObject;
+		Snapshot->StartRoutine = (PVOID)Context->ThreadStartRoutine;
+		Snapshot->AgeMilliseconds =
+			(CurrentTime - Context->CreatedAt) / (10 * 1000);
+		Snapshot->CreationFlags = Context->dwCreationFlags;
+		Snapshot->StartReleased = Context->StartReleased;
+		Snapshot->ShutdownCancelled = Context->ShutdownCancelled;
+		Snapshot->CurrentThread =
+			Context->ThreadObject == PsGetCurrentThread();
+	}
+
+	ExReleaseFastMutex( &LdkpThreadContextListMutex );
+
+	if (ActiveCount == 0 &&
+		CreationCount == 0) {
+		return;
+	}
+
+	DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+				Level,
+				"[LDK] CreateThread worker %s: active=%lu, "
+				"creation_in_progress=%lu\n",
+				Phase,
+				ActiveCount,
+				CreationCount );
+
+	for (ULONG Index = 0; Index < CapturedCount; Index++) {
+		PLDK_THREAD_DIAGNOSTIC_SNAPSHOT Snapshot = &Snapshots[Index];
+		PCSTR State;
+
+		if (Snapshot->ShutdownCancelled) {
+			State = FlagOn(Snapshot->CreationFlags, CREATE_SUSPENDED)
+				? "startup-cancelled"
+				: "shutdown-cancelled";
+		} else if (! Snapshot->StartReleased) {
+			State = "startup-suspended";
+		} else {
+			State = "running";
+		}
+
+		DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+					Level,
+					"[LDK]   thread_id=%p thread=%p start=%p "
+					"state=%s age_ms=%I64u%s\n",
+					Snapshot->ThreadId,
+					Snapshot->ThreadObject,
+					Snapshot->StartRoutine,
+					State,
+					Snapshot->AgeMilliseconds,
+					Snapshot->CurrentThread
+						? " current-thread-self-wait"
+						: "" );
+	}
+
+	if (CapturedCount < ActiveCount) {
+		DbgPrintEx( DPFLTR_IHVDRIVER_ID,
+					Level,
+					"[LDK]   %lu additional workers omitted\n",
+					ActiveCount - CapturedCount );
+	}
+}
+#endif
 
 NTSTATUS
 LdkpGetThreadIdFromHandle (
@@ -401,32 +651,55 @@ LdkpFindThreadContextByIdLocked (
 }
 
 VOID
-LdkpInsertThreadContext (
-	_Inout_ PLDK_THREAD_CONTEXT Context
+LdkpReapTerminatedThreadContextsLocked (
+	VOID
 	)
 {
 	PAGED_CODE();
 
-	ExAcquireFastMutex( &LdkpThreadContextListMutex );
-	InsertTailList( &LdkpThreadContextListHead,
-					&Context->Links );
-	Context->Linked = TRUE;
-	ExReleaseFastMutex( &LdkpThreadContextListMutex );
+	for (PLIST_ENTRY Current = LdkpThreadContextListHead.Flink;
+		 Current != &LdkpThreadContextListHead;) {
+		PLDK_THREAD_CONTEXT Context = CONTAINING_RECORD( Current,
+														LDK_THREAD_CONTEXT,
+														Links );
+		Current = Current->Flink;
+		LARGE_INTEGER Timeout;
+		Timeout.QuadPart = 0;
+		NTSTATUS Status = KeWaitForSingleObject( Context->ThreadObject,
+												Executive,
+												KernelMode,
+												FALSE,
+												&Timeout );
+		if (Status == STATUS_TIMEOUT) {
+			continue;
+		}
+		if (! NT_SUCCESS(Status)) {
+			LDK_DIAGNOSTIC_BREAK();
+			continue;
+		}
+
+		RemoveEntryList( &Context->Links );
+		Context->Linked = FALSE;
+		ObDereferenceObject( Context->ThreadObject );
+		ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
+									 Context );
+	}
 }
 
 VOID
-LdkpRemoveThreadContext (
-	_Inout_ PLDK_THREAD_CONTEXT Context
+LdkpCompleteThreadContextCreationLocked (
+	VOID
 	)
 {
 	PAGED_CODE();
 
-	ExAcquireFastMutex( &LdkpThreadContextListMutex );
-	if (Context->Linked) {
-		RemoveEntryList( &Context->Links );
-		Context->Linked = FALSE;
+	ASSERT(LdkpThreadContextCreationCount != 0);
+	LdkpThreadContextCreationCount--;
+	if (LdkpThreadContextCreationCount == 0) {
+		KeSetEvent( &LdkpThreadContextCreationCompleteEvent,
+					IO_NO_INCREMENT,
+					FALSE );
 	}
-	ExReleaseFastMutex( &LdkpThreadContextListMutex );
 }
 
 PLDK_THREAD_DESCRIPTION_ENTRY
@@ -533,19 +806,18 @@ LdkpThreadStartRoutine (
 	ThreadStartRoutine = Context->ThreadStartRoutine;
 	dwStackSize = Context->dwStackSize;
 
-	if (FlagOn(Context->dwCreationFlags, CREATE_SUSPENDED)) {
-		Status = KeWaitForSingleObject( &Context->StartEvent,
-										Executive,
-										KernelMode,
-										FALSE,
-										NULL );
-		LdkpRemoveThreadContext( Context );
-		if (! NT_SUCCESS(Status)) {
-			ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
-										 Context );
-			PsTerminateSystemThread( Status );
-			return;
+	Status = KeWaitForSingleObject( &Context->StartEvent,
+									Executive,
+									KernelMode,
+									FALSE,
+									NULL );
+	if (! NT_SUCCESS(Status) ||
+		Context->ShutdownCancelled) {
+		if (NT_SUCCESS(Status)) {
+			Status = STATUS_CANCELLED;
 		}
+		PsTerminateSystemThread( Status );
+		return;
 	}
 
 	if (dwStackSize > IoGetRemainingStackSize()) {
@@ -555,19 +827,14 @@ LdkpThreadStartRoutine (
 		CalloutContext.lpThreadParameter = lpThreadParameter;
 		CalloutContext.ExitCode = 0;
 
-		ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
-									 Context );
-
-		if (NT_SUCCESS(KeExpandKernelStackAndCallout( LdkpThreadStartExpandStackAndCallout,
-													  &CalloutContext,
-													  dwStackSize ))) {
+		Status = KeExpandKernelStackAndCallout( LdkpThreadStartExpandStackAndCallout,
+												&CalloutContext,
+												dwStackSize );
+		if (NT_SUCCESS(Status)) {
 			DWORD ExitCode = CalloutContext.ExitCode;
 			PsTerminateSystemThread( (NTSTATUS)ExitCode );
 			return;
 		}
-	} else {
-		ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
-									 Context );
 	}
 
 	LdkpCallThreadNotifications( DLL_THREAD_ATTACH );
@@ -619,13 +886,29 @@ CreateThread (
 	InitializeListHead( &Context->Links );
 	KeInitializeEvent( &Context->StartEvent,
 					   NotificationEvent,
-					   ! CreateSuspended );
+					   FALSE );
 	Context->dwCreationFlags = dwCreationFlags;
 	Context->dwStackSize = dwStackSize;
 	Context->ThreadStartRoutine = lpStartAddress;
 	Context->lpThreadParameter = lpParameter;
 	Context->ExitCode = 0;
+	Context->CreatedAt = KeQueryInterruptTime();
 	Context->StartupSuspendCount = CreateSuspended ? 1 : 0;
+
+	ExAcquireFastMutex( &LdkpThreadContextListMutex );
+	LdkpReapTerminatedThreadContextsLocked();
+	if (LdkpThreadContextShutdown) {
+		ExReleaseFastMutex( &LdkpThreadContextListMutex );
+		ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
+									 Context );
+		SetLastError( ERROR_SHUTDOWN_IN_PROGRESS );
+		return NULL;
+	}
+	if (LdkpThreadContextCreationCount == 0) {
+		KeClearEvent( &LdkpThreadContextCreationCompleteEvent );
+	}
+	LdkpThreadContextCreationCount++;
+	ExReleaseFastMutex( &LdkpThreadContextListMutex );
 
 	HANDLE ThreadHandle;
 	CLIENT_ID ClientId;
@@ -637,19 +920,59 @@ CreateThread (
 											LdkpThreadStartRoutine,
 											Context );
 	if (! NT_SUCCESS(Status)) {
+		ExAcquireFastMutex( &LdkpThreadContextListMutex );
+		LdkpCompleteThreadContextCreationLocked();
+		ExReleaseFastMutex( &LdkpThreadContextListMutex );
 		ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
 									 Context );
 		LdkSetLastNTError( Status );
 		return NULL;
 	}
-	
-	if (ARGUMENT_PRESENT(lpThreadId)) {
-		*lpThreadId = HandleToUlong(ClientId.UniqueThread);
+
+	PETHREAD ThreadObject;
+	Status = PsLookupThreadByThreadId( ClientId.UniqueThread,
+									  &ThreadObject );
+	if (! NT_SUCCESS(Status)) {
+		Context->ShutdownCancelled = TRUE;
+		Context->StartReleased = TRUE;
+		KeSetEvent( &Context->StartEvent,
+					IO_NO_INCREMENT,
+					FALSE );
+		ZwWaitForSingleObject( ThreadHandle,
+							   FALSE,
+							   NULL );
+		ZwClose( ThreadHandle );
+		ExAcquireFastMutex( &LdkpThreadContextListMutex );
+		LdkpCompleteThreadContextCreationLocked();
+		ExReleaseFastMutex( &LdkpThreadContextListMutex );
+		ExFreeToNPagedLookasideList( &LdkpThreadContextLookaside,
+									 Context );
+		LdkSetLastNTError( Status );
+		return NULL;
 	}
 
-	if (CreateSuspended) {
-		Context->ThreadId = ClientId.UniqueThread;
-		LdkpInsertThreadContext( Context );
+	ExAcquireFastMutex( &LdkpThreadContextListMutex );
+	Context->ThreadId = ClientId.UniqueThread;
+	Context->ThreadObject = ThreadObject;
+	InsertTailList( &LdkpThreadContextListHead,
+					&Context->Links );
+	Context->Linked = TRUE;
+	LdkpCompleteThreadContextCreationLocked();
+	if (! CreateSuspended ||
+		LdkpThreadContextShutdown) {
+		if (LdkpThreadContextShutdown) {
+			Context->ShutdownCancelled = TRUE;
+			Context->StartupSuspendCount = 0;
+		}
+		Context->StartReleased = TRUE;
+		KeSetEvent( &Context->StartEvent,
+					IO_NO_INCREMENT,
+					FALSE );
+	}
+	ExReleaseFastMutex( &LdkpThreadContextListMutex );
+
+	if (ARGUMENT_PRESENT(lpThreadId)) {
+		*lpThreadId = HandleToUlong(ClientId.UniqueThread);
 	}
 
 	return ThreadHandle;

@@ -11,7 +11,7 @@ pkg_get_version(LDK ${CMAKE_CURRENT_SOURCE_DIR}/include/ldk/internal/version.h V
 
 project(Ldk VERSION "${VERSION}" LANGUAGES C)
 
-option(LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS "Set to OFF to suppress LDK diagnostic KdBreakPoint calls" ON)
+option(LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS "Opt in to LDK diagnostic KdBreakPoint calls" OFF)
 
 if ("${CMAKE_VS_PLATFORM_NAME}" STREQUAL "x64")
     option(LDK_USE_RAISE_EXCEPTION  "Set to ON to use ldk!RaiseException" ON)
@@ -94,7 +94,9 @@ if(NOT TARGET WDK::CNG)
     message(FATAL_ERROR "WDK::CNG was not found for platform ${WDK_PLATFORM}. LDK requires cng.lib for SystemFunction036.")
 endif()
 target_link_libraries(Ldk PUBLIC WDK::CNG)
-if (NOT LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS)
+if (LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS)
+    target_compile_definitions(Ldk PRIVATE -DLDK_ENABLE_DIAGNOSTIC_BREAKPOINTS=1)
+else()
     target_compile_definitions(Ldk PRIVATE -DLDK_ENABLE_DIAGNOSTIC_BREAKPOINTS=0)
 endif()
 if (LDK_USE_RAISE_EXCEPTION)

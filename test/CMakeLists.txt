@@ -21,6 +21,11 @@ list(FILTER SOURCE_FILES EXCLUDE REGEX ".*/win32/.*")
 
 ldk_add_driver(LdkTest ${SOURCE_FILES} currentmodule.rc)
 
+ldk_add_driver(
+    LdkThreadLifetime
+    thread_lifetime_driver.c
+    kernel32/thread_lifetime.c)
+
 ldk_add_driver(LdkMultiA multi_instance_driver.c)
 target_compile_definitions(LdkMultiA PRIVATE LDK_MULTI_INSTANCE_ID=1)
 
