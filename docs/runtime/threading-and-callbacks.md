@@ -11,9 +11,12 @@ used as the system-thread exit status. That lets `GetExitCodeThread` observe the
 start routine result through `ThreadBasicInformation`.
 
 If the requested stack size is larger than the remaining kernel stack, LDK runs
-the start routine through `KeExpandKernelStackAndCallout`. The heap-allocated
-thread context is released before entering the callout path so an `ExitThread`
-inside the start routine does not leak that context.
+the start routine through `KeExpandKernelStackAndCallout`.
+
+LDK retains an object reference to every system thread created through
+`CreateThread`, including threads whose caller-visible handle has already been
+closed. The tracking record is released only after the underlying system thread
+has terminated.
 
 `CREATE_SUSPENDED` is supported for LDK-created threads with a startup gate. The
 kernel system thread is created immediately, but the caller's thread start
@@ -25,6 +28,33 @@ LDK does not currently implement arbitrary asynchronous suspension of a thread
 that has already entered its start routine. `ResumeThread` on a running,
 non-gated thread returns `0`; `SuspendThread` on such a thread fails with
 `ERROR_NOT_SUPPORTED`.
+
+## Driver unload
+
+`LdkPrepareForTermination` prevents new `CreateThread` calls and waits for all
+previously created LDK threads to terminate. `LdkTerminate` invokes this barrier
+before unloading modules or releasing Kernel32, NTDLL, TEB, PEB, and heap state.
+This keeps a detached `std::thread` or a closed native thread handle from
+allowing driver-image and runtime state to be released while its system thread
+is still executing.
+
+The barrier cannot decide how a long-running worker should stop. A driver must
+first signal its workers to exit, then call `LdkPrepareForTermination` from an
+untracked PASSIVE_LEVEL unload or control thread. Calling the barrier from one
+of the tracked workers would wait for that same worker and must be avoided.
+Threads left at the LDK `CREATE_SUSPENDED` startup gate are cancelled during
+shutdown without entering the caller's start routine.
+
+Debug builds report the LDK `CreateThread` workers present when the termination
+barrier begins. If workers remain after five seconds, LDK reports their thread
+IDs, thread objects, start routines, states, and ages; repeated reports are
+limited to one every thirty seconds. These diagnostics describe only workers
+created through this LDK instance, not every system thread owned by the driver.
+Release builds retain the same shutdown barrier without this logging.
+
+Diagnostic `KdBreakPoint` calls are disabled by default. They can be enabled
+explicitly with the `LDK_ENABLE_DIAGNOSTIC_BREAKPOINTS` CMake option when an
+attached kernel debugger is expected.
 
 ## DLL thread notifications, ExitThread, and FLS callbacks
 
@@ -163,4 +193,7 @@ legacy work items, modern threadpool work items, threadpool callback
 environments, custom pool callback routing, finalization callbacks, cleanup
 group member close/cancel paths, threadpool timer/wait signal, timeout, cancel,
 and cleanup paths, processor topology and affinity compatibility helpers, and
-wait-on-address stress paths that create and join many worker threads.
+wait-on-address stress paths that create and join many worker threads. It also
+closes a running worker's handle before unload and verifies that the termination
+barrier waits for the actual system thread, cancels an unresumed startup-gated
+thread, and rejects new thread creation after shutdown starts.

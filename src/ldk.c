@@ -26,6 +26,16 @@ typedef struct _LDK_MODULE_DEPENDENCY {
 LDK_INITIALIZE_COMPONENT LdkpKernel32Initialize;
 LDK_TERMINATE_COMPONENT LdkpKernel32Terminate;
 
+VOID
+LdkpBeginThreadContextShutdown (
+	VOID
+	);
+
+VOID
+LdkpWaitForThreadContexts (
+	VOID
+	);
+
 LDK_INITIALIZE_COMPONENT LdkpNtdllInitialize;
 LDK_TERMINATE_COMPONENT LdkpNtdllTerminate;
 
@@ -36,6 +46,7 @@ LDK_TERMINATE_COMPONENT LdkpTerminateHeapList;
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, LdkInitialize)
+#pragma alloc_text(PAGE, LdkPrepareForTermination)
 #pragma alloc_text(PAGE, LdkTerminate)
 #endif
 
@@ -151,6 +162,10 @@ LdkInitialize (
 		return STATUS_ALREADY_COMPLETE;
 	}
 
+	ClearFlag(LdkGlobalFlags, LDK_SHUTDOWN_IN_PROGRESS);
+	LdrpShutdownInProgress = FALSE;
+	LdrpShutdownThreadId = NULL;
+
 	LdrpInLdrInit = TRUE;
 
 
@@ -202,7 +217,7 @@ Cleanup:
 
 VOID
 LDKAPI
-LdkTerminate (
+LdkPrepareForTermination (
 	VOID
 	)
 {
@@ -215,9 +230,31 @@ LdkTerminate (
 		return;
 	}
 
+	LdkUnlockGlobalFlags();
+
+	LdkpBeginThreadContextShutdown();
+	LdkpWaitForThreadContexts();
+}
+
+VOID
+LDKAPI
+LdkTerminate (
+	VOID
+	)
+{
+	PAGED_CODE();
+
+	LdkPrepareForTermination();
+
+	LdkLockGlobalFlags();
+
+	if (! LDK_IS_INITIALIZED) {
+		LdkUnlockGlobalFlags();
+		return;
+	}
+
 	LdrpShutdownInProgress = TRUE;
 	LdrpShutdownThreadId = PsGetCurrentThreadId();
-
 	SetFlag(LdkGlobalFlags, LDK_SHUTDOWN_IN_PROGRESS);
 
 	for (;;) {

@@ -50,6 +50,23 @@ LdkInitialize(
 	_In_ ULONG Flags
 	);
 
+/**
+ * Prevents new LDK CreateThread calls and waits for every thread previously
+ * created by this LDK instance to terminate.
+ *
+ * Call this from PASSIVE_LEVEL after the driver has requested its long-running
+ * workers to stop and before releasing CRT or driver-image state.
+ */
+VOID
+LDKAPI
+LdkPrepareForTermination(
+	VOID
+	);
+
+/**
+ * Releases the LDK runtime after its threads and dependent runtime state have
+ * been shut down. This function also calls LdkPrepareForTermination().
+ */
 VOID
 LDKAPI
 LdkTerminate(

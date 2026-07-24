@@ -14,9 +14,10 @@ controlled place to read and write it.
 4. NTDLL components.
 5. Kernel32 components.
 
-`LdkTerminate` marks shutdown in progress, unregisters modules, terminates
-Kernel32 and NTDLL components, tears down the TEB map, then destroys the PEB and
-heap list.
+`LdkTerminate` first prevents new LDK thread creation and waits for existing
+LDK-created system threads to terminate. It then marks runtime shutdown in
+progress, unregisters modules, terminates Kernel32 and NTDLL components, tears
+down the TEB map, and destroys the PEB and heap list.
 
 ## PEB-like state
 
